@@ -12,9 +12,11 @@ def get_client():
         client = OpenAI()
     return client
 
-# GPT-5 requires more tokens for structured outputs
-GPT5_DECODING = {
-    "max_completion_tokens": 2000,  # GPT-5 needs more tokens
+# GPT-5 uses Responses API with different parameters
+GPT5_PARAMS = {
+    "max_output_tokens": 1024,  # Responses API parameter (increased for reasoning models)
+    "reasoning_effort": "minimal",  # Reduce variance and cost
+    "verbosity": "low"  # Keep outputs terse for JSON
 }
 
 # Legacy GPT-4 settings (kept for reference)
@@ -62,46 +64,97 @@ def compute_stability(logits):
     return stability
 
 def call_rpl_once_gpt5(claim_text: str, paraphrase_prompt: str, model: str = "gpt-5"):
-    """GPT-5 specific implementation using Chat Completions API."""
-    instructions = SYSTEM_RPL
-    # Use paraphrase if provided
-    if "{CLAIM}" in paraphrase_prompt:
-        user_text = paraphrase_prompt.replace("{CLAIM}", claim_text) + "\n\n" + USER_TEMPLATE.replace("{CLAIM}", claim_text)
-    else:
-        user_text = USER_TEMPLATE.replace("{CLAIM}", claim_text)
-
-    # GPT-5 request - no temperature control, uses max_completion_tokens
-    messages = [
-        {"role": "system", "content": instructions},
-        {"role": "user", "content": user_text}
-    ]
+    """
+    GPT-5 via Responses API + Structured Outputs (JSON Schema).
+    No temperature/top_p/penalties — treat model as stochastic and sample multiple times.
+    """
+    client = get_client()
     
-    req = dict(
-        model=model,
-        messages=messages,
-        response_format={"type": "json_schema", "json_schema": RPL_JSON_SCHEMA},
-        max_completion_tokens=GPT5_DECODING["max_completion_tokens"]
-        # No temperature, top_p, or penalties for GPT-5
-    )
-
-    resp = get_client().chat.completions.create(**req)
-
-    # Parse the JSON response
+    # Build a single, clear user message: paraphrase + schema request, with the claim once.
+    paraphrased = paraphrase_prompt.replace("{CLAIM}", claim_text)
+    user_text = f"{paraphrased}\n\n" + USER_TEMPLATE.replace("{CLAIM}", claim_text)
+    
+    # Since Responses API doesn't support response_format, embed schema in instructions
+    schema_instructions = """
+Return ONLY valid JSON with exactly these fields:
+{
+  "prob_true": number between 0 and 1,
+  "confidence_self": number between 0 and 1,
+  "assumptions": array of strings,
+  "reasoning_bullets": array of 3-6 strings,
+  "contrary_considerations": array of 2-4 strings,
+  "ambiguity_flags": array of strings
+}
+Output ONLY the JSON object, no other text."""
+    
+    full_instructions = SYSTEM_RPL + "\n\n" + schema_instructions
+    
+    # Create a reproducible prompt hash for provenance
+    prompt_sha256 = hashlib.sha256(
+        (full_instructions + "\n\n" + user_text).encode("utf-8")
+    ).hexdigest()
+    
+    # Responses API call - no response_format or verbosity (not supported)
     try:
-        if resp.choices[0].message.content:
-            obj = json.loads(resp.choices[0].message.content)
-        else:
-            raise ValueError("Empty response from GPT-5")
+        resp = client.responses.create(
+            model=model,                              # e.g., "gpt-5" or "gpt-5-mini"
+            instructions=full_instructions,           # system-equivalent with schema embedded
+            input=[{
+                "role": "user",
+                "content": [{"type": "input_text", "text": user_text}]
+            }],
+            max_output_tokens=1024,                   # Increased for reasoning models
+            reasoning={"effort": "minimal"}          # variance/cost control (this DOES work)
+        )
     except Exception as e:
-        raise ValueError(f"Failed to parse JSON response: {e}")
-
+        if "reasoning" in str(e):
+            # Feature detection: retry without reasoning parameter
+            resp = client.responses.create(
+                model=model,
+                instructions=full_instructions,
+                input=[{
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": user_text}]
+                }],
+                max_output_tokens=1024
+            )
+        else:
+            raise
+    
+    # Extract JSON from Responses API output
+    # The response has output[0]=reasoning, output[1]=message with the JSON text
+    try:
+        # First try the convenient output_text helper
+        if hasattr(resp, 'output_text') and resp.output_text:
+            obj = json.loads(resp.output_text)
+        else:
+            # Find the message item (usually at index 1)
+            obj = None
+            for item in resp.output:
+                if item.type == "message" and hasattr(item, 'content'):
+                    for content in item.content:
+                        if hasattr(content, 'text'):
+                            obj = json.loads(content.text)
+                            break
+                    if obj:
+                        break
+            
+            if obj is None:
+                raise ValueError("No message with JSON text found in response")
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON in response: {e}")
+    except Exception as e:
+        raise ValueError(f"Failed to extract JSON from Responses API: {e}")
+    
     return {
         "model": resp.model,
         "raw": obj,
         "meta": {
+            "response_id": resp.id,
+            "created": getattr(resp, 'created_at', None),  # Responses API uses created_at
             "provider_model_id": resp.model,
             "prompt_version": PROMPT_VERSION,
-            "finish_reason": resp.choices[0].finish_reason
+            "prompt_sha256": prompt_sha256
         }
     }
 
@@ -199,7 +252,9 @@ def evaluate_rpl_gpt5(claim_text: str, model: str = "gpt-5", K: int = 7, R: int 
         "prompt_version": PROMPT_VERSION,
         "sampling": {"K": K, "R": R, "N": len(logits)},
         "decoding": {
-            "max_completion_tokens": GPT5_DECODING["max_completion_tokens"]
+            "max_output_tokens": GPT5_PARAMS["max_output_tokens"],
+            "reasoning_effort": "minimal",
+            "verbosity": "low"
         },
         "timestamp": int(time.time()),
         "aggregates": {
