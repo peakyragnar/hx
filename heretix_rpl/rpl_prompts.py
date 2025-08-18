@@ -10,6 +10,8 @@ Rules:
 4) Use concise, falsifiable bullets for reasoning; no vibes, no citations.
 5) Include 2–4 contrary considerations that could make you wrong.
 6) No URLs, paper names, or fabricated references.
+7) Be numerically precise: set prob_true with two decimals and never round to 0 or 1 unless logically entailed.
+8) Output JSON only per schema. No additional text or explanation.
 """
 
 USER_TEMPLATE = """Claim:
@@ -27,4 +29,4 @@ PARAPHRASES = [
     "Without external sources, evaluate the truth of: {CLAIM}",
     "Provide P(true) for this statement using only prior knowledge: {CLAIM}",
 ]
-PROMPT_VERSION = "rpl_v1_2025-08-18"
+PROMPT_VERSION = "rpl_g5_v1_2025-08-18"
