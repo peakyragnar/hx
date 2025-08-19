@@ -8,7 +8,7 @@ Heretix implements the Raw Prior Lens (RPL) evaluation system for GPT-5, using r
 
 ## Features
 
-- **K×R Sampling**: Multiple paraphrases × replicates for robust evaluation
+- **KÃ—R Sampling**: Multiple paraphrases Ã— replicates for robust evaluation
 - **Statistical Aggregation**: Median-of-means in log-odds space
 - **Confidence Intervals**: 95% bootstrap CIs for uncertainty quantification
 - **Stability Scoring**: Measures consistency across samples

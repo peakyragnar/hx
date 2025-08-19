@@ -1,8 +1,10 @@
 import json, time, hashlib
 import numpy as np
+from collections import defaultdict
 from openai import OpenAI
 from heretix_rpl.rpl_schema import RPL_JSON_SCHEMA
 from heretix_rpl.rpl_prompts import SYSTEM_RPL, USER_TEMPLATE, PARAPHRASES, PROMPT_VERSION
+from heretix_rpl.aggregation import aggregate_clustered, aggregate_simple
 
 client = None
 
@@ -203,10 +205,11 @@ def call_rpl_once(claim_text: str, paraphrase_prompt: str, model: str, seed: int
         }
     }
 
-def evaluate_rpl_gpt5(claim_text: str, model: str = "gpt-5", K: int = 7, R: int = 3):
+def evaluate_rpl_gpt5(claim_text: str, model: str = "gpt-5", K: int = 7, R: int = 3, agg: str = "clustered"):
     """GPT-5 evaluation with K×R sampling and robust aggregation."""
     runs = []
-    logits = []
+    all_logits = []
+    by_tpl = defaultdict(list)
     
     # K paraphrases × R replicates
     for k in range(K):
@@ -221,24 +224,29 @@ def evaluate_rpl_gpt5(claim_text: str, model: str = "gpt-5", K: int = 7, R: int 
                     "paraphrase_idx": k,
                     "replicate_idx": r
                 })
-                logits.append(l)
+                all_logits.append(l)
+                by_tpl[out["meta"]["prompt_sha256"]].append(l)
             except Exception as e:
                 print(f"Warning: Failed sample k={k}, r={r}: {e}")
                 continue
     
-    if len(logits) < 3:
-        raise ValueError(f"Too few successful samples: {len(logits)}")
+    if len(all_logits) < 3:
+        raise ValueError(f"Too few successful samples: {len(all_logits)}")
     
-    # Robust aggregation
-    mom = median_of_means(logits, buckets=min(5, len(logits)))
-    p_hat = _sigmoid(mom)
+    # Choose aggregator
+    if agg == "clustered":
+        ell_hat, (lo_l, hi_l), diag = aggregate_clustered(by_tpl, B=2000)
+        stability_basis = [float(np.mean(v)) for v in by_tpl.values()]
+    else:
+        ell_hat, (lo_l, hi_l), diag = aggregate_simple(all_logits, B=1000)
+        stability_basis = all_logits
     
-    # Confidence intervals
-    lo_l, hi_l = bootstrap_ci_logits(logits, B=1000, alpha=0.05)
+    p_hat = _sigmoid(ell_hat)
     lo_p, hi_p = _sigmoid(lo_l), _sigmoid(hi_l)
     
     # Stability score
-    stability = compute_stability(logits)
+    iqr_l = float(np.percentile(stability_basis, 75) - np.percentile(stability_basis, 25))
+    stability = 1.0 / (1.0 + iqr_l)
     
     # Stable run id for provenance
     digest = hashlib.sha256(
@@ -250,7 +258,7 @@ def evaluate_rpl_gpt5(claim_text: str, model: str = "gpt-5", K: int = 7, R: int 
         "claim": claim_text,
         "model": model,
         "prompt_version": PROMPT_VERSION,
-        "sampling": {"K": K, "R": R, "N": len(logits)},
+        "sampling": {"K": K, "R": R, "N": len(all_logits)},
         "decoding": {
             "max_output_tokens": GPT5_PARAMS["max_output_tokens"],
             "reasoning_effort": "minimal",
@@ -265,14 +273,15 @@ def evaluate_rpl_gpt5(claim_text: str, model: str = "gpt-5", K: int = 7, R: int 
             "is_stable": (hi_p - lo_p) <= 0.2  # Flag if CI width > 0.2
         },
         "paraphrase_results": runs,
-        "raw_logits": logits  # For debugging/analysis
+        "paraphrase_balance": diag if agg == "clustered" else {"method": "simple_mean"},
+        "raw_logits": all_logits  # For debugging/analysis
     }
 
-def evaluate_rpl(claim_text: str, model: str, k: int = 5, seed: int | None = None, r: int = 1):
+def evaluate_rpl(claim_text: str, model: str, k: int = 5, seed: int | None = None, r: int = 1, agg: str = "clustered"):
     """Main evaluation function - routes to GPT-5 or legacy based on model."""
     if model.startswith("gpt-5"):
         # Use GPT-5 implementation with K×R sampling
-        return evaluate_rpl_gpt5(claim_text, model, K=k, R=r)
+        return evaluate_rpl_gpt5(claim_text, model, K=k, R=r, agg=agg)
     else:
         # Legacy implementation for GPT-4 and others
         runs = []
