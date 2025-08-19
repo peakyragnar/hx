@@ -10,6 +10,7 @@
 ├─────────────────────────────────────────────────────────────────────┤
 │  CLI Command: uv run heretix-rpl --claim "text" --k 7 --r 3       │
 │                     --agg clustered                                │
+│  Optional: HERETIX_RPL_SEED=42 (for reproducible runs)            │
 │                              │                                      │
 │                              ▼                                      │
 │  pyproject.toml: [project.scripts]                                 │
@@ -31,7 +32,8 @@
 │  │   │   ├── K paraphrases × R replicates                         │
 │  │   │   ├── calls call_rpl_once_gpt5() for each sample           │
 │  │   │   ├── builds by_template_logits dict (prompt_sha256→logits)│
-│  │   │   └── calls chosen aggregator (clustered/simple)           │
+│  │   │   ├── generates deterministic seed or uses env override    │
+│  │   │   └── calls chosen aggregator with seeded RNG              │
 │  │   │                                                             │
 │  │   └── call_rpl_once_gpt5() → single API call                   │
 │  │       ├── Uses OpenAI Responses API                            │
@@ -39,12 +41,21 @@
 │  │       └── Returns probability + metadata + prompt_sha256       │
 │  │                    │                                            │
 │  │                    ▼                                            │
-│  ├── aggregation.py ◄─── STATISTICAL AGGREGATION MODULE           │
-│  │   ├── aggregate_clustered() → equal-by-template aggregation    │
+│  ├── seed.py ◄─── DETERMINISTIC SEED GENERATION                   │
+│  │   └── make_bootstrap_seed() → config-based seed                │
+│  │       ├── Hashes: claim, model, prompt_version, K, R           │
+│  │       ├── Includes sorted template hashes                      │
+│  │       ├── Includes aggregator config (center, trim, B)         │
+│  │       └── Returns 64-bit integer for numpy RNG                 │
+│  │                    │                                            │
+│  │                    ▼                                            │
+│  ├── aggregation.py ◄─── HARDENED STATISTICAL AGGREGATION         │
+│  │   ├── aggregate_clustered() → robust equal-by-template         │
 │  │   │   ├── Groups samples by prompt_sha256                      │
-│  │   │   ├── Computes per-template mean logits                    │
-│  │   │   ├── Averages template means equally                      │
-│  │   │   └── Cluster bootstrap for CI95 (2000 iterations)         │
+│  │   │   ├── _trimmed_mean() → drops min/max templates (20%)      │
+│  │   │   ├── Averages middle 3 templates equally                  │
+│  │   │   ├── Cluster bootstrap with deterministic RNG             │
+│  │   │   └── 5000 iterations for smooth CI95                      │
 │  │   │                                                             │
 │  │   └── aggregate_simple() → legacy unclustered mean             │
 │  │       ├── Direct mean of all logits                            │
@@ -76,7 +87,8 @@
 │  └── Structured output with JSON schema                           │
 │                              │                                     │
 │  Environment (.env)                                               │
-│  └── OPENAI_API_KEY=xxx                                           │
+│  ├── OPENAI_API_KEY=xxx (required)                                │
+│  └── HERETIX_RPL_SEED=42 (optional, for reproducibility)          │
 └─────────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -93,56 +105,75 @@
 │     ├── For each of R replicates:                                 │
 │     │   └── call_rpl_once_gpt5() → API call                      │
 │     └── Collect K×R = 21 probability samples                      │
-│         └── Track prompt_sha256 for each sample                   │
+│         └── Track prompt_sha256 and logits for each sample        │
 │                              │                                      │
 │  5. Build by_template_logits dict:                                │
 │     ├── Group samples by prompt_sha256                            │
 │     └── Example: {hash1: [l1,l2,l3], hash2: [l4,l5], ...}        │
 │                              │                                      │
-│  6. Clustered aggregation (default):                              │
+│  6. Generate deterministic seed:                                  │
+│     ├── Check HERETIX_RPL_SEED env variable                       │
+│     ├── If not set: make_bootstrap_seed() from config            │
+│     └── Create np.random.default_rng(seed) for reproducibility    │
+│                              │                                      │
+│  7. Hardened clustered aggregation:                               │
 │     ├── Per-template means in log-odds space                      │
-│     ├── Equal weighting across templates                          │
+│     ├── Trimmed mean (drop min/max, average middle 3)            │
 │     ├── Cluster bootstrap (resample templates → replicates)       │
+│     ├── 5000 iterations with deterministic RNG                    │
 │     └── Compute imbalance_ratio and diagnostics                   │
 │                              │                                      │
-│  7. Output JSON with:                                             │
+│  8. Output JSON with:                                             │
 │     ├── prob_true_rpl: 0.237 (23.7%)                             │
 │     ├── ci95: [0.15, 0.32]                                       │
 │     ├── stability_score: 0.85                                    │
-│     ├── paraphrase_balance: {                                    │
+│     ├── aggregation: {                                           │
+│     │   ├── method: "equal_by_template_cluster_bootstrap_trimmed" │
+│     │   ├── bootstrap_seed: 12595722686829152907                  │
+│     │   ├── B: 5000, center: "trimmed", trim: 0.2               │
 │     │   ├── n_templates: 5                                       │
 │     │   ├── counts_by_template: {hash1: 6, hash2: 6, ...}       │
 │     │   ├── imbalance_ratio: 2.0                                 │
 │     │   └── template_iqr_logit: 0.15                             │
 │     │   }                                                         │
-│     └── Full provenance data                                     │
+│     └── Full provenance data with paraphrase_results             │
 └─────────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                          OUTPUT                                     │
 ├─────────────────────────────────────────────────────────────────────┤
-│  runs/rpl_run.json ◄─── Detailed results with balance diagnostics │
+│  runs/rpl_run.json ◄─── Detailed results with:                   │
+│  ├── Deterministic seed for reproducibility                       │
+│  ├── Aggregation configuration and diagnostics                    │
 │  └── Terminal display of key metrics                              │
 └─────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────┐
-│                   CLUSTERED AGGREGATION APPROACH                   │
+│              HARDENED AGGREGATION APPROACH (v2)                    │
 ├─────────────────────────────────────────────────────────────────────┤
-│  Problem Solved:                                                  │
-│  ├── K=7 with 5 templates → templates 0,1 get double weight       │
-│  └── Creates bias in final estimate                               │
+│  Core Improvements:                                               │
+│  ├── Trimmed Mean (20%): Drops outlier templates                 │
+│  ├── Deterministic Seeding: Same inputs → same CIs               │
+│  ├── 5000 Bootstrap Iterations: Smoother confidence intervals     │
+│  └── Configuration-Based Seed: Changes only when needed           │
 │                                                                     │
-│  Solution: Equal-by-Template Aggregation                          │
-│  ├── Group by prompt_sha256 (unique paraphrase hash)              │
-│  ├── Average replicates within each template                      │
-│  ├── Weight templates equally (regardless of count)               │
-│  └── Cluster bootstrap preserves hierarchical structure           │
+│  Statistical Robustness:                                          │
+│  ├── Equal-by-template: Fixes paraphrase imbalance               │
+│  ├── Cluster bootstrap: Correct two-level uncertainty             │
+│  ├── Trimmed center: Robust to outlier templates                 │
+│  └── Log-odds averaging: Proper probability geometry              │
+│                                                                     │
+│  Reproducibility:                                                  │
+│  ├── Seed = SHA256(claim|model|templates|config)[:8]             │
+│  ├── Override: HERETIX_RPL_SEED environment variable             │
+│  └── Seed recorded in output JSON for audit trail                │
 │                                                                     │
 │  Diagnostics:                                                      │
 │  ├── imbalance_ratio: max_count/min_count (ideal=1.0)            │
 │  ├── counts_by_template: samples per paraphrase                   │
-│  └── template_iqr_logit: consistency across templates             │
+│  ├── template_iqr_logit: consistency across templates             │
+│  └── bootstrap_seed: exact seed used for this run                │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -152,20 +183,41 @@
 2. **Orchestration**: `evaluate_rpl()` manages K×R sampling strategy  
 3. **API Calls**: `call_rpl_once_gpt5()` hits OpenAI Responses API
 4. **Sample Tracking**: Each sample tagged with `prompt_sha256` for clustering
-5. **Aggregation**: `aggregation.py` module handles clustered or simple aggregation
-6. **Prompting**: Uses structured prompts from `rpl_prompts.py`
-7. **Validation**: Response schema enforced by `rpl_schema.py`
-8. **Statistics**: Clustered aggregation ensures unbiased estimates
-9. **Output**: JSON results with confidence intervals, balance diagnostics, and provenance
+5. **Seed Generation**: `make_bootstrap_seed()` creates deterministic seed from config
+6. **Aggregation**: `aggregation.py` performs hardened clustered aggregation
+7. **Prompting**: Uses structured prompts from `rpl_prompts.py`
+8. **Validation**: Response schema enforced by `rpl_schema.py`
+9. **Statistics**: Trimmed clustered aggregation ensures unbiased, robust estimates
+10. **Output**: JSON with seed, aggregation config, and reproducible results
 
 ## Aggregation Methods
 
-- **Clustered** (default): Equal-by-template aggregation with cluster bootstrap
-  - Fixes paraphrase imbalance when K > number of templates
-  - Groups samples by prompt hash, weights templates equally
-  - 2000 bootstrap iterations respecting hierarchical structure
+### Clustered (Default) - Hardened Version
+- **Equal-by-template**: Fixes paraphrase imbalance when K > templates
+- **Trimmed mean (20%)**: Drops min/max templates, averages middle 3
+- **Deterministic RNG**: Configuration-based seed for reproducibility
+- **5000 bootstrap iterations**: Smooth, stable confidence intervals
+- **Cluster bootstrap**: Respects two-level uncertainty structure
 
-- **Simple** (legacy): Direct mean of all logits  
-  - Original behavior, may have bias with template wraparound
-  - 1000 standard bootstrap iterations
-  - Available via `--agg simple` for comparison
+### Simple (Legacy)
+- Direct mean of all logits  
+- 1000 standard bootstrap iterations
+- May have bias with template wraparound
+- Available via `--agg simple` for comparison
+
+## Reproducibility Features
+
+1. **Automatic Seeding**: Seed derived from claim, model, templates, and config
+2. **Environment Override**: Set `HERETIX_RPL_SEED=42` for custom seed
+3. **Seed in Output**: Every run records its `bootstrap_seed` in JSON
+4. **Identical Results**: Same configuration always produces same CIs
+
+## Output Structure
+
+The enhanced output includes an `aggregation` block with:
+- Method name (e.g., "equal_by_template_cluster_bootstrap_trimmed")
+- Bootstrap seed for reproducibility
+- Configuration (B=5000, center="trimmed", trim=0.2)
+- Template statistics (counts, imbalance ratio, IQR)
+
+This ensures complete transparency and reproducibility of the statistical methodology.

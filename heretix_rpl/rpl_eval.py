@@ -1,10 +1,11 @@
-import json, time, hashlib
+import json, time, hashlib, os
 import numpy as np
 from collections import defaultdict
 from openai import OpenAI
 from heretix_rpl.rpl_schema import RPL_JSON_SCHEMA
 from heretix_rpl.rpl_prompts import SYSTEM_RPL, USER_TEMPLATE, PARAPHRASES, PROMPT_VERSION
 from heretix_rpl.aggregation import aggregate_clustered, aggregate_simple
+from heretix_rpl.seed import make_bootstrap_seed
 
 client = None
 
@@ -209,7 +210,8 @@ def evaluate_rpl_gpt5(claim_text: str, model: str = "gpt-5", K: int = 7, R: int 
     """GPT-5 evaluation with K×R sampling and robust aggregation."""
     runs = []
     all_logits = []
-    by_tpl = defaultdict(list)
+    by_tpl = {}
+    tpl_hashes = []
     
     # K paraphrases × R replicates
     for k in range(K):
@@ -219,13 +221,15 @@ def evaluate_rpl_gpt5(claim_text: str, model: str = "gpt-5", K: int = 7, R: int 
                 out = call_rpl_once_gpt5(claim_text, phr, model)
                 p = out["raw"]["prob_true"]
                 l = _logit(p)
+                h = out["meta"]["prompt_sha256"]
                 runs.append({
                     **out,
                     "paraphrase_idx": k,
                     "replicate_idx": r
                 })
                 all_logits.append(l)
-                by_tpl[out["meta"]["prompt_sha256"]].append(l)
+                tpl_hashes.append(h)
+                by_tpl.setdefault(h, []).append(l)
             except Exception as e:
                 print(f"Warning: Failed sample k={k}, r={r}: {e}")
                 continue
@@ -233,9 +237,31 @@ def evaluate_rpl_gpt5(claim_text: str, model: str = "gpt-5", K: int = 7, R: int 
     if len(all_logits) < 3:
         raise ValueError(f"Too few successful samples: {len(all_logits)}")
     
+    # Decide the bootstrap seed
+    env_seed = os.getenv("HERETIX_RPL_SEED")
+    if env_seed is not None:
+        seed_val = int(env_seed)
+    else:
+        seed_val = make_bootstrap_seed(
+            claim=claim_text,
+            model=model,
+            prompt_version=PROMPT_VERSION,
+            k=K, r=R,
+            template_hashes=tpl_hashes,
+            center="trimmed", trim=0.2, B=5000
+        )
+    rng = np.random.default_rng(seed_val)
+    
     # Choose aggregator
     if agg == "clustered":
-        ell_hat, (lo_l, hi_l), diag = aggregate_clustered(by_tpl, B=2000)
+        ell_hat, (lo_l, hi_l), diag = aggregate_clustered(
+            by_template_logits=by_tpl,
+            B=5000,
+            rng=rng,
+            center="trimmed",
+            trim=0.2,
+            fixed_m=None
+        )
         stability_basis = [float(np.mean(v)) for v in by_tpl.values()]
     else:
         ell_hat, (lo_l, hi_l), diag = aggregate_simple(all_logits, B=1000)
@@ -253,6 +279,19 @@ def evaluate_rpl_gpt5(claim_text: str, model: str = "gpt-5", K: int = 7, R: int 
         f"{claim_text}|{model}|{PROMPT_VERSION}|K={K}|R={R}".encode("utf-8")
     ).hexdigest()[:12]
     
+    # Include aggregation config and seed in output
+    aggregation_info = {
+        "method": diag.get("method", "equal_by_template_cluster_bootstrap_trimmed"),
+        "B": 5000 if agg == "clustered" else 1000,
+        "center": "trimmed" if agg == "clustered" else "mean",
+        "trim": 0.2 if agg == "clustered" else 0.0,
+        "bootstrap_seed": seed_val if agg == "clustered" else None,
+        "n_templates": diag.get("n_templates"),
+        "counts_by_template": diag.get("counts_by_template"),
+        "imbalance_ratio": diag.get("imbalance_ratio"),
+        "template_iqr_logit": diag.get("template_iqr_logit")
+    }
+    
     return {
         "run_id": f"rpl-g5-{digest}",
         "claim": claim_text,
@@ -264,6 +303,7 @@ def evaluate_rpl_gpt5(claim_text: str, model: str = "gpt-5", K: int = 7, R: int 
             "reasoning_effort": "minimal",
             "verbosity": "low"
         },
+        "aggregation": aggregation_info,
         "timestamp": int(time.time()),
         "aggregates": {
             "prob_true_rpl": p_hat,
