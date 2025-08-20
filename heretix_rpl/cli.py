@@ -46,7 +46,8 @@ def rpl(
                    f"CI95=[{aggs['ci95'][0]:.3f}, {aggs['ci95'][1]:.3f}]  "  # Show confidence interval
                    f"stability={aggs['stability_score']:.3f}")  # Show stability score
         if not aggs['is_stable']:                            # Check stability flag
-            typer.echo("  ⚠️  WARNING: Estimate is UNSTABLE (CI width > 0.2)", err=True)  # Warn if unstable
+            width = result['aggregation']['stability_width']         # Get stability threshold from config
+            typer.echo(f"  ⚠️  WARNING: Estimate is UNSTABLE (CI width > {width})", err=True)  # Warn if unstable
     else:                                                    # Legacy model results display
         typer.echo(f"Wrote {out}  p_RPL={result['aggregates']['prob_true_rpl']:.3f}  "  # Show probability
                    f"var(logit)={result['aggregates'].get('logit_variance', 0.0):.4f}")  # Show variance
