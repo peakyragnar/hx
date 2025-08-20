@@ -14,7 +14,8 @@ def rpl(
     k: int = typer.Option(7, help="Number of paraphrases (K)"),
     r: int = typer.Option(3, help="Replicates per paraphrase (R) - for GPT-5 only"),
     seed: int = typer.Option(None, help="Optional seed (GPT-4 only)"),
-    out: Path = typer.Option(Path("runs/rpl_run.json"), help="Output JSON file")
+    out: Path = typer.Option(Path("runs/rpl_run.json"), help="Output JSON file"),
+    agg: str = typer.Option("clustered", help="Aggregator: clustered | simple")
 ):
     load_dotenv()
     if not os.getenv("OPENAI_API_KEY"):
@@ -27,7 +28,7 @@ def rpl(
     if model.startswith("gpt-5"):
         typer.echo(f"Running GPT-5 with K={k} paraphrases × R={r} replicates = {k*r} samples")
     
-    result = evaluate_rpl(claim_text=claim, model=model, k=k, seed=seed, r=r)
+    result = evaluate_rpl(claim_text=claim, model=model, k=k, seed=seed, r=r, agg=agg)
     out.write_text(json.dumps(result, indent=2))
     
     # Display results based on model type

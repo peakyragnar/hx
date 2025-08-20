@@ -15,3 +15,7 @@ dependencies = [
 
 [project.scripts]
 heretix-rpl = "heretix_rpl.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["heretix_rpl*"]
+exclude = ["runs*"]
