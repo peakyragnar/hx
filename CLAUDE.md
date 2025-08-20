@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+This project uses uv (NOT venv)
+
 ## ⚠️ IMPORTANT: Core Design Integrity
 
 **NEVER make changes to the core design methodology without explicitly asking the user first.** This includes:

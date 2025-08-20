@@ -306,3 +306,5 @@ Contact points in code
 	•	Stats core: heretix_rpl/aggregation.py (look here if you change K/R/B/trim logic).
 
 Truth north: Pay for movement and durability, expose priors and amplifiers, and make every number auditably boring.
+
+This project used uv NOT venv

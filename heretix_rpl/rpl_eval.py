@@ -1,9 +1,9 @@
 """
 Core Evaluation Engine for Raw Prior Lens (RPL) Assessment
 
-This module implements the main RPL evaluation system, handling both GPT-5 (Responses API)
-and legacy GPT-4 (Chat API) models. It manages sampling strategies, API calls, statistical
-aggregation, and result formatting for belief probability estimation.
+Main RPL evaluation system supporting GPT-5 (Responses API) and GPT-4 (Chat API).
+Handles K×R sampling, API calls, statistical aggregation, and result formatting.
+Provides calibrated stability scoring and comprehensive provenance tracking.
 """
 import json, time, hashlib, os, logging                     # Standard libraries for data, timing, hashing, environment, logging
 import numpy as np                                           # Numerical computations and statistics
@@ -48,6 +48,8 @@ def _logit(p: float) -> float:                               # Convert probabili
     return np.log(p/(1-p))                                   # Return log-odds transformation
 
 def _sigmoid(x: float) -> float:                            # Convert log-odds back to probability
+    """Convert log-odds to probability, with overflow protection."""  # Function purpose
+    x = np.clip(x, -709, 709)                                # Prevent exp overflow while preserving precision
     return float(1/(1+np.exp(-x)))                           # Sigmoid function (inverse of logit)
 
 def median_of_means(logits, buckets=5):                     # Robust aggregation using median-of-means
@@ -73,9 +75,11 @@ def bootstrap_ci_logits(logits, B=1000, alpha=0.05):       # Bootstrap confidenc
     return float(lo), float(hi)                              # Return confidence interval bounds
 
 def compute_stability(logits):                              # Compute stability score from logit spread
-    """Compute stability score based on IQR of logits."""     # Function purpose
-    iqr_l = float(np.percentile(logits, 75) - np.percentile(logits, 25))  # Interquartile range in logit space
-    stability = 1.0 / (1.0 + iqr_l)                          # Stability decreases with higher IQR
+    """Compute stability score based on IQR of logits (legacy)."""  # Function purpose
+    # Legacy function kept for backward compatibility
+    # New code should use compute_stability_calibrated from metrics module
+    from heretix_rpl.metrics import compute_stability_calibrated
+    stability, _ = compute_stability_calibrated(logits)      # Use calibrated version
     return stability                                         # Return stability score (0-1)
 
 def call_rpl_once_gpt5(claim_text: str, paraphrase_prompt: str, model: str = "gpt-5"):  # Single GPT-5 API call
@@ -284,9 +288,10 @@ def evaluate_rpl_gpt5(claim_text: str, model: str = "gpt-5", K: int = 7, R: int 
     p_hat = _sigmoid(ell_hat)                                # Convert logit estimate to probability
     lo_p, hi_p = _sigmoid(lo_l), _sigmoid(hi_l)              # Convert CI bounds to probabilities
     
-    # Stability score
-    iqr_l = float(np.percentile(stability_basis, 75) - np.percentile(stability_basis, 25))  # IQR in logit space
-    stability = 1.0 / (1.0 + iqr_l)                          # Stability score (0-1, higher is more stable)
+    # Stability score using calibrated metrics
+    from heretix_rpl.metrics import compute_stability_calibrated, stability_band_from_iqr
+    stability, iqr_l = compute_stability_calibrated(stability_basis)  # Get calibrated score and raw IQR
+    stability_band = stability_band_from_iqr(iqr_l)          # Get categorical band
     
     # Stable run id for provenance
     digest = hashlib.sha256(                                 # Create reproducible run identifier
@@ -325,7 +330,9 @@ def evaluate_rpl_gpt5(claim_text: str, model: str = "gpt-5", K: int = 7, R: int 
             "prob_true_rpl": p_hat,                             # Final probability estimate
             "ci95": [lo_p, hi_p],                               # 95% confidence interval
             "ci_width": hi_p - lo_p,                            # Confidence interval width
-            "stability_score": stability,                       # Stability score (0-1)
+            "paraphrase_iqr_logit": iqr_l,                      # Raw IQR in logit space (measurement)
+            "stability_score": stability,                       # Calibrated stability score (0-1)
+            "stability_band": stability_band,                   # Categorical band (high/medium/low)
             "is_stable": (hi_p - lo_p) <= config.stability_width  # Stability flag from config
         },
         "paraphrase_results": runs,                            # Individual API responses

@@ -1,9 +1,9 @@
 """
 Prompt Templates for Raw Prior Lens (RPL) Evaluation
 
-This module defines the system instructions, user templates, and paraphrase variations
-used to query models for their internal belief about claim truth probabilities.
-All prompts are designed to elicit raw priors without external retrieval.
+System instructions, user templates, and paraphrase variations for belief elicitation.
+Queries models for internal claim truth probabilities without external retrieval.
+Five paraphrase templates ensure robust measurement across prompt variations.
 """
 SYSTEM_RPL = """You are the Raw Prior Lens for claim evaluation.  # Define the model's role
 Your job: estimate the probability a short declarative claim is true  # Primary task

@@ -39,3 +39,7 @@ dist/
 build/
 *.egg-info/
 .eggs/
+
+# Testing
+.pytest_cache/
+.hypothesis/

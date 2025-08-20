@@ -1,9 +1,9 @@
 """
 Deterministic Seed Generation for Bootstrap Reproducibility
 
-This module creates reproducible random number generator seeds from run configuration.
-The same inputs always produce the same seed, ensuring identical confidence intervals
-across runs while allowing seeds to change when configuration changes meaningfully.
+Creates reproducible RNG seeds from run configuration for identical confidence intervals.
+Same inputs always produce same seed while configuration changes update seeds meaningfully.
+Ensures statistical reproducibility across runs and environments.
 """
 from __future__ import annotations                           # Enable forward type references
 import hashlib                                               # Cryptographic hashing functions

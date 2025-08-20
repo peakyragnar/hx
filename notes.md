@@ -147,3 +147,149 @@ Clustered aggregation is the default (and statistically correct) method that fix
   - prob_true_rpl: Probability the claim is true (e.g., 0.237 = 23.7% chance)
   - ci95: Confidence interval [lower, upper] showing uncertainty
   - stability_score: How consistent the result is (closer to 1 = more stable)
+
+  TEST SUITE
+
+
+  ✅ Updated all scripts and hooks to use uv:
+  - run_tests.sh - Now detects and uses uv run pytest
+  - .git/hooks/pre-commit - Uses uv run pytest when available
+  - .git/hooks/pre-push - Uses uv run pytest when available
+  - tests/README.md - Updated documentation for uv commands
+
+  🧪 How to Test the Test Suite with uv
+
+  Quick test commands:
+
+  # Run fast tests (what pre-commit runs)
+  ./run_tests.sh fast
+
+  # Run all tests
+  ./run_tests.sh
+
+  # Run with coverage
+  ./run_tests.sh coverage
+
+  # Or directly with uv
+  uv run pytest tests -m "not slow" -v  # Fast tests
+  uv run pytest tests -v                 # All tests
+
+  🪝 Git Hooks Explained
+
+  Git hooks are scripts that Git automatically runs at specific points in your workflow. They're stored in .git/hooks/ and act as automated
+  gatekeepers for code quality.
+
+  How Git Hooks Work
+
+  1. Location: .git/hooks/ directory
+  2. Trigger: Git automatically executes them at specific events
+  3. Control: If a hook exits with non-zero status, Git blocks the operation
+  4. Languages: Any executable script (bash, python, etc.)
+
+  Our Two Hooks
+
+  🏃 Pre-commit Hook (Fast Tests)
+
+  Trigger: Every time you run git commit
+
+⏺ Read(.git/hooks/pre-commit)
+  ⎿  Read 31 lines (ctrl+r to expand)
+
+⏺ What it does:
+  - Runs only fast tests (marked with -m "not slow")
+  - Takes ~2 seconds
+  - Blocks commit if tests fail
+  - Can be bypassed with --no-verify
+
+  🚀 Pre-push Hook (Full Tests)
+
+  Trigger: Every time you run git push
+
+⏺ Read(.git/hooks/pre-push)
+  ⎿  Read 31 lines (ctrl+r to expand)
+
+⏺ What it does:
+  - Runs all tests including slow ones
+  - Takes longer (~10+ seconds)
+  - Blocks push if any tests fail
+  - Ensures code quality before sharing
+
+  🔄 Testing Workflow in Practice
+
+  Here's how the hooks integrate into your development workflow:
+
+  # 1. Make changes to code
+  vim heretix_rpl/aggregation.py
+
+  # 2. Try to commit (pre-commit hook runs automatically)
+  git add .
+  git commit -m "fix aggregation bug"
+
+  🧪 Running fast statistical tests...
+  ===== test session starts =====
+  ... (fast tests run in ~2 seconds)
+  ✅ Fast tests passed!
+  [main abc1234] fix aggregation bug
+
+  # 3. Try to push (pre-push hook runs automatically)  
+  git push
+
+  🧪 Running full statistical test suite (including slow tests)...
+  ===== test session starts =====
+  ... (all tests run in ~10 seconds)
+  ✅ All tests passed! Ready to push.
+
+  🆚 Hooks vs Manual Testing
+
+  | Aspect      | Git Hooks                    | Manual Testing   |
+  |-------------|------------------------------|------------------|
+  | Automation  | Automatic on git commands    | Manual execution |
+  | Speed       | Fast tests only (pre-commit) | You choose       |
+  | Coverage    | Staged progression           | Any subset       |
+  | Enforcement | Blocks bad code              | Optional         |
+  | Bypass      | --no-verify flag             | N/A              |
+
+  📊 Test Categories by Hook
+
+  Pre-commit (Fast - 82 tests)
+
+  # These run automatically on git commit
+  uv run pytest tests -m "not slow" --quiet
+  - ✅ Logit/sigmoid transformations
+  - ✅ Basic aggregation
+  - ✅ Edge cases
+  - ✅ Seed determinism
+  - ✅ Configuration tests
+  - ✅ Property-based tests (bounded)
+
+  Pre-push (All - 84 tests)
+
+  # These run automatically on git push
+  uv run pytest tests -v
+  - Everything from fast tests, PLUS:
+  - 🐢 Bootstrap CI coverage tests
+  - 🐢 Large sample convergence
+  - 🐢 Heavy statistical simulations
+
+  🛠️ Manual Override Options
+
+  # Skip pre-commit hook
+  git commit -m "message" --no-verify
+
+  # Test hooks manually
+  .git/hooks/pre-commit   # Test the pre-commit hook
+  .git/hooks/pre-push     # Test the pre-push hook
+
+  # Run same tests manually
+  ./run_tests.sh fast     # Same as pre-commit
+  ./run_tests.sh          # Same as pre-push
+
+  🎯 Why This Design?
+
+  1. Developer Experience: Fast feedback loop (2s vs 10s)
+  2. Quality Gates: Multiple checkpoints prevent bad code
+  3. Efficiency: Heavy tests only run before sharing
+  4. Flexibility: Can bypass when needed
+  5. CI Alignment: Same tests run locally and in CI
+
+  The hooks ensure statistical correctness is verified at every stage without slowing down development!

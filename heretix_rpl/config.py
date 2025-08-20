@@ -1,9 +1,9 @@
 """
-Environment-driven configuration for Raw Prior Lens (RPL) evaluation with overrides and defaults.
+Environment-driven Configuration for Raw Prior Lens (RPL) Evaluation
 
-Provides RPLConfig dataclass with configurable parameters for min samples, bootstrap iterations, 
-trimming thresholds, and stability criteria. Supports environment variable overrides while 
-maintaining sensible defaults for all RPL system parameters.
+Provides RPLConfig dataclass with environment variable overrides and sensible defaults.
+Controls min samples, bootstrap iterations, trimming thresholds, and stability criteria.
+Centralizes all RPL system parameters for consistent behavior across evaluations.
 """
 import os                                                    # Environment variable access
 from dataclasses import dataclass                           # Configuration structure

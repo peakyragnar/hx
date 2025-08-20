@@ -1,9 +1,9 @@
 """
 JSON Schema for Raw Prior Lens (RPL) Model Responses
 
-This module defines the structured output schema that models must follow when
-providing RPL evaluations. The schema enforces required fields, data types,
-and constraints to ensure consistent, parseable responses.
+Structured output schema enforcing required fields, data types, and constraints.
+Ensures consistent, parseable model responses with probability bounds and arrays.
+Used with OpenAI's structured output feature for strict JSON compliance.
 """
 RPL_JSON_SCHEMA = {                                          # OpenAI structured output schema
     "name": "RPLScore",                                      # Schema name identifier

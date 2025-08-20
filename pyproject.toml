@@ -13,9 +13,22 @@ dependencies = [
     "jsonschema>=4.22",
 ]
 
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+    "pytest-cov>=4.0",
+    "hypothesis>=6.0,<7.0",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.0",
+    "hypothesis>=6.0,<7.0",
+    "pre-commit>=3.0",
+]
+
 [project.scripts]
 heretix-rpl = "heretix_rpl.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["heretix_rpl*"]
-exclude = ["runs*"]
+exclude = ["runs*", "tests*"]
