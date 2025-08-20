@@ -1,8 +1,9 @@
 """
-Tests for probability <-> logit transformations.
+Tests for Probability-Logit Transformations
 
-Verifies that logit and sigmoid functions are correct inverses,
-handle edge cases properly, and maintain expected mathematical properties.
+Verifies logit and sigmoid functions are correct inverses with proper edge cases.
+Tests clamping behavior, overflow protection, and mathematical properties.
+Ensures transforms preserve ordering and handle numerical precision limits.
 """
 import pytest                                                 # Testing framework
 import numpy as np                                           # Numerical operations

@@ -1,9 +1,9 @@
 """
 CLI Entry Point for Heretix Raw Prior Lens (RPL) Evaluator
 
-This module provides the command-line interface for running RPL evaluations.
-It parses arguments, validates configuration, calls the evaluation engine,
-and displays results to the user.
+Command-line interface for running RPL evaluations with argument parsing and validation.
+Handles configuration, calls evaluation engine, and displays formatted results.
+Supports JSON output and environment variable overrides for all parameters.
 """
 import os                                                    # Access environment variables
 import json                                                  # Write results to JSON file

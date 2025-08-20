@@ -1,9 +1,9 @@
 """
-Tests for deterministic seed generation.
+Tests for Deterministic Seed Generation
 
-Verifies that the same configuration always produces the same seed,
-different configurations produce different seeds, and environment
-overrides work correctly.
+Verifies identical configurations produce identical seeds for reproducibility.
+Tests that configuration changes produce different seeds for independence.
+Validates environment variable overrides and bootstrap determinism.
 """
 import pytest                                                 # Testing framework
 import os                                                    # Environment variables
@@ -132,8 +132,9 @@ class TestSeedGeneration:                                   # Test seed generati
         assert seed_k7_r3 != seed_k7_r4, "Different r should produce different seed"  # Must differ
         
         # Test B parameter
-        seed_b5000 = make_bootstrap_seed(k=7, r=3, B=5000, **base_config)  # Original B
-        seed_b1000 = make_bootstrap_seed(k=7, r=3, B=1000, **base_config)  # Different B
+        base_config_no_b = {k: v for k, v in base_config.items() if k != "B"}  # Remove B from base config
+        seed_b5000 = make_bootstrap_seed(k=7, r=3, B=5000, **base_config_no_b)  # Original B
+        seed_b1000 = make_bootstrap_seed(k=7, r=3, B=1000, **base_config_no_b)  # Different B
         assert seed_b5000 != seed_b1000, "Different B should produce different seed"  # Must differ
 
 

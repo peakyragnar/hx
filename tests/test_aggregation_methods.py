@@ -1,8 +1,9 @@
 """
-Tests for aggregation methods (simple and clustered).
+Tests for Statistical Aggregation Methods
 
-Verifies correct equal-by-template weighting, trimmed mean behavior,
-bootstrap mechanics, and aggregation properties.
+Validates simple and clustered aggregation with equal-by-template weighting.
+Tests trimmed mean behavior, bootstrap mechanics, and CI properties. 
+Ensures cluster bootstrap handles template imbalance correctly.
 """
 import pytest                                                 # Testing framework
 import numpy as np                                           # Numerical operations

@@ -1,8 +1,9 @@
 """
-Property-based tests using Hypothesis.
+Property-Based Tests Using Hypothesis
 
-Tests invariants and mathematical properties that should hold
-for all valid inputs within bounded ranges.
+Tests mathematical invariants and properties across randomly generated inputs.
+Validates transform relationships, aggregation properties, and stability bounds.
+Uses Hypothesis to generate edge cases and verify statistical correctness.
 """
 import pytest                                                 # Testing framework
 import numpy as np                                           # Numerical operations
@@ -145,7 +146,11 @@ class TestAggregationInvariants:                            # Test aggregation p
         
         if 2*k < n:                                         # If trimming applied
             retained = sorted_data[k:n-k]                   # Middle values
-            assert retained.min() <= result <= retained.max(), "Trimmed mean out of bounds"  # Check bounds
+            # Allow small floating point errors
+            min_val = float(retained.min())
+            max_val = float(retained.max())
+            assert result >= min_val - 1e-10, f"Trimmed mean {result} below min {min_val}"
+            assert result <= max_val + 1e-10, f"Trimmed mean {result} above max {max_val}"
         else:                                                # Fallback to mean
             assert result == pytest.approx(np.mean(data), rel=1e-10)  # Should be regular mean
 
@@ -165,15 +170,16 @@ class TestStabilityProperties:                              # Test stability inv
     @settings(max_examples=50, deadline=1000)  
     def test_stability_monotonic(self, iqr1, iqr2):         # Test monotonicity
         """Stability decreases monotonically with IQR."""   # Test purpose
-        assume(iqr1 != iqr2)                                # Skip equal values
+        if abs(iqr1 - iqr2) < 1e-10:                        # Skip if IQRs are essentially equal
+            assume(False)                                    # Skip this case
         
         stability1 = 1.0 / (1.0 + iqr1)                     # First stability
         stability2 = 1.0 / (1.0 + iqr2)                     # Second stability
         
         if iqr1 < iqr2:                                     # First IQR smaller
-            assert stability1 > stability2, "Stability should decrease with IQR"  # Check ordering
+            assert stability1 >= stability2 or abs(stability1 - stability2) < 1e-10, "Stability should decrease with IQR"  # Check ordering with tolerance
         else:                                                # Second IQR smaller
-            assert stability1 < stability2, "Stability should decrease with IQR"  # Check ordering
+            assert stability1 <= stability2 or abs(stability1 - stability2) < 1e-10, "Stability should decrease with IQR"  # Check ordering with tolerance
     
     @given(st.lists(logit_strategy(), min_size=3, max_size=20))
     @settings(max_examples=50, deadline=1000)

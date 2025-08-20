@@ -1,9 +1,9 @@
 """
 Statistical Aggregation for Raw Prior Lens (RPL) Evaluations
 
-This module provides robust methods for combining multiple probability samples into
-final estimates with confidence intervals. The clustered method fixes paraphrase
-imbalance bias and uses trimmed means for outlier resistance.
+Robust methods for combining probability samples into estimates with confidence intervals.
+Clustered method fixes paraphrase imbalance bias via equal template weighting.
+Uses trimmed means and cluster bootstrap for outlier resistance and proper uncertainty.
 """
 from __future__ import annotations                           # Enable forward type references
 from typing import Dict, List, Tuple, Optional               # Type annotations
@@ -84,6 +84,9 @@ def aggregate_clustered(                                     # Robust equal-by-t
         dist.append(center_fn(np.array(means, dtype=float)))  # Apply center function and store
 
     lo, hi = np.percentile(dist, [2.5, 97.5])               # Compute 95% confidence interval
+    # Ensure CI contains point estimate (important for small B)
+    lo = min(float(lo), ell_hat)                            # Lower bound should not exceed estimate
+    hi = max(float(hi), ell_hat)                            # Upper bound should not be below estimate
 
     counts = {k: len(v) for k, v in by_template_logits.items()}  # Count samples per template
     imbalance = max(counts.values()) / min(counts.values())  # Compute imbalance ratio

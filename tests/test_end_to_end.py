@@ -1,8 +1,9 @@
 """
-End-to-end tests with stubbed OpenAI calls.
+End-to-End Tests with Stubbed OpenAI Calls
 
-Tests the complete evaluation pipeline without external dependencies,
-using mock responses to verify the full system behavior.
+Tests complete evaluation pipeline without external dependencies using mock responses.
+Validates full RPL workflow including configuration, sampling, and result formatting.
+Ensures system behavior correctness across different aggregation methods.
 """
 import pytest                                                 # Testing framework
 import numpy as np                                           # Numerical operations

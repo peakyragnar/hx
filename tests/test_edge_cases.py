@@ -1,8 +1,9 @@
 """
-Tests for edge cases and boundary conditions.
+Tests for Edge Cases and Boundary Conditions
 
-Verifies system behavior with extreme inputs, minimal data,
-and boundary values.
+Verifies robust system behavior with extreme inputs, minimal data, and boundary values.
+Tests clamped probabilities, small sample aggregation, and bootstrap edge cases.
+Ensures graceful handling of degenerate cases and numerical precision limits.
 """
 import pytest                                                 # Testing framework
 import numpy as np                                           # Numerical operations
