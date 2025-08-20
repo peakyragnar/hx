@@ -1,155 +1,152 @@
-cli.py explained
+1. __init__.py
 
-This cli.py file implements a command-line interface for the Raw Prior Lens (RPL) evaluation system from the Heretix design. Here's what it
-  does:
+  - Empty file that makes heretix_rpl a Python package
+  - Allows you to import modules with from heretix_rpl import ...
 
-  Purpose: CLI tool to evaluate claims using the Raw Prior Lens approach (model responses without external retrieval/citations)
+2. cli.py - Command Line Interface
 
-  Main command: rpl
+  Purpose: The entry point when you run uv run heretix-rpl
 
-  Parameters:
-  - claim - The claim text to evaluate
-  - model - AI model to use (defaults to "gpt-4o-mini")
-  - k - Number of evaluations to run (defaults to 5)
-  - seed - Random seed for reproducibility (defaults to 42)
-  - out - Output JSON file (defaults to "rpl_run.json")
+  What it does:
+  - Parses command line arguments (--claim, --k, --r, --agg, etc.)
+  - Checks for OpenAI API key
+  - Calls the main evaluation function
+  - Saves results to JSON file
+  - Displays summary results in terminal
 
-  Workflow:
-  1. Calls evaluate_rpl() function with the claim and parameters
-  2. Saves results to JSON file
-  3. Prints the aggregated probability that the claim is true
+  Key function: rpl() - the main command that gets called
 
-  Usage example:
-  uv run python heretix_rpl/cli.py rpl "String theory has crowded out physics progress" --k 10 --out results.json
+3. rpl_prompts.py - Prompt Templates
 
-  This implements the first lens from the Heretix design - capturing the model's raw prior beliefs before any evidence retrieval influences the
-  response.
+  Purpose: Contains all the text prompts sent to GPT-5
 
-rpl_eval.py explained
+  What it contains:
+  - SYSTEM_RPL: Instructions telling GPT-5 to be the "Raw Prior Lens" evaluator
+  - USER_TEMPLATE: The format for asking about a claim
+  - PARAPHRASES: 5 different ways to ask the same question (to avoid wording bias)
+  - PROMPT_VERSION: Version tracking for prompts
 
+4. rpl_schema.py - Response Validation
 
-  Purpose
+  Purpose: Ensures GPT-5 returns properly structured JSON
 
-  Evaluates claims by measuring the AI model's "raw prior" - its beliefs without external retrieval or evidence, using only training data
-  knowledge.
+  What it defines:
+  - Required fields: prob_true, confidence_self, assumptions, etc.
+  - Data types and constraints (probabilities must be 0-1)
+  - Array size limits (3-6 reasoning bullets, 2-4 contrary considerations)
 
-  Key Functions
+  5. seed.py - Deterministic Seeding (NEW)
 
-  call_rpl_once() - Single evaluation:
-  - Takes a claim and paraphrase prompt
-  - Uses OpenAI's Responses API with structured JSON output
-  - Returns probability that the claim is true (0-1)
-  - Uses deterministic settings (temperature=0) for consistency
+  Purpose: Creates reproducible random numbers for bootstrap confidence intervals
 
-  evaluate_rpl() - Multiple evaluation aggregation:
-  - Runs k evaluations with different paraphrases
-  - Converts probabilities to logits for statistical aggregation
-  - Returns mean probability in logit space, then converts back
-  - Tracks variance to measure consistency
+  What it does:
+  - Takes your claim, model, settings, and templates
+  - Creates a unique "fingerprint" using SHA-256 hash
+  - Returns a seed number that's always the same for identical inputs
+  - Ensures same claim + settings = same confidence intervals
 
-  Statistical Approach
+  6. aggregation.py - Statistical Aggregation (ENHANCED)
 
-  - Logit transformation: Converts probabilities (0-1) to unbounded logits for proper averaging
-  - Variance tracking: Measures how consistent the model's responses are across paraphrases
-  - Stable run IDs: SHA256 hash for reproducibility and provenance
+  Purpose: Combines 21 probability samples into a final estimate
 
-  Output Structure
+  Two methods:
+  - aggregate_simple(): Old method, direct average (can be biased)
+  - aggregate_clustered(): New robust method with:
+    - Equal weighting per template (fixes bias)
+    - Trimmed mean (drops outlier templates)
+    - 5000 bootstrap iterations (smooth confidence intervals)
+    - Deterministic seeding (reproducible results)
 
-  Returns comprehensive metadata including:
-  - Individual paraphrase results
-  - Aggregated prob_true_rpl (the key RPL metric)
-  - Logit variance (consistency measure)
-  - Timestamps and versioning for reproducibility
+  Helper: _trimmed_mean() - Drops extreme values before averaging
 
-  This implements the first lens from the Heretix design - capturing the model's training-distribution prior before any evidence retrieval
-  influences it.
+  7. rpl_eval.py - Core Evaluation Engine (ENHANCED)
 
-  rpl_prompts.py
+  Purpose: Orchestrates the entire evaluation process
 
-  This rpl_prompts.py file contains the prompting strategy for the Raw Prior Lens evaluation. Here's the breakdown:
+  Main functions:
+  - evaluate_rpl_gpt5(): Handles GPT-5 evaluation with K×R sampling
+  - call_rpl_once_gpt5(): Makes single API call to GPT-5
+  - evaluate_rpl(): Router that picks GPT-5 vs legacy path
 
-  System Prompt (SYSTEM_RPL)
+  What it does:
+  1. Makes K×R API calls (e.g., 7×3 = 21 calls)
+  2. Groups samples by template hash
+  3. Generates deterministic seed (or uses HERETIX_RPL_SEED)
+  4. Calls robust aggregation with seeded random number generator
+  5. Returns comprehensive JSON with results, seed, and diagnostics
 
-  Core mission: Extract the model's "raw prior" - internal knowledge without external retrieval
+  The Flow:
 
-  Key constraints:
-  - No browsing, searching, or citations allowed
-  - Must return structured JSON matching a schema
-  - Focus on literal, empirical truth probabilities
+  1. CLI parses your command
+  2. rpl_eval orchestrates K×R sampling
+  3. rpl_prompts provides the text templates
+  4. rpl_schema validates GPT-5 responses
+  5. seed creates reproducible randomness
+  6. aggregation combines results robustly
+  7. CLI saves and displays final results
 
-  Quality guidelines:
-  1. Handle ambiguity: Make reasonable assumptions for underspecified claims
-  2. Literal interpretation: Treat causal claims as actual causation
-  3. Uncertainty handling: Default to ~0.5 when lacking clear signal
-  4. Structured reasoning: Concise, falsifiable bullet points
-  5. Self-criticism: Include 2-4 contrary considerations
-  6. No fabrication: Explicitly forbids made-up references
+  The system is now unbiased (equal template weighting), robust (trimmed mean), and reproducible (deterministic seeding).
 
-  User Template
+  The Import Chain
 
-  Simple structure requesting JSON with specific keys:
-  - prob_true - Core probability estimate (0-1)
-  - confidence_self - Model's confidence in its own assessment
-  - assumptions[] - What the model assumed about ambiguous parts
-  - reasoning_bullets[] - Factual reasoning points
-  - contrary_considerations[] - Potential counterarguments
-  - ambiguity_flags[] - Areas of uncertainty
+  Look at the imports in cli.py:
+  from heretix_rpl.rpl_eval import evaluate_rpl
 
-  Paraphrases Array
+  Then look at the imports in rpl_eval.py:
+  from heretix_rpl.rpl_prompts import SYSTEM_RPL, USER_TEMPLATE, PARAPHRASES, PROMPT_VERSION
 
-  5 different ways to ask the same question to:
-  - Test consistency across prompt variations
-  - Reduce sensitivity to specific wording
-  - Enable statistical aggregation across multiple runs
+  What Happens When You Run the Command
 
-  Versioning
+  When you run uv run heretix-rpl --claim "test", here's the sequence:
 
-  PROMPT_VERSION tracks changes for reproducibility and comparison across runs.
+  1. Python loads cli.py
 
-  This implements the "no external retrieval" constraint that's central to measuring the model's training-distribution prior in the Heretix
-  design.
+  - Python sees the import: from heretix_rpl.rpl_eval import evaluate_rpl
+  - This forces Python to load and execute rpl_eval.py
 
-  rpl_schema.py explained
+  2. Python loads rpl_eval.py
 
-  This rpl_schema.py file defines the strict JSON schema for Raw Prior Lens responses. Here's what it enforces:
+  - Python sees: from heretix_rpl.rpl_prompts import SYSTEM_RPL, USER_TEMPLATE, PARAPHRASES, PROMPT_VERSION
+  - This forces Python to load and execute rpl_prompts.py
+  - The prompts are now loaded into memory as variables
 
-  Schema Structure
+  3. Python loads rpl_prompts.py
 
-  Name: "RPLScore" - identifies this as an RPL evaluation output
+  - All the prompt templates get defined:
+  SYSTEM_RPL = """You are the Raw Prior Lens..."""
+  PARAPHRASES = [
+      "Assess the probability that...",
+      "Estimate how likely it is...",
+      # etc.
+  ]
 
-  Strict mode: "strict": True ensures exact compliance with OpenAI's structured outputs
+  4. Now cli.py can run
 
-  Required Fields
+  - The rpl() function calls: evaluate_rpl(claim_text=claim, ...)
+  - evaluate_rpl() already has access to PARAPHRASES because it was imported
+  - Inside the evaluation loop: phr = PARAPHRASES[k % len(PARAPHRASES)]
 
-  Core metrics:
-  - prob_true - Probability claim is true (0.0 to 1.0)
-  - confidence_self - Model's confidence in its assessment (0.0 to 1.0)
+  Key Point: Imports Happen BEFORE Execution
 
-  Reasoning components:
-  - assumptions - Array of strings (any length) for handling ambiguous claims
-  - reasoning_bullets - 3-6 concise factual reasoning points
-  - contrary_considerations - 2-4 counterarguments or ways the model could be wrong
-  - ambiguity_flags - Array noting areas of uncertainty
+  The prompts are loaded during the import phase, not when the function is called. By the time cli.py:rpl() runs, all the prompt templates are
+  already in memory.
 
-  Quality Controls
+  The Actual Flow:
 
-  Enforced reasoning depth:
-  - Minimum 3 reasoning bullets (prevents shallow analysis)
-  - Maximum 6 reasoning bullets (prevents rambling)
-  - Minimum 2 contrary considerations (forces self-criticism)
-  - Maximum 4 contrary considerations (keeps focused)
+  uv run heretix-rpl --claim "test"
+      ↓
+  cli.py loads
+      ↓
+  cli.py imports evaluate_rpl from rpl_eval.py
+      ↓
+  rpl_eval.py loads and imports PARAPHRASES from rpl_prompts.py
+      ↓
+  rpl_prompts.py loads, defines all prompt templates
+      ↓
+  Now cli.py:rpl() function can execute
+      ↓
+  Calls evaluate_rpl() which already has PARAPHRASES available
+      ↓
+  Uses PARAPHRASES[k % len(PARAPHRASES)] to get prompt templates
 
-  Data validation:
-  - Probabilities bounded to [0,1]
-  - No additional properties allowed ("additionalProperties": False)
-  - All fields required (no optional responses)
-
-  Purpose
-
-  This schema ensures every RPL evaluation produces:
-  1. Quantified beliefs (probabilities)
-  2. Transparent reasoning (structured explanations)
-  3. Self-awareness (confidence + contrary views)
-  4. Consistency (standardized format for aggregation)
-
-  This supports the Heretix goal of measuring and comparing model beliefs in a structured, reproducible way.
+  So the prompts are "pre-loaded" through the Python import system before any evaluation actually happens!
