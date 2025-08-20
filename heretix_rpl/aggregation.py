@@ -23,6 +23,8 @@ def aggregate_simple(all_logits: List[float], B: int = 1000) -> Tuple[float, Tup
 
 def _trimmed_mean(x: np.ndarray, trim: float = 0.2) -> float:
     """Symmetric trimmed mean; drop trim*len(x) from each tail (in logit space)."""  # Function purpose
+    if trim >= 0.5:                                          # Validate trim percentage
+        raise ValueError(f"Trim must be < 0.5, got {trim}")  # Invalid trim percentage
     x = np.sort(np.asarray(x, dtype=float))                  # Sort values ascending
     n = x.size                                               # Number of values
     k = int(n * trim)                                        # Number to trim from each end
@@ -91,6 +93,15 @@ def aggregate_clustered(                                     # Robust equal-by-t
     counts = {k: len(v) for k, v in by_template_logits.items()}  # Count samples per template
     imbalance = max(counts.values()) / min(counts.values())  # Compute imbalance ratio
     tpl_iqr = float(np.percentile(tpl_means, 75) - np.percentile(tpl_means, 25))  # Template IQR
+    
+    # Handle negative IQR from numerical precision vs. real errors
+    if tpl_iqr < 0:                                          # Check for negative IQR
+        if tpl_iqr >= -1e-10:                                # Tiny numerical error
+            import warnings                                  # Import for warning
+            warnings.warn(f"Clamping negative IQR {tpl_iqr:.2e} to 0.0 (numerical precision)", RuntimeWarning)  # Warn user
+            tpl_iqr = 0.0                                    # Clamp to valid range
+        else:                                                # Large negative indicates real problem
+            raise ValueError(f"IQR is significantly negative ({tpl_iqr:.6f}), indicating data corruption or calculation error")  # Hard fail
 
     return ell_hat, (float(lo), float(hi)), {                # Return estimate, CI, and diagnostics
         "n_templates": T,                                    # Number of unique templates

@@ -11,7 +11,14 @@ from typing import Union, List                               # Type annotations
 
 
 def stability_from_iqr(iqr_logit: float, s: float = 0.2, alpha: float = 1.7) -> float:  # Convert IQR to calibrated stability
-    """Parametric stability mapping: 1/(1+(IQR/s)^α) with s=0.2, α=1.7."""  # Function purpose
+    """
+    Parametric stability mapping: 1/(1+(IQR/s)^α) with calibrated parameters.
+    
+    Args:
+        iqr_logit: Interquartile range in logit space
+        s: Midpoint parameter - IQR=0.2 maps to stability=0.5 (chosen for business semantics)
+        alpha: Steepness parameter - controls falloff rate (1.7 gives good high/medium/low separation)
+    """
     iqr = max(0.0, float(iqr_logit))                        # Ensure non-negative IQR
     s_safe = max(s, 1e-12)                                  # Avoid division by zero
     alpha_safe = max(alpha, 1e-6)                           # Ensure positive exponent

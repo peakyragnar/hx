@@ -208,9 +208,9 @@ class TestTrimmedMean:                                      # Test trimmed mean 
     def test_fallback_for_small_n(self):                    # Test fallback
         """Test fallback to regular mean when too few values."""  # Test purpose
         data = np.array([1, 2])                            # Only 2 values
-        result = _trimmed_mean(data, trim=0.5)              # Try to trim 50%
+        result = _trimmed_mean(data, trim=0.4)              # Try to trim 40% (valid but falls back)
         
-        # Can't trim 50% from each side of 2 values
+        # Can't trim 40% from each side of 2 values (would remove 1.6 values, rounds to all)
         assert result == np.mean(data)                      # Falls back to mean
     
     def test_outlier_resistance(self):                      # Test robustness
@@ -223,6 +223,21 @@ class TestTrimmedMean:                                      # Test trimmed mean 
         
         # Trimmed means should be similar despite outliers
         assert abs(trimmed_normal - trimmed_outliers) < 1.0  # Should be close
+    
+    def test_trim_validation(self):                          # Test trim validation
+        """Test that invalid trim percentages are rejected."""  # Test purpose
+        data = np.array([1, 2, 3, 4, 5])                    # Test data
+        
+        # Should raise for trim >= 0.5
+        with pytest.raises(ValueError, match="Trim must be < 0.5"):  # Expect ValueError
+            _trimmed_mean(data, trim=0.5)                    # Exactly 0.5 should fail
+            
+        with pytest.raises(ValueError, match="Trim must be < 0.5"):  # Expect ValueError
+            _trimmed_mean(data, trim=0.6)                    # > 0.5 should fail
+            
+        # Should work for valid trim values
+        result = _trimmed_mean(data, trim=0.49)              # Just under 0.5 should work
+        assert isinstance(result, float)                     # Should return a float
 
 
 @pytest.mark.slow
