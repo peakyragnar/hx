@@ -5,16 +5,21 @@ This module implements the main RPL evaluation system, handling both GPT-5 (Resp
 and legacy GPT-4 (Chat API) models. It manages sampling strategies, API calls, statistical
 aggregation, and result formatting for belief probability estimation.
 """
-import json, time, hashlib, os                              # Standard libraries for data, timing, hashing, environment
+import json, time, hashlib, os, logging                     # Standard libraries for data, timing, hashing, environment, logging
 import numpy as np                                           # Numerical computations and statistics
 from collections import defaultdict                         # Default dictionaries for grouping
+from typing import Optional                                  # Type hints
 from openai import OpenAI                                   # OpenAI API client
 from heretix_rpl.rpl_schema import RPL_JSON_SCHEMA          # JSON schema for structured outputs
 from heretix_rpl.rpl_prompts import SYSTEM_RPL, USER_TEMPLATE, PARAPHRASES, PROMPT_VERSION  # Prompt templates
 from heretix_rpl.aggregation import aggregate_clustered, aggregate_simple  # Statistical aggregation methods
 from heretix_rpl.seed import make_bootstrap_seed            # Deterministic seed generation
+from heretix_rpl.config import load_config, RPLConfig        # Configuration management
 
 client = None                                               # Global OpenAI client singleton
+
+# Configure logging for this module
+logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 def get_client():                                           # Get or create OpenAI client
     global client                                            # Access global client variable
@@ -213,8 +218,10 @@ def call_rpl_once(claim_text: str, paraphrase_prompt: str, model: str, seed: int
         }
     }
 
-def evaluate_rpl_gpt5(claim_text: str, model: str = "gpt-5", K: int = 7, R: int = 3, agg: str = "clustered"):  # GPT-5 evaluation
+def evaluate_rpl_gpt5(claim_text: str, model: str = "gpt-5", K: int = 7, R: int = 3, agg: str = "clustered", config: Optional[RPLConfig] = None):  # GPT-5 evaluation
     """GPT-5 evaluation with K×R sampling and robust aggregation."""  # Function purpose
+    if config is None:                                           # Load config if not provided
+        config = load_config()                                   # Use environment-driven configuration
     runs = []                                                # Store individual API responses
     all_logits = []                                          # All logit values for simple aggregation
     by_tpl = {}                                              # Logits grouped by template hash
@@ -238,11 +245,11 @@ def evaluate_rpl_gpt5(claim_text: str, model: str = "gpt-5", K: int = 7, R: int 
                 tpl_hashes.append(h)                         # Add template hash
                 by_tpl.setdefault(h, []).append(l)           # Group logits by template hash
             except Exception as e:                           # Handle API failures
-                print(f"Warning: Failed sample k={k}, r={r}: {e}")  # Log warning
+                logging.getLogger(__name__).warning("Failed sample k=%s, r=%s: %s", k, r, e)  # Log warning
                 continue                                     # Continue with next sample
     
-    if len(all_logits) < 3:                                  # Check minimum sample requirement
-        raise ValueError(f"Too few successful samples: {len(all_logits)}")  # Raise error if insufficient data
+    if len(all_logits) < config.min_samples:                 # Check minimum sample requirement from config
+        raise ValueError(f"Too few successful samples: {len(all_logits)} < {config.min_samples}")  # Raise error if insufficient data
     
     # Decide the bootstrap seed
     env_seed = os.getenv("HERETIX_RPL_SEED")                 # Check for environment override
@@ -255,7 +262,7 @@ def evaluate_rpl_gpt5(claim_text: str, model: str = "gpt-5", K: int = 7, R: int 
             prompt_version=PROMPT_VERSION,                   # Prompt version
             k=K, r=R,                                        # Sampling parameters
             template_hashes=tpl_hashes,                      # Template hashes used
-            center="trimmed", trim=0.2, B=5000               # Aggregation parameters
+            center="trimmed", trim=config.trim, B=config.b_clustered  # Aggregation parameters from config
         )
     rng = np.random.default_rng(seed_val)                    # Initialize random number generator
     
@@ -263,15 +270,15 @@ def evaluate_rpl_gpt5(claim_text: str, model: str = "gpt-5", K: int = 7, R: int 
     if agg == "clustered":                                   # Use robust clustered aggregation
         ell_hat, (lo_l, hi_l), diag = aggregate_clustered(   # Call clustered aggregation
             by_template_logits=by_tpl,                       # Logits grouped by template
-            B=5000,                                          # Bootstrap iterations
+            B=config.b_clustered,                            # Bootstrap iterations from config
             rng=rng,                                         # Deterministic RNG
             center="trimmed",                                # Use trimmed mean
-            trim=0.2,                                        # 20% trimming
+            trim=config.trim,                                # Trimming from config
             fixed_m=None                                     # No fixed resample size
         )
         stability_basis = [float(np.mean(v)) for v in by_tpl.values()]  # Template means for stability
     else:                                                    # Use simple aggregation
-        ell_hat, (lo_l, hi_l), diag = aggregate_simple(all_logits, B=1000)  # Call simple aggregation
+        ell_hat, (lo_l, hi_l), diag = aggregate_simple(all_logits, B=config.b_simple)  # Call simple aggregation
         stability_basis = all_logits                         # Use all logits for stability
     
     p_hat = _sigmoid(ell_hat)                                # Convert logit estimate to probability
@@ -289,9 +296,11 @@ def evaluate_rpl_gpt5(claim_text: str, model: str = "gpt-5", K: int = 7, R: int 
     # Include aggregation config and seed in output
     aggregation_info = {                                     # Aggregation metadata for reproducibility
         "method": diag.get("method", "equal_by_template_cluster_bootstrap_trimmed"),  # Aggregation method used
-        "B": 5000 if agg == "clustered" else 1000,           # Bootstrap iterations
+        "B": config.b_clustered if agg == "clustered" else config.b_simple,  # Bootstrap iterations from config
         "center": "trimmed" if agg == "clustered" else "mean",  # Center method
-        "trim": 0.2 if agg == "clustered" else 0.0,          # Trim percentage
+        "trim": config.trim if agg == "clustered" else 0.0,  # Trim percentage from config
+        "min_samples": config.min_samples,                    # Minimum samples threshold from config
+        "stability_width": config.stability_width,            # Stability threshold from config
         "bootstrap_seed": seed_val if agg == "clustered" else None,  # Seed for reproducibility
         "n_templates": diag.get("n_templates"),              # Number of unique templates
         "counts_by_template": diag.get("counts_by_template"), # Samples per template
@@ -317,7 +326,7 @@ def evaluate_rpl_gpt5(claim_text: str, model: str = "gpt-5", K: int = 7, R: int 
             "ci95": [lo_p, hi_p],                               # 95% confidence interval
             "ci_width": hi_p - lo_p,                            # Confidence interval width
             "stability_score": stability,                       # Stability score (0-1)
-            "is_stable": (hi_p - lo_p) <= 0.2                  # Stability flag (CI width <= 0.2)
+            "is_stable": (hi_p - lo_p) <= config.stability_width  # Stability flag from config
         },
         "paraphrase_results": runs,                            # Individual API responses
         "paraphrase_balance": diag if agg == "clustered" else {"method": "simple_mean"},  # Balance diagnostics
