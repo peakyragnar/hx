@@ -47,7 +47,10 @@ def rpl(
                    f"stability={aggs['stability_score']:.3f}")  # Show stability score
         if not aggs['is_stable']:                            # Check stability flag
             width = result['aggregation']['stability_width']         # Get stability threshold from config
-            typer.echo(f"  ⚠️  WARNING: Estimate is UNSTABLE (CI width > {width})", err=True)  # Warn if unstable
+            # Check if threshold was overridden via environment
+            env_override = os.getenv("HERETIX_RPL_STABILITY_WIDTH")
+            source = f" (env: HERETIX_RPL_STABILITY_WIDTH)" if env_override else " (default)"
+            typer.echo(f"  ⚠️  WARNING: Estimate is UNSTABLE (CI width > {width}{source})", err=True)  # Warn if unstable
     else:                                                    # Legacy model results display
         typer.echo(f"Wrote {out}  p_RPL={result['aggregates']['prob_true_rpl']:.3f}  "  # Show probability
                    f"var(logit)={result['aggregates'].get('logit_variance', 0.0):.4f}")  # Show variance

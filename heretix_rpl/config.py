@@ -26,6 +26,7 @@ class RPLConfig:
     b_simple: int = 1000
     
     # CI width threshold for stability determination (probability space)
+    # An estimate is considered stable when CI width <= stability_width
     stability_width: float = 0.2
 
 
