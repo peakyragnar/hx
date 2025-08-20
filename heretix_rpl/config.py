@@ -1,67 +1,45 @@
 """
-Configuration module for Raw Prior Lens (RPL) evaluation.
+Environment-driven configuration for Raw Prior Lens (RPL) evaluation with overrides and defaults.
 
-This module provides environment-driven configuration with sensible defaults
-for all configurable parameters in the RPL system.
+Provides RPLConfig dataclass with configurable parameters for min samples, bootstrap iterations, 
+trimming thresholds, and stability criteria. Supports environment variable overrides while 
+maintaining sensible defaults for all RPL system parameters.
 """
-import os
-from dataclasses import dataclass
-from typing import Optional
+import os                                                    # Environment variable access
+from dataclasses import dataclass                           # Configuration structure
+from typing import Optional                                  # Type hints for optional values
 
 
 @dataclass
-class RPLConfig:
-    """Configuration settings for RPL evaluation with environment variable overrides."""
+class RPLConfig:                                             # Configuration settings container
+    """Configuration settings for RPL evaluation with environment variable overrides."""  # Class purpose
     
-    # Minimum number of successful samples required for aggregation
-    min_samples: int = 3
-    
-    # Trim percentage for robust center calculation (20% = drop min/max)
-    trim: float = 0.2
-    
-    # Bootstrap iterations for clustered aggregation (higher for smoother CIs)
-    b_clustered: int = 5000
-    
-    # Bootstrap iterations for simple aggregation
-    b_simple: int = 1000
-    
-    # CI width threshold for stability determination (probability space)
-    # An estimate is considered stable when CI width <= stability_width
-    stability_width: float = 0.2
+    min_samples: int = 3                                     # Minimum successful samples required for aggregation
+    trim: float = 0.2                                        # Trim percentage for robust center (20% = drop min/max)
+    b_clustered: int = 5000                                  # Bootstrap iterations for clustered aggregation (smoother CIs)
+    b_simple: int = 1000                                     # Bootstrap iterations for simple aggregation
+    stability_width: float = 0.2                             # CI width threshold for stability (stable when width <= threshold)
 
 
-def load_config() -> RPLConfig:
-    """
-    Load configuration from environment variables with fallback to defaults.
+def load_config() -> RPLConfig:                              # Load configuration with environment overrides
+    """Load configuration from environment variables with fallback to defaults."""  # Function purpose
+    def _get_env_int(key: str, default: int) -> int:         # Helper for integer environment variables
+        """Get integer from environment variable with default fallback."""  # Helper purpose
+        value = os.getenv(key)                               # Get environment value
+        return int(value) if value is not None else default  # Convert or use default
     
-    Environment variables:
-    - HERETIX_RPL_MIN_SAMPLES: Minimum successful samples (default: 3)
-    - HERETIX_RPL_TRIM: Trim percentage for robust center (default: 0.2)
-    - HERETIX_RPL_B_CLUSTERED: Bootstrap iterations for clustered agg (default: 5000)
-    - HERETIX_RPL_B_SIMPLE: Bootstrap iterations for simple agg (default: 1000)
-    - HERETIX_RPL_STABILITY_WIDTH: CI width threshold for stability (default: 0.2)
+    def _get_env_float(key: str, default: float) -> float:   # Helper for float environment variables
+        """Get float from environment variable with default fallback."""  # Helper purpose
+        value = os.getenv(key)                               # Get environment value
+        return float(value) if value is not None else default  # Convert or use default
     
-    Returns:
-        RPLConfig: Configuration object with environment overrides applied
-    """
-    def _get_env_int(key: str, default: int) -> int:
-        """Get integer from environment variable with default fallback."""
-        value = os.getenv(key)
-        return int(value) if value is not None else default
-    
-    def _get_env_float(key: str, default: float) -> float:
-        """Get float from environment variable with default fallback."""
-        value = os.getenv(key)
-        return float(value) if value is not None else default
-    
-    return RPLConfig(
-        min_samples=_get_env_int("HERETIX_RPL_MIN_SAMPLES", 3),
-        trim=_get_env_float("HERETIX_RPL_TRIM", 0.2),
-        b_clustered=_get_env_int("HERETIX_RPL_B_CLUSTERED", 5000),
-        b_simple=_get_env_int("HERETIX_RPL_B_SIMPLE", 1000),
-        stability_width=_get_env_float("HERETIX_RPL_STABILITY_WIDTH", 0.2),
+    return RPLConfig(                                        # Create configuration object
+        min_samples=_get_env_int("HERETIX_RPL_MIN_SAMPLES", 3),          # Override minimum samples threshold
+        trim=_get_env_float("HERETIX_RPL_TRIM", 0.2),                    # Override trim percentage
+        b_clustered=_get_env_int("HERETIX_RPL_B_CLUSTERED", 5000),       # Override clustered bootstrap iterations
+        b_simple=_get_env_int("HERETIX_RPL_B_SIMPLE", 1000),             # Override simple bootstrap iterations
+        stability_width=_get_env_float("HERETIX_RPL_STABILITY_WIDTH", 0.2),  # Override stability width threshold
     )
 
 
-# Default configuration instance
-DEFAULT_CONFIG = RPLConfig()
+DEFAULT_CONFIG = RPLConfig()                                 # Default configuration instance
