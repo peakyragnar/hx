@@ -2,20 +2,20 @@
 
 Comprehensive test suite for verifying statistical correctness of the Raw Prior Lens (RPL) evaluation system.
 
-## 🏃 Quick Start
+## 🏃 Quick Start (using uv)
 
 ```bash
 # Install test dependencies
-pip install -e ".[test]"
+uv pip install -e ".[test]"
 
 # Run fast tests (pre-commit)
-pytest tests -m "not slow"
+uv run pytest tests -m "not slow"
 
 # Run all tests
-pytest tests
+uv run pytest tests
 
 # Run with coverage
-pytest tests --cov=heretix_rpl
+uv run pytest tests --cov=heretix_rpl
 ```
 
 ## 📁 Test Structure
