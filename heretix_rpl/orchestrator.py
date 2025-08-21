@@ -31,6 +31,12 @@ from heretix_rpl.seed import make_bootstrap_seed
 from heretix_rpl.config import load_config
 from heretix_rpl.metrics import compute_stability_calibrated, stability_band_from_iqr
 from heretix_rpl.sampler import rotation_offset, balanced_indices_with_rotation, planned_counts
+from heretix_rpl.constants import (
+    GATE_CI_WIDTH_MAX_DEFAULT,
+    GATE_STABILITY_MIN_DEFAULT,
+    GATE_IMBALANCE_MAX_DEFAULT,
+    GATE_IMBALANCE_WARN_DEFAULT,
+)
 
 
 def _stage_digest(claim: str, model: str, K: int, R: int) -> str:
@@ -55,13 +61,15 @@ def _aggregate(claim: str, model: str, by_tpl: Dict[str, List[float]], tpl_hashe
     if env_seed is not None:
         seed_val = int(env_seed)
     else:
+        # Harden determinism: sorted unique template hashes for seed derivation
+        uniq_tpl_hashes = sorted(set(tpl_hashes))
         seed_val = make_bootstrap_seed(
             claim=claim,
             model=model,
             prompt_version=PROMPT_VERSION,
             k=0,  # k and r are not needed for seed uniqueness since template hashes carry structure
             r=0,
-            template_hashes=tpl_hashes,
+            template_hashes=uniq_tpl_hashes,
             center="trimmed",
             trim=cfg.trim,
             B=cfg.b_clustered,
@@ -108,13 +116,23 @@ def auto_rpl(
     max_K: int = 16,
     max_R: int = 3,
     # gates
-    ci_width_max: float = 0.20,
-    stability_min: float = 0.70,
-    imbalance_max: float = 1.50,
-    imbalance_warn: float = 1.25,
+    ci_width_max: float = GATE_CI_WIDTH_MAX_DEFAULT,
+    stability_min: float = GATE_STABILITY_MIN_DEFAULT,
+    imbalance_max: float = GATE_IMBALANCE_MAX_DEFAULT,
+    imbalance_warn: float = GATE_IMBALANCE_WARN_DEFAULT,
     verbose: bool = False,
 ) -> Dict[str, Any]:
     """Adaptive controller for RPL. Deterministically escalates K (templates), then R (replicates)."""
+    # Validate gate inputs
+    if not (0.0 < float(ci_width_max) <= 1.0):
+        raise ValueError("ci_width_max must be in (0, 1].")
+    if not (0.0 < float(stability_min) <= 1.0):
+        raise ValueError("stability_min must be in (0, 1].")
+    if not (float(imbalance_max) >= 1.0):
+        raise ValueError("imbalance_max must be ≥ 1.0.")
+    if not (float(imbalance_warn) >= 1.0):
+        raise ValueError("imbalance_warn must be ≥ 1.0.")
+
     T_bank = len(PARAPHRASES)
     # Stage plan: (K,R) pairs, with T_stage matching K (1 per template) for templates-first policy
     plan: List[Tuple[int, int, int]] = []  # (T_stage, K, R)

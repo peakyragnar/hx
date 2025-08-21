@@ -15,6 +15,11 @@ from heretix_rpl.orchestrator import auto_rpl               # Adaptive controlle
 from heretix_rpl.inspect import summarize_run               # Inspection utility
 from heretix_rpl.monitor import run_bench, compare_to_baseline, write_jsonl  # Drift monitor
 from heretix_rpl.summarize import summarize_jsonl                             # Summaries
+from heretix_rpl.constants import (
+    GATE_CI_WIDTH_MAX_DEFAULT,
+    GATE_STABILITY_MIN_DEFAULT,
+    GATE_IMBALANCE_MAX_DEFAULT,
+)
 
 app = typer.Typer(help="Heretix Raw Prior Lens (RPL) evaluator")  # Create CLI app
 
@@ -76,9 +81,9 @@ def auto(
     start_r: int = typer.Option(2, help="Initial replicates per paraphrase"),
     max_k: int = typer.Option(16, help="Max paraphrase slots"),
     max_r: int = typer.Option(3, help="Max replicates"),
-    ci_width_max: float = typer.Option(0.20, help="Gate: max CI width"),
-    stability_min: float = typer.Option(0.70, help="Gate: min stability score"),
-    imbalance_max: float = typer.Option(1.50, help="Gate: max template imbalance ratio"),
+    ci_width_max: float = typer.Option(GATE_CI_WIDTH_MAX_DEFAULT, help="Gate: max CI width (0,1]"),
+    stability_min: float = typer.Option(GATE_STABILITY_MIN_DEFAULT, help="Gate: min stability score (0,1]"),
+    imbalance_max: float = typer.Option(GATE_IMBALANCE_MAX_DEFAULT, help="Gate: max template imbalance ratio (≥1)"),
     out: Path = typer.Option(Path("runs/rpl_auto.json"), help="Output JSON"),
 ):
     """Run adaptive RPL controller with templates-first policy."""

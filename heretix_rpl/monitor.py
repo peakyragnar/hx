@@ -12,6 +12,11 @@ from typing import List, Dict, Any, Optional
 
 from heretix_rpl.rpl_eval import evaluate_rpl_gpt5
 from heretix_rpl.rpl_prompts import PROMPT_VERSION
+from heretix_rpl.constants import (
+    DRIFT_P_THRESH_DEFAULT,
+    DRIFT_STAB_DROP_DEFAULT,
+    DRIFT_CI_INCREASE_DEFAULT,
+)
 
 
 def run_bench(bench_path: str, model: str = "gpt-5", K: int = 8, R: int = 2) -> List[Dict[str, Any]]:
@@ -61,7 +66,10 @@ def run_bench_iter(bench_path: str, model: str = "gpt-5", K: int = 8, R: int = 2
 
 
 def compare_to_baseline(current: List[Dict[str, Any]], baseline: Optional[List[Dict[str, Any]]] = None,
-                        p_thresh: float = 0.10, stab_drop: float = 0.20, ci_increase: float = 0.10) -> List[Dict[str, Any]]:
+                        p_thresh: float = DRIFT_P_THRESH_DEFAULT, stab_drop: float = DRIFT_STAB_DROP_DEFAULT, ci_increase: float = DRIFT_CI_INCREASE_DEFAULT) -> List[Dict[str, Any]]:
+    # Validate thresholds (non-negative)
+    if p_thresh < 0 or stab_drop < 0 or ci_increase < 0:
+        raise ValueError("Drift thresholds must be non-negative.")
     if not baseline:
         # No baseline: mark no drift
         for row in current:
@@ -85,8 +93,10 @@ def compare_to_baseline(current: List[Dict[str, Any]], baseline: Optional[List[D
 
 
 def compare_row_to_baseline(row: Dict[str, Any], base_map: Dict[str, Dict[str, Any]],
-                            p_thresh: float = 0.10, stab_drop: float = 0.20, ci_increase: float = 0.10) -> Dict[str, Any]:
+                            p_thresh: float = DRIFT_P_THRESH_DEFAULT, stab_drop: float = DRIFT_STAB_DROP_DEFAULT, ci_increase: float = DRIFT_CI_INCREASE_DEFAULT) -> Dict[str, Any]:
     """Compare a single row to a baseline map and return a new row with drift flags."""
+    if p_thresh < 0 or stab_drop < 0 or ci_increase < 0:
+        raise ValueError("Drift thresholds must be non-negative.")
     claim = row["claim"]
     b = base_map.get(claim)
     if not b:

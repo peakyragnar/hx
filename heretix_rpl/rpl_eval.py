@@ -261,12 +261,14 @@ def evaluate_rpl_gpt5(claim_text: str, model: str = "gpt-5", K: int = 7, R: int 
     if env_seed is not None:                                 # Use environment seed if provided
         seed_val = int(env_seed)                             # Convert to integer
     else:                                                    # Generate deterministic seed
+        # Harden determinism: pass sorted unique template hashes
+        uniq_tpl_hashes = sorted(set(tpl_hashes))
         seed_val = make_bootstrap_seed(                      # Create reproducible seed
             claim=claim_text,                                # Claim text
             model=model,                                     # Model identifier
             prompt_version=PROMPT_VERSION,                   # Prompt version
             k=K, r=R,                                        # Sampling parameters
-            template_hashes=tpl_hashes,                      # Template hashes used
+            template_hashes=uniq_tpl_hashes,                 # Template hashes used (unique, sorted)
             center="trimmed", trim=config.trim, B=config.b_clustered  # Aggregation parameters from config
         )
     rng = np.random.default_rng(seed_val)                    # Initialize random number generator
