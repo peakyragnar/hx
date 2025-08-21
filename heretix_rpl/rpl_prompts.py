@@ -29,11 +29,22 @@ prob_true (0..1), confidence_self (0..1),  # Probability and self-confidence
 assumptions[], reasoning_bullets[], contrary_considerations[], ambiguity_flags[].  # Arrays for structured reasoning
 """
 
-PARAPHRASES = [  # Five different ways to ask the same question
-    "Assess the probability that the following statement is true as written: {CLAIM}",  # Direct assessment
-    "Estimate how likely it is that this proposition is factually correct: {CLAIM}",  # Likelihood framing
-    "Given your internal knowledge only, what is the chance this claim holds? {CLAIM}",  # Internal knowledge emphasis
-    "Without external sources, evaluate the truth of: {CLAIM}",  # No external sources emphasis
-    "Provide P(true) for this statement using only prior knowledge: {CLAIM}",  # Probability notation
+PARAPHRASES = [
+    "Assess the probability that the following statement is true as written: {CLAIM}",
+    "Estimate how likely it is that this proposition is factually correct: {CLAIM}",
+    "Given your internal knowledge only, what is the chance this claim holds? {CLAIM}",
+    "Without external sources, evaluate the truth of: {CLAIM}",
+    "Provide P(true) for this statement using only prior knowledge: {CLAIM}",
+    "On your internal prior only, what is the probability this claim is accurate? {CLAIM}",
+    "With no retrieval or citations, estimate the truth likelihood of: {CLAIM}",
+    "From your training‑distribution prior alone, give the probability this claim is correct: {CLAIM}",
+    "Relying only on internal knowledge, assess P(true) for: {CLAIM}",
+    "No web access: estimate the chance this claim is true as stated: {CLAIM}",
+    "As a calibrated prior, what probability do you assign to this claim being true? {CLAIM}",
+    "Provide a numeric probability that the following claim is true (prior only): {CLAIM}",
+    "Based solely on internal model knowledge, how likely is this claim to be true? {CLAIM}",
+    "Without looking anything up, assign a probability of truth to: {CLAIM}",
+    "Internal prior only: what is P(true) for this statement? {CLAIM}",
+    "No external evidence; estimate the probability the claim holds as stated: {CLAIM}",
 ]
-PROMPT_VERSION = "rpl_g5_v1_2025-08-18"  # Version string for provenance tracking
+PROMPT_VERSION = "rpl_g5_v2_2025-08-21"  # Version string for provenance tracking

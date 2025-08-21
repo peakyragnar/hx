@@ -45,6 +45,11 @@ This document explains the robust statistical aggregation used in Heretix's Raw 
 
 This yields an RPL that is **unbiased, robust, reproducible, and minimally sensitive to prompt wording artifacts**.
 
+Note on orchestration: The estimator above is unchanged in the adaptive pipeline.
+Auto‑RPL only changes how samples are collected (templates‑first escalation,
+balanced deterministic sampling with rotation, and sample reuse across stages).
+See `documentation/auto_rpl.md` for the controller policy and CLI.
+
 ## Technical Details
 
 ### Mental Model (First Principles)
