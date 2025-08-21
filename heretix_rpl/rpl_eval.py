@@ -231,9 +231,10 @@ def evaluate_rpl_gpt5(claim_text: str, model: str = "gpt-5", K: int = 7, R: int 
     by_tpl = {}                                              # Logits grouped by template hash
     tpl_hashes = []                                          # List of template hashes for seeding
     
-    # K paraphrases × R replicates
+    # K paraphrases × R replicates (legacy behavior: limit to first 5 templates for backward compatibility)
+    phrases = PARAPHRASES[:5] if len(PARAPHRASES) >= 5 else PARAPHRASES
     for k in range(K):                                       # Iterate through paraphrase slots
-        phr = PARAPHRASES[k % len(PARAPHRASES)]              # Cycle through available paraphrases
+        phr = phrases[k % len(phrases)]                      # Cycle through available paraphrases
         for r in range(R):                                   # Replicates per paraphrase
             try:                                             # Attempt API call
                 out = call_rpl_once_gpt5(claim_text, phr, model)  # Single GPT-5 evaluation

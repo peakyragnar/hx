@@ -266,3 +266,23 @@ The enhanced output includes:
 - Categorical bands: high/medium/low for business logic
 
 This ensures complete transparency, reproducibility, and business-aligned interpretation of the statistical methodology.
+
+## Adaptive Orchestrator
+
+Modules
+- `heretix_rpl/orchestrator.py`: `auto_rpl()` runs templates‑first stages, reuses samples, records decisions and stage snapshots.
+- `heretix_rpl/sampler.py`: deterministic balanced sampler with rotation by `sha256(claim|model|PROMPT_VERSION)`.
+- `heretix_rpl/inspect.py`: `summarize_run(path)` prints per‑template means, IQR(logit), stability, CI, counts, imbalance.
+- `heretix_rpl/monitor.py`: sentinel bench runner and baseline comparison for model drift.
+
+Adaptive Execution
+- Run: `uv run heretix-rpl auto --claim "..."`.
+- Stage 1: T=8, K=8, R=2 (balanced+rotated template order).
+- Evaluate gates: CI≤0.20, stability≥0.70, imbalance≤1.50; warn if imbalance>1.25.
+- If needed, Stage 2: T=16, K=16, R=2 (more templates).
+- If still needed, Stage 3: T=16, K=16, R=3 (more replicates).
+- Output: `controller`, `final`, `stages[]` with embedded RPL JSON, and `decision_log[]` explaining actions.
+
+Notes
+- `PROMPT_VERSION=rpl_g5_v2_2025-08-21` (16 paraphrases).
+- Estimator unchanged: logit space, equal‑by‑template, 20% trimmed center, clustered bootstrap (B=5000) with deterministic seed.

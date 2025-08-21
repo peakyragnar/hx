@@ -1,3 +1,17 @@
+How To Use
+
+- Adaptive run
+    - uv run heretix-rpl auto --claim "tariffs don't cause inflation" --out runs/rpl_auto.json
+    - Output includes controller, final, full stages[] with embedded RPL JSON, and a decision_log explaining each action and warnings.
+- Inspect any run
+    - uv run heretix-rpl inspect --run runs/rpl_auto.json
+    - Prints per-template means, IQR(logit), stability, CI, counts, and imbalance.
+- Drift monitor
+    - uv run heretix-rpl monitor --bench bench/sentinels.json --out runs/monitor/2025-08-21.jsonl
+
+
+
+
 •	openai = official SDK (Responses API)
 •	pydantic = optional local validation
 •	typer = CLI
