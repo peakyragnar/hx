@@ -16,6 +16,22 @@
 │  pyproject.toml: [project.scripts]                                 │
 │  heretix-rpl = "heretix_rpl.cli:main"                             │
 └─────────────────────────────────────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                        CLI COMMAND SURFACE                          │
+├─────────────────────────────────────────────────────────────────────┤
+│  rpl:      uv run heretix-rpl rpl --claim "…" --k K --r R           │
+│            → runs core evaluator (rpl_eval) with chosen aggregator. │
+│  auto:     uv run heretix-rpl auto --claim "…"                     │
+│            → runs templates-first Auto‑RPL orchestrator.            │
+│  inspect:  uv run heretix-rpl inspect --run runs/…json              │
+│            → prints per-template means, IQR, stability, counts.     │
+│  monitor:  uv run heretix-rpl monitor --bench bench/sentinels.json  │
+│            → weekly sentinel snapshot; optional baseline drift.     │
+│  summarize: uv run heretix-rpl summarize --file runs/…jsonl         │
+│            → summarizes monitor JSONL (means, drift, widest CIs).   │
+└─────────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -75,11 +91,11 @@
 │  ├── rpl_prompts.py ◄─── PROMPTING STRATEGY                       │
 │  │   ├── SYSTEM_RPL → system prompt for RPL evaluation            │
 │  │   ├── USER_TEMPLATE → user message template                    │
-│  │   └── PARAPHRASES[] → 5 different ways to ask                  │
+│  │   └── PARAPHRASES[] → 16 neutral templates (balanced rotation) │
 │  │                    │                                            │
 │  │                    ▼                                            │
 │  └── rpl_schema.py ◄─── RESPONSE VALIDATION                       │
-│      └── RPL_SCHEMA → OpenAI structured output schema             │
+│      └── RPL_JSON_SCHEMA → OpenAI structured output schema        │
 │          ├── prob_true (0-1)                                      │
 │          ├── confidence_self (0-1)                                │
 │          ├── reasoning_bullets[]                                  │
@@ -94,7 +110,8 @@
 │  OpenAI API (GPT-5)                                               │
 │  ├── Responses API endpoint                                        │
 │  ├── No temperature/top_p (model is inherently stochastic)        │
-│  └── Structured output with JSON schema                           │
+│  ├── Structured output with JSON schema                           │
+│  └── Feature-detect reasoning param; fallback if unsupported      │
 │                              │                                     │
 │  Environment (.env)                                               │
 │  ├── OPENAI_API_KEY=xxx (required)                                │
@@ -148,9 +165,9 @@
 │     │   ├── method: "equal_by_template_cluster_bootstrap_trimmed" │
 │     │   ├── bootstrap_seed: 12595722686829152907                  │
 │     │   ├── B: 5000, center: "trimmed", trim: 0.2               │
-│     │   ├── n_templates: 5                                       │
-│     │   ├── counts_by_template: {hash1: 6, hash2: 6, ...}       │
-│     │   ├── imbalance_ratio: 2.0                                 │
+│     │   ├── n_templates: 7                                       │
+│     │   ├── counts_by_template: {hashA: 3, hashB: 3, ...}        │
+│     │   ├── imbalance_ratio: 1.0                                 │
 │     │   └── template_iqr_logit: 0.15                             │
 │     │   }                                                         │
 │     └── Full provenance data with paraphrase_results             │
@@ -286,3 +303,52 @@ Adaptive Execution
 Notes
 - `PROMPT_VERSION=rpl_g5_v2_2025-08-21` (16 paraphrases).
 - Estimator unchanged: logit space, equal‑by‑template, 20% trimmed center, clustered bootstrap (B=5000) with deterministic seed.
+
+┌─────────────────────────────────────────────────────────────────────┐
+│                     AUTO‑RPL STAGE SWIMLANE                         │
+├─────────────────────────────────────────────────────────────────────┤
+│ Claim → Orchestrator (templates‑first, deterministic rotation)      │
+│                                                                     │
+│  Stage 1     T=8  K=8  R=2                                          │
+│    │         • Balanced sampler (8 unique templates × 2 reps each)  │
+│    │         • Aggregate → p, CI, stability, imbalance              │
+│    │         • Gates: CI≤0.20 AND Stability≥0.70 AND Imb≤1.50       │
+│    ├── pass ──▶ STOP (emit final)                                    │
+│    └── fail ──▶ escalate                                             │
+│                                                                     │
+│  Stage 2     T=16 K=16 R=2                                          │
+│    │         • Reuse prior samples; add deltas to reach plan        │
+│    │         • Aggregate (same estimator)                           │
+│    │         • Gates (same as above); Warn if Imb>1.25              │
+│    ├── pass ──▶ STOP (emit final)                                    │
+│    └── fail ──▶ escalate                                             │
+│                                                                     │
+│  Stage 3     T=16 K=16 R=3                                          │
+│    │         • Increase replicates (templates unchanged)            │
+│    │         • Aggregate (same estimator)                           │
+│    ├── pass/limit ▶ STOP (emit final)                               │
+│                                                                     │
+│ Output: controller (policy, gates), final (p, CI, stability, etc.), │
+│         stages[] (snapshots with raw_run), decision_log[]           │
+└─────────────────────────────────────────────────────────────────────┘
+
+## Output Anatomy
+
+- Top‑level `rpl` run (single evaluation):
+  - aggregates: prob_true_rpl, ci95[], ci_width, paraphrase_iqr_logit, stability_score, stability_band, is_stable
+  - aggregation: method, B, center, trim, min_samples, stability_width, bootstrap_seed, n_templates, counts_by_template, imbalance_ratio, template_iqr_logit
+  - sampling: K, R, N
+  - decoding: max_output_tokens, reasoning_effort, verbosity
+  - paraphrase_results: array of per‑call items with raw fields and meta (provider_model_id, prompt_sha256, response_id, created), plus indices
+  - paraphrase_balance: equals aggregation diagnostics when clustered; `{"method": "simple_mean"}` for simple
+  - raw_logits: array of per‑sample logits (for audits)
+  - provenance: run_id, claim, model, prompt_version, timestamp
+
+- Top‑level `auto` run (orchestrated evaluation):
+  - controller: policy, start{K,R}, ceilings{max_K,max_R}, gates{ci_width_max, stability_min, imbalance_max, imbalance_warn}, timestamp
+  - final: stage_id, K, R, p_RPL, ci95[], ci_width, stability_score, stability_band, imbalance_ratio, is_stable
+  - stages[]: per‑stage snapshots containing:
+    - stage_id, K, R, T, p_RPL, ci95[], ci_width, stability_score, stability_band, imbalance_ratio, is_stable
+    - planned: offset, order, counts_by_template_planned[], imbalance_planned
+    - raw_run: embedded single‑run structure (sampling, decoding, aggregation, aggregates, paraphrase_results, raw_logits, provenance)
+  - decision_log[]: ordered actions with gates report and any `imbalance_warn`
