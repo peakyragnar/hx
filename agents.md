@@ -308,3 +308,44 @@ Contact points in code
 Truth north: Pay for movement and durability, expose priors and amplifiers, and make every number auditably boring.
 
 This project used uv NOT venv
+
+⸻
+
+Addendum (2025‑08‑21) — Auto‑RPL + Ops Updates
+
+Repository & Change Control
+• Package manager: uv (not venv). All examples and scripts assume `uv run ...`.
+• Change policy: Do not modify files without explicit user approval. Do not alter the core statistical methodology or frozen sampling policy without a versioned proposal and user sign‑off.
+
+RPL Enhancements (Frozen Policy)
+• Paraphrase bank expanded to 16 neutral templates; `PROMPT_VERSION = rpl_g5_v2_2025‑08‑21` for provenance.
+• Deterministic balanced sampler with rotation (by sha256 of claim|model|prompt_version) to avoid low‑index favoritism while keeping counts equal.
+• Auto‑RPL controller (templates‑first) with sample reuse and decision logging.
+• Estimator unchanged: logit aggregation, equal‑by‑template weighting, 20% trimmed center (T≥5), cluster bootstrap CI (B=5000) with deterministic seed.
+
+Auto‑RPL (Adaptive, Templates‑First)
+• Frozen stage sequence: 
+  1) T=8, K=8, R=2 → 2) T=16, K=16, R=2 → 3) T=16, K=16, R=3.
+• Gates (hard): CI width ≤ 0.20; Stability ≥ 0.70 (1/(1+IQR_logit)); Imbalance ≤ 1.50.
+• Warn (soft): log a warning if Imbalance > 1.25.
+• Behavior: deterministic balanced rotation; reuse samples across stages (add only deltas); emit decision_log and per‑stage snapshots (full RPL JSON) for audit.
+
+CLI Additions (uv)
+• auto: `uv run heretix-rpl auto --claim "..." --out runs/rpl_auto.json`
+  – Runs the frozen stage plan; stops early on pass; prints stage metrics; writes `controller`, `final`, `stages[]`, `decision_log[]`.
+• inspect: `uv run heretix-rpl inspect --run runs/rpl_auto.json`
+  – Pretty‑prints per‑template means (p, logit), IQR(logit), stability, CI, counts, imbalance. Accepts plain runs, auto top‑level, or stage snapshots.
+• monitor: `uv run heretix-rpl monitor --bench bench/sentinels.json --out runs/monitor/<date>.jsonl [--baseline prior.jsonl]`
+  – Weekly sentinel snapshot with fixed K=8, R=2 (for comparability). Streams progress and writes one JSONL row per claim; adds drift flags if baseline supplied.
+• summarize: `uv run heretix-rpl summarize --file runs/monitor/<date>.jsonl`
+  – Prints row/model/version summary, mean p/CI width/stability, counts of high/low/mid p, drift counts, and top‑3 widest CIs.
+
+Operations (Weekly)
+• Baseline: run `monitor` weekly to `runs/monitor/<date>.jsonl`; then `summarize` for a quick health report.
+• Audits: use `inspect` on any claim with wide CI or low stability to see per‑template behavior.
+• Determinism: set `HERETIX_RPL_SEED` to fix bootstrap sequence for CI reproducibility (does not fix model outputs).
+
+Safety Rails (Reiterated)
+• Never change estimator math (logit aggregation, equal‑by‑template, 20% trim, cluster bootstrap with deterministic seed) without a version bump and explicit approval.
+• Never change the frozen Auto‑RPL stage sequence or gates without explicit user approval and a documented policy/version update.
+• Repository uses uv; do not switch tooling without user approval.
