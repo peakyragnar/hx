@@ -14,6 +14,7 @@ from heretix_rpl.rpl_eval import evaluate_rpl               # Main evaluation fu
 from heretix_rpl.orchestrator import auto_rpl               # Adaptive controller
 from heretix_rpl.inspect import summarize_run               # Inspection utility
 from heretix_rpl.monitor import run_bench, compare_to_baseline, write_jsonl  # Drift monitor
+from heretix_rpl.summarize import summarize_jsonl                             # Summaries
 
 app = typer.Typer(help="Heretix Raw Prior Lens (RPL) evaluator")  # Create CLI app
 
@@ -159,3 +160,24 @@ def monitor(
             f.write(json.dumps(flagged) + "\n")
             f.flush()
     typer.echo(f"Wrote {out}")
+
+
+@app.command()
+def summarize(
+    file: Path = typer.Option(..., help="Path to JSONL produced by monitor"),
+):
+    """Summarize a monitor JSONL: means, counts, and widest-CI claims."""
+    summary = summarize_jsonl(str(file))
+    typer.echo(f"File: {summary['file']}")
+    typer.echo(f"Rows: {summary['n_rows']}  Models: {', '.join(summary['models'])}  Versions: {', '.join(summary['prompt_versions'])}")
+    typer.echo(
+        f"Means → p: {summary['mean_p']:.3f}  ci_width: {summary['mean_ci_width']:.3f}  stability: {summary['mean_stability']:.3f}"
+    )
+    typer.echo(
+        f"Counts → high(≥0.9): {summary['count_high_ge_0_9']}  low(≤0.1): {summary['count_low_le_0_1']}  mid(0.4–0.6): {summary['count_mid_0_4_to_0_6']}"
+    )
+    dc = summary['drift_counts']
+    typer.echo(f"Drift flags → p: {dc['p']}  stability: {dc['stability']}  ci: {dc['ci']}")
+    typer.echo("Widest CIs:")
+    for w in summary['widest_ci']:
+        typer.echo(f"  - {w['ci_width']:.3f}  {w['claim']}")
