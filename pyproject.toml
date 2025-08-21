@@ -28,6 +28,7 @@ dev = [
 
 [project.scripts]
 heretix-rpl = "heretix_rpl.cli:main"
+heretix-rpl-explain = "heretix_rpl.explainer:main"
 
 [tool.setuptools.packages.find]
 include = ["heretix_rpl*"]

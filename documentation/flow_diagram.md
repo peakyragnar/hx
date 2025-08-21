@@ -55,11 +55,21 @@
 │  │   │   ├── _trimmed_mean() → drops min/max templates (20%)      │
 │  │   │   ├── Averages middle 3 templates equally                  │
 │  │   │   ├── Cluster bootstrap with deterministic RNG             │
-│  │   │   └── 5000 iterations for smooth CI95                      │
+│  │   │   ├── 5000 iterations for smooth CI95                      │
+│  │   │   ├── Robust IQR handling (warn+clamp tiny negatives)      │
+│  │   │   └── Trim validation (must be < 0.5)                      │
 │  │   │                                                             │
 │  │   └── aggregate_simple() → legacy unclustered mean             │
 │  │       ├── Direct mean of all logits                            │
 │  │       └── Standard bootstrap for CI95 (1000 iterations)        │
+│  │                    │                                            │
+│  │                    ▼                                            │
+│  ├── metrics.py ◄─── CALIBRATED STABILITY SCORING                 │
+│  │   ├── stability_from_iqr() → 1/(1+(IQR/s)^α) formula           │
+│  │   │   ├── s=0.2 (midpoint), α=1.7 (steepness)                 │
+│  │   │   └── IQR=0.2 maps to stability=0.5 (medium)               │
+│  │   ├── stability_band_from_iqr() → high/medium/low bands        │
+│  │   └── compute_stability_calibrated() → score + raw IQR         │
 │  │                    │                                            │
 │  │                    ▼                                            │
 │  ├── rpl_prompts.py ◄─── PROMPTING STRATEGY                       │
@@ -121,12 +131,19 @@
 │     ├── Trimmed mean (drop min/max, average middle 3)            │
 │     ├── Cluster bootstrap (resample templates → replicates)       │
 │     ├── 5000 iterations with deterministic RNG                    │
+│     ├── Robust error handling (IQR validation, trim validation)   │
 │     └── Compute imbalance_ratio and diagnostics                   │
 │                              │                                      │
-│  8. Output JSON with:                                             │
+│  8. Calibrated stability scoring:                                 │
+│     ├── Apply metrics.py formula: 1/(1+(IQR/s)^α)                │
+│     ├── s=0.2, α=1.7 for business semantics alignment            │
+│     └── IQR=0.2 maps to stability=0.5 (medium)                   │
+│                              │                                      │
+│  9. Output JSON with:                                             │
 │     ├── prob_true_rpl: 0.237 (23.7%)                             │
 │     ├── ci95: [0.15, 0.32]                                       │
-│     ├── stability_score: 0.85                                    │
+│     ├── stability_score: 0.85 (calibrated via metrics.py)        │
+│     ├── is_stable: true (based on CI width ≤ 0.20)              │
 │     ├── aggregation: {                                           │
 │     │   ├── method: "equal_by_template_cluster_bootstrap_trimmed" │
 │     │   ├── bootstrap_seed: 12595722686829152907                  │
@@ -146,23 +163,33 @@
 │  runs/rpl_run.json ◄─── Detailed results with:                   │
 │  ├── Deterministic seed for reproducibility                       │
 │  ├── Aggregation configuration and diagnostics                    │
+│  ├── Calibrated stability scoring                                 │
 │  └── Terminal display of key metrics                              │
 └─────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────┐
-│              HARDENED AGGREGATION APPROACH (v2)                    │
+│              HARDENED AGGREGATION APPROACH (v3)                    │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Core Improvements:                                               │
 │  ├── Trimmed Mean (20%): Drops outlier templates                 │
 │  ├── Deterministic Seeding: Same inputs → same CIs               │
 │  ├── 5000 Bootstrap Iterations: Smoother confidence intervals     │
-│  └── Configuration-Based Seed: Changes only when needed           │
+│  ├── Configuration-Based Seed: Changes only when needed           │
+│  └── Calibrated Stability: Business-aligned scoring formula       │
 │                                                                     │
 │  Statistical Robustness:                                          │
 │  ├── Equal-by-template: Fixes paraphrase imbalance               │
 │  ├── Cluster bootstrap: Correct two-level uncertainty             │
 │  ├── Trimmed center: Robust to outlier templates                 │
-│  └── Log-odds averaging: Proper probability geometry              │
+│  ├── Log-odds averaging: Proper probability geometry              │
+│  ├── Robust IQR handling: Warns on tiny negatives, fails on large│
+│  └── Trim validation: Prevents trim ≥ 0.5 edge cases            │
+│                                                                     │
+│  Calibrated Stability Scoring:                                    │
+│  ├── Formula: 1/(1+(IQR/s)^α) with s=0.2, α=1.7                 │
+│  ├── Business semantics: IQR=0.2 → stability=0.5 (medium)       │
+│  ├── Categorical bands: high (≤0.05), medium (≤0.30), low (>0.30)│
+│  └── Separated measurement from interpretation                     │
 │                                                                     │
 │  Reproducibility:                                                  │
 │  ├── Seed = SHA256(claim|model|templates|config)[:8]             │
@@ -173,7 +200,8 @@
 │  ├── imbalance_ratio: max_count/min_count (ideal=1.0)            │
 │  ├── counts_by_template: samples per paraphrase                   │
 │  ├── template_iqr_logit: consistency across templates             │
-│  └── bootstrap_seed: exact seed used for this run                │
+│  ├── bootstrap_seed: exact seed used for this run                │
+│  └── stability_score: calibrated stability via metrics.py        │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -184,11 +212,12 @@
 3. **API Calls**: `call_rpl_once_gpt5()` hits OpenAI Responses API
 4. **Sample Tracking**: Each sample tagged with `prompt_sha256` for clustering
 5. **Seed Generation**: `make_bootstrap_seed()` creates deterministic seed from config
-6. **Aggregation**: `aggregation.py` performs hardened clustered aggregation
-7. **Prompting**: Uses structured prompts from `rpl_prompts.py`
-8. **Validation**: Response schema enforced by `rpl_schema.py`
-9. **Statistics**: Trimmed clustered aggregation ensures unbiased, robust estimates
-10. **Output**: JSON with seed, aggregation config, and reproducible results
+6. **Aggregation**: `aggregation.py` performs hardened clustered aggregation with robust error handling
+7. **Stability Scoring**: `metrics.py` applies calibrated stability formula with business semantics
+8. **Prompting**: Uses structured prompts from `rpl_prompts.py`
+9. **Validation**: Response schema enforced by `rpl_schema.py`
+10. **Statistics**: Trimmed clustered aggregation ensures unbiased, robust estimates
+11. **Output**: JSON with seed, aggregation config, calibrated stability, and reproducible results
 
 ## Aggregation Methods
 
@@ -198,6 +227,8 @@
 - **Deterministic RNG**: Configuration-based seed for reproducibility
 - **5000 bootstrap iterations**: Smooth, stable confidence intervals
 - **Cluster bootstrap**: Respects two-level uncertainty structure
+- **Robust error handling**: Validates trim < 0.5, handles negative IQR edge cases
+- **Calibrated stability**: Uses metrics.py for business-aligned stability scoring
 
 ### Simple (Legacy)
 - Direct mean of all logits  
@@ -214,10 +245,24 @@
 
 ## Output Structure
 
-The enhanced output includes an `aggregation` block with:
+The enhanced output includes:
+
+**Aggregates Block**:
+- `prob_true_rpl`: Calibrated probability estimate
+- `ci95`: Bootstrap confidence interval
+- `stability_score`: Calibrated stability via metrics.py formula
+- `is_stable`: Boolean flag based on CI width ≤ 0.20
+
+**Aggregation Block**:
 - Method name (e.g., "equal_by_template_cluster_bootstrap_trimmed")
 - Bootstrap seed for reproducibility
 - Configuration (B=5000, center="trimmed", trim=0.2)
 - Template statistics (counts, imbalance ratio, IQR)
 
-This ensures complete transparency and reproducibility of the statistical methodology.
+**Calibrated Stability Features**:
+- Separates raw IQR measurement from business interpretation
+- Formula: `1/(1+(IQR/s)^α)` where s=0.2, α=1.7
+- IQR=0.2 maps to stability=0.5 (medium) for business alignment
+- Categorical bands: high/medium/low for business logic
+
+This ensures complete transparency, reproducibility, and business-aligned interpretation of the statistical methodology.
