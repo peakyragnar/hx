@@ -20,6 +20,10 @@ from typing import Optional
 from datetime import datetime
 import json
 import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env so OPENAI_API_KEY is available
+load_dotenv()
 
 app = typer.Typer(
     help="Heretix Prompt Studio (Lite) - Iterative prompt optimization for SYSTEM_RPL",
@@ -483,6 +487,8 @@ def gc(
 
 def main():
     """Main entry point for the CLI."""
+    # Ensure .env is loaded for subcommands invoked directly
+    load_dotenv()
     app()
 
 
