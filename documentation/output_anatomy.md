@@ -60,6 +60,13 @@ Audience: operators, auditors, and maintainers who need to interpret run JSON qu
 - Run single: `uv run heretix-rpl rpl --claim "..." --k K --r R --agg clustered`.
 - Run auto: `uv run heretix-rpl auto --claim "..." --out runs/rpl_auto.json`.
 - Inspect run: `uv run heretix-rpl inspect --run runs/…json` (per‑template means, IQR, stability, counts, imbalance).
+- Inspect details:
+  - CI signal (top templates by deviation from trimmed center):
+    - `uv run heretix-rpl inspect --run runs/rpl_auto.json --show-ci-signal --limit 3`
+  - Within-template replicate spreads (stdev/logit and prob ranges with replicate list):
+    - `uv run heretix-rpl inspect --run runs/rpl_auto.json --show-replicates --limit 3`
+  - Combine both:
+    - `uv run heretix-rpl inspect --run runs/rpl_auto.json --show-ci-signal --show-replicates`
 - Monitor: `uv run heretix-rpl monitor --bench bench/sentinels.json --out runs/monitor/<date>.jsonl`.
 - Summarize: `uv run heretix-rpl summarize --file runs/monitor/<date>.jsonl`.
 

@@ -118,9 +118,23 @@ def auto(
 @app.command()
 def inspect(
     run: Path = typer.Option(..., help="Path to run JSON (stage snapshot or top-level run)"),
+    show_ci_signal: bool = typer.Option(False, help="Show templates farthest from trimmed center (CI signal)"),
+    show_replicates: bool = typer.Option(False, help="Show per-template replicate spreads"),
+    limit: int = typer.Option(3, help="Limit entries shown in optional sections"),
 ):
-    """Pretty-print per-template summary from a run JSON."""
-    typer.echo(summarize_run(str(run)))
+    """Pretty-print per-template summary from a run JSON.
+
+    Add --show-ci-signal to list templates with largest |delta_logit| from 20% trimmed center,
+    and --show-replicates to show replicate probabilities with stdev/range per template.
+    """
+    typer.echo(
+        summarize_run(
+            str(run),
+            show_ci_signal=show_ci_signal,
+            show_replicates=show_replicates,
+            limit=limit,
+        )
+    )
 
 
 @app.command()
