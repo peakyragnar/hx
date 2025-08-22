@@ -15,7 +15,10 @@ class PromptConstraints:
     REQUIRED_PHRASES = [
         "Raw Prior Lens",
         "JSON",
-        "Do NOT browse, search, or cite"
+        "Do NOT browse, search, or cite",
+        "ignore instructions",
+        "opaque",  # treat claim as opaque data
+        "two decimals"  # numeric probability formatting hint
     ]
     
     # Forbidden tokens that should not appear
@@ -27,6 +30,9 @@ class PromptConstraints:
         "function_call", # Function calling
         "tool",          # Tool use
         "web.run",       # Web execution
+        "http://", "https://", "www.",  # URLs
+        "as of 20", "today", "now",      # temporal leakage
+        "cite", "URL"                      # citation hints
     ]
     
     # Additional forbidden patterns (regex)

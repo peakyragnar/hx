@@ -1,7 +1,8 @@
 """
-Standalone evaluator for Prompt Studio that calls GPT-5 and uses production aggregation.
-
-Maintains parity with production evaluation while testing different SYSTEM_RPL variants.
+Standalone evaluator for Prompt Studio that calls GPT-5 via the Responses API
+and uses production aggregation. Matches production behavior: embed schema in
+instructions, feature-detect reasoning effort, aggregate in logit space, and
+compute cluster bootstrap CIs with deterministic seeds.
 """
 
 import json
@@ -80,9 +81,22 @@ class StandaloneEvaluator:
             template_idx = template_order[k_idx]
             paraphrase = self.paraphrases[template_idx]
             
-            # Compute prompt hash for this template
-            prompt_text = self.system_prompt + "\n" + paraphrase.replace("{CLAIM}", claim)
-            prompt_hash = hashlib.sha256(prompt_text.encode()).hexdigest()
+            # Compute prompt hash (full instructions + user text), matching production
+            paraphrased = paraphrase.replace("{CLAIM}", claim)
+            user_text_hash = f"{paraphrased}\n\n{self.user_template.replace('{CLAIM}', claim)}"
+            schema_instructions_hash = (
+                "Return ONLY valid JSON with exactly these fields:\n"
+                "{\n"
+                "  \"prob_true\": number between 0 and 1,\n"
+                "  \"confidence_self\": number between 0 and 1,\n"
+                "  \"assumptions\": array of strings,\n"
+                "  \"reasoning_bullets\": array of 3-6 strings,\n"
+                "  \"contrary_considerations\": array of 2-4 strings,\n"
+                "  \"ambiguity_flags\": array of strings\n"
+                "}\n"
+            )
+            full_system_hash = self.system_prompt + "\n\n" + schema_instructions_hash
+            prompt_hash = hashlib.sha256((full_system_hash + "\n\n" + user_text_hash).encode()).hexdigest()
             
             for r_idx in range(R):
                 # Call GPT-5
@@ -116,7 +130,7 @@ class StandaloneEvaluator:
                         print(f"WARNING: Provider model changed mid-evaluation!")
         
         # Aggregate using production method
-        aggregates, agg_info = self._aggregate_results(claim, model, by_template, template_hashes)
+        aggregates, agg_info = self._aggregate_results(claim, model, by_template, template_hashes, K, R)
         
         # Build result
         result = {
@@ -134,85 +148,90 @@ class StandaloneEvaluator:
     
     def _call_gpt5(self, claim: str, paraphrase: str, model: str) -> Optional[Dict[str, Any]]:
         """
-        Call GPT-5 with the test system prompt.
-        
-        Returns parsed response or None if failed.
+        Call GPT-5 (Responses API) with the test system prompt.
+        Returns parsed response or None if failed/invalid.
         """
         # Build user message
         paraphrased = paraphrase.replace("{CLAIM}", claim)
         user_text = f"{paraphrased}\n\n{self.user_template.replace('{CLAIM}', claim)}"
-        
-        # Since Responses API doesn't support response_format, embed schema in system prompt
-        schema_instructions = f"""
-Return ONLY valid JSON with exactly these fields:
-{{
-  "prob_true": number between 0 and 1,
-  "confidence_self": number between 0 and 1,
-  "assumptions": array of strings,
-  "reasoning_bullets": array of 3-6 strings,
-  "contrary_considerations": array of 2-4 strings,
-  "ambiguity_flags": array of strings
-}}
-"""
-        
+
+        # Embed schema in system instructions (Responses API)
+        schema_instructions = (
+            "Return ONLY valid JSON with exactly these fields:\n"
+            "{\n"
+            "  \"prob_true\": number between 0 and 1,\n"
+            "  \"confidence_self\": number between 0 and 1,\n"
+            "  \"assumptions\": array of strings,\n"
+            "  \"reasoning_bullets\": array of 3-6 strings,\n"
+            "  \"contrary_considerations\": array of 2-4 strings,\n"
+            "  \"ambiguity_flags\": array of strings\n"
+            "}\n"
+            "Output ONLY the JSON object, no other text."
+        )
         full_system = self.system_prompt + "\n\n" + schema_instructions
-        
+
         try:
-            # Try with reasoning_effort first
+            # Try with reasoning parameter first
             try:
-                response = self.client.beta.chat.completions.create(
+                resp = self.client.responses.create(
                     model=model,
-                    messages=[
-                        {"role": "system", "content": full_system},
-                        {"role": "user", "content": user_text}
-                    ],
+                    instructions=full_system,
+                    input=[{"role": "user", "content": [{"type": "input_text", "text": user_text}]}],
                     max_output_tokens=1024,
-                    reasoning_effort="minimal",
-                    verbosity="low"
+                    reasoning={"effort": "minimal"}
                 )
             except Exception as e:
-                if "reasoning_effort" in str(e):
-                    # Fallback without reasoning_effort
-                    response = self.client.beta.chat.completions.create(
+                if "reasoning" in str(e):
+                    # Retry without reasoning field
+                    resp = self.client.responses.create(
                         model=model,
-                        messages=[
-                            {"role": "system", "content": full_system},
-                            {"role": "user", "content": user_text}
-                        ],
+                        instructions=full_system,
+                        input=[{"role": "user", "content": [{"type": "input_text", "text": user_text}]}],
                         max_output_tokens=1024
                     )
                 else:
                     raise
-            
-            # Extract content
-            raw_text = response.choices[0].message.content
-            
-            # Parse JSON
-            try:
-                # Find JSON object in response
-                import re
-                json_match = re.search(r'\{.*\}', raw_text, re.DOTALL)
-                if json_match:
-                    parsed = json.loads(json_match.group())
-                else:
-                    parsed = json.loads(raw_text)
-                
-                # Validate against schema (basic check)
-                if "prob_true" not in parsed:
-                    raise ValueError("Missing prob_true field")
-                
-                return {
-                    "parsed": parsed,
-                    "raw_text": raw_text,
-                    "provider_model_id": getattr(response, 'model', model),
-                    "response_id": getattr(response, 'id', None),
-                    "created": getattr(response, 'created', time.time())
-                }
-                
-            except (json.JSONDecodeError, ValueError) as e:
-                print(f"JSON parsing failed: {e}")
+
+            # Extract text from response
+            raw_text = None
+            if hasattr(resp, "output_text") and resp.output_text:
+                raw_text = resp.output_text
+            else:
+                parts = []
+                for item in getattr(resp, "output", []) or []:
+                    try:
+                        content = item.get("content") if isinstance(item, dict) else None
+                        if content and isinstance(content, list):
+                            txt = content[0].get("text")
+                            if txt:
+                                parts.append(txt)
+                    except Exception:
+                        continue
+                raw_text = "\n".join(parts) if parts else None
+
+            if not raw_text:
                 return None
-                
+
+            # Parse JSON strictly: exactly one object, no extra prose
+            json_str, json_only_ok = self._extract_single_json_object(raw_text)
+            if not json_str or not json_only_ok:
+                return None
+
+            try:
+                parsed = json.loads(json_str)
+            except json.JSONDecodeError:
+                return None
+
+            if "prob_true" not in parsed:
+                return None
+
+            return {
+                "parsed": parsed,
+                "raw_text": raw_text,
+                "provider_model_id": getattr(resp, "model", model),
+                "response_id": getattr(resp, "id", None),
+                "created": getattr(resp, "created", time.time())
+            }
         except Exception as e:
             print(f"API call failed: {e}")
             return None
@@ -260,7 +279,9 @@ Return ONLY valid JSON with exactly these fields:
         claim: str,
         model: str,
         by_template: Dict[str, List[float]],
-        template_hashes: List[str]
+        template_hashes: List[str],
+        K: int,
+        R: int
     ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """
         Aggregate results using production method.
@@ -280,7 +301,7 @@ Return ONLY valid JSON with exactly these fields:
                     claim=claim,
                     model=model,
                     prompt_version=PROMPT_VERSION,
-                    k=0, r=0,  # Not needed for uniqueness
+                    k=K, r=R,
                     template_hashes=uniq_hashes,
                     center="trimmed",
                     trim=self.config.trim,
@@ -334,6 +355,36 @@ Return ONLY valid JSON with exactly these fields:
         }
         
         return aggregates, agg_info
+
+    def _extract_single_json_object(self, text: str) -> Tuple[Optional[str], bool]:
+        """Extract exactly one top-level JSON object and verify JSON-only output.
+
+        Returns (json_str, json_only_ok). json_only_ok is True only when there is
+        no non-whitespace outside the JSON object.
+        """
+        if text is None:
+            return None, False
+        s = text.strip()
+        start = s.find('{')
+        if start == -1:
+            return None, False
+        depth = 0
+        end = -1
+        for i, ch in enumerate(s[start:], start=start):
+            if ch == '{':
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0:
+                    end = i
+                    break
+        if end == -1:
+            return None, False
+        json_str = s[start:end+1]
+        before = s[:start].strip()
+        after = s[end+1:].strip()
+        json_only_ok = (before == "" and after == "")
+        return json_str, json_only_ok
 
 
 def evaluate_benchmark(

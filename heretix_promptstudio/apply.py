@@ -215,24 +215,31 @@ def _get_next_ps_number(content: str) -> int:
 
 
 def _replace_prompt_and_version(content: str, new_prompt: str, new_version: str) -> str:
-    """Replace SYSTEM_RPL and PROMPT_VERSION in content."""
-    # Replace SYSTEM_RPL
-    # Handle both """ and ''' delimiters
-    pattern = r'(SYSTEM_RPL\s*=\s*""")(.*?)(""")'
-    replacement = rf'\1{new_prompt}\3'
-    new_content = re.sub(pattern, replacement, content, flags=re.DOTALL)
-    
+    """Replace SYSTEM_RPL and PROMPT_VERSION in content safely (no backrefs)."""
+    # Escape potential triple quote collisions by preferring double-quote triple strings
+    safe_prompt = new_prompt.replace('"""', '\\"""')
+
+    # Replace SYSTEM_RPL (triple double quotes)
+    def repl_double(m: re.Match) -> str:
+        return f"{m.group(1)}{safe_prompt}{m.group(3)}"
+
+    new_content = re.sub(r'(SYSTEM_RPL\s*=\s*""")(.*?)(""")', repl_double, content, flags=re.DOTALL)
+
     if new_content == content:
-        # Try single quotes
-        pattern = r"(SYSTEM_RPL\s*=\s*''')(.*?)(''')"
-        replacement = rf'\1{new_prompt}\3'
-        new_content = re.sub(pattern, replacement, content, flags=re.DOTALL)
-    
+        # Try triple single quotes
+        safe_prompt_single = new_prompt.replace("'''", "\\'''")
+
+        def repl_single(m: re.Match) -> str:
+            return f"{m.group(1)}{safe_prompt_single}{m.group(3)}"
+
+        new_content = re.sub(r"(SYSTEM_RPL\s*=\s*''')(.*?)(''')", repl_single, content, flags=re.DOTALL)
+
     # Replace PROMPT_VERSION
-    pattern = r'(PROMPT_VERSION\s*=\s*["\'])([^"\']+)(["\'])'
-    replacement = rf'\1{new_version}\3'
-    new_content = re.sub(pattern, replacement, new_content)
-    
+    def repl_version(m: re.Match) -> str:
+        return f"{m.group(1)}{new_version}{m.group(3)}"
+
+    new_content = re.sub(r'(PROMPT_VERSION\s*=\s*["\'])([^"\']+)(["\'])', repl_version, new_content)
+
     return new_content
 
 

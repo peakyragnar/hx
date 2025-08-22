@@ -71,7 +71,7 @@ class ExplainEngine:
             improvements, regressions = self._compare_metrics(current_metrics, baseline_metrics)
         
         # Generate recommendations
-        recommendations = self._generate_recommendations(gates, bench_results)
+        recommendations = self._generate_recommendations(gates, bench_results, session_dir)
         
         # Build scorecard
         scorecard = {
@@ -157,7 +157,8 @@ class ExplainEngine:
     def _generate_recommendations(
         self,
         gates: Dict[str, Any],
-        bench_results: Dict[str, Any]
+        bench_results: Dict[str, Any],
+        session_dir: Path
     ) -> List[str]:
         """Generate 3-5 actionable recommendations based on gate failures."""
         recommendations = []
@@ -210,8 +211,9 @@ class ExplainEngine:
                 recommendations.append("Add 'No URLs or external references' explicitly")
         
         # Length optimization
-        candidate_dir = Path(bench_results.get("candidate_id", ""))
-        if candidate_dir:
+        candidate_id = bench_results.get("candidate_id", "")
+        candidate_dir = session_dir / candidate_id if candidate_id else None
+        if candidate_dir and (candidate_dir / "metadata.json").exists():
             metadata_file = candidate_dir / "metadata.json"
             if metadata_file.exists():
                 metadata = json.loads(metadata_file.read_text())

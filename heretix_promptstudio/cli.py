@@ -203,11 +203,21 @@ def decide(
     if feedback:
         typer.echo(f"Feedback: {feedback}")
     
-    # TODO: Implement actual decision recording
-    from heretix_promptstudio.store import record_decision
-    # record_decision(candidate, action, feedback)
-    
-    typer.echo("[Not yet implemented]")
+    from heretix_promptstudio.store import get_current_session, SessionStore
+    session = get_current_session()
+    if not session:
+        # Try to find session by candidate
+        for sess in SessionStore.list_sessions():
+            store = SessionStore(sess["session_id"])
+            if (store.session_dir / candidate).exists():
+                session = store
+                break
+    if not session:
+        typer.echo(f"Error: Could not find candidate {candidate}", err=True)
+        raise typer.Exit(1)
+
+    decision = session.record_decision(candidate, action, feedback)
+    typer.echo(f"Recorded: {decision['action']} for {candidate} at {decision['timestamp']}")
 
 
 @app.command()
@@ -223,17 +233,45 @@ def apply(
     if dry_run:
         typer.echo("DRY RUN - No changes will be made")
     
-    # TODO: Implement actual apply logic
     from heretix_promptstudio.apply import apply_to_production
-    # patch = apply_to_production(candidate, dest, dry_run=dry_run)
-    
+    from heretix_promptstudio.store import get_current_session, SessionStore
+
+    # Locate session
+    session = get_current_session()
+    if not session:
+        for sess in SessionStore.list_sessions():
+            store = SessionStore(sess["session_id"])
+            if (store.session_dir / candidate).exists():
+                session = store
+                break
+    if not session:
+        typer.echo(f"Error: Could not find candidate {candidate}", err=True)
+        raise typer.Exit(1)
+
     if not dry_run and not yes:
         confirm = typer.confirm("This will modify production. Continue?")
         if not confirm:
             typer.echo("Aborted.")
             raise typer.Exit(0)
-    
-    typer.echo("[Not yet implemented]")
+
+    result = apply_to_production(
+        candidate_id=candidate,
+        session_dir=session.session_dir,
+        target_file=dest,
+        dry_run=dry_run,
+        skip_validation=False
+    )
+    if not result.get("success"):
+        typer.echo(f"❌ Apply failed: {result.get('error')}")
+        raise typer.Exit(1)
+    if result.get("dry_run"):
+        typer.echo("=== Diff (unified) ===")
+        typer.echo(result.get("patch", "<no diff>"))
+        typer.echo(f"New version would be: {result.get('new_version')}")
+    else:
+        typer.echo("✅ Applied to production")
+        typer.echo(f"Backup: {result.get('backup_path')}")
+        typer.echo(f"Version: {result.get('new_version')}")
 
 
 @app.command()
@@ -242,16 +280,27 @@ def list(
     verbose: bool = typer.Option(False, "-v", help="Show detailed information")
 ):
     """List all candidates in a session."""
-    session = session or "current"
-    typer.echo(f"[list] Candidates in session: {session}")
-    
-    # TODO: Implement actual listing logic
-    from heretix_promptstudio.store import list_candidates
-    # candidates = list_candidates(session)
-    # for cand in candidates:
-    #     display_candidate_summary(cand, verbose=verbose)
-    
-    typer.echo("[Not yet implemented]")
+    from heretix_promptstudio.store import get_current_session, SessionStore
+    if session is None or session == "current":
+        store = get_current_session()
+        if not store:
+            typer.echo("No active session found.")
+            raise typer.Exit(1)
+        typer.echo(f"[list] Candidates in session: {store.session_id}")
+        for c in store.list_candidates():
+            line = f"- {c['candidate_id']}"
+            if verbose:
+                line += f" | created={c.get('created')} | decision={c.get('decision')}"
+            typer.echo(line)
+    else:
+        # If a concrete session id is provided, list its candidates
+        store = SessionStore(session)
+        typer.echo(f"[list] Candidates in session: {store.session_id}")
+        for c in store.list_candidates():
+            line = f"- {c['candidate_id']}"
+            if verbose:
+                line += f" | created={c.get('created')} | decision={c.get('decision')}"
+            typer.echo(line)
 
 
 @app.command()
@@ -265,12 +314,36 @@ def show(
     if section:
         typer.echo(f"Section: {section}")
     
-    # TODO: Implement actual show logic
-    from heretix_promptstudio.store import load_candidate
-    # data = load_candidate(candidate)
-    # display_candidate_details(data, section=section)
-    
-    typer.echo("[Not yet implemented]")
+    from heretix_promptstudio.store import get_current_session, SessionStore
+    session = get_current_session()
+    if not session:
+        for sess in SessionStore.list_sessions():
+            store = SessionStore(sess["session_id"])
+            if (store.session_dir / candidate).exists():
+                session = store
+                break
+    if not session:
+        typer.echo(f"Error: Could not find candidate {candidate}", err=True)
+        raise typer.Exit(1)
+    cand_dir = session.session_dir / candidate
+    if not cand_dir.exists():
+        typer.echo(f"Candidate not found in session {session.session_id}")
+        raise typer.Exit(1)
+    if section in (None, "prompt"):
+        typer.echo("=== prompt.txt ===")
+        typer.echo((cand_dir / "prompt.txt").read_text())
+        if section:
+            return
+    if section in (None, "diff") and (cand_dir / "diff.md").exists():
+        typer.echo("=== diff.md ===")
+        typer.echo((cand_dir / "diff.md").read_text())
+    if section in (None, "metrics") and (cand_dir / "benchmark_results.json").exists():
+        typer.echo("=== benchmark_results.json (aggregate) ===")
+        data = json.loads((cand_dir / "benchmark_results.json").read_text())
+        typer.echo(json.dumps(data.get("aggregate_metrics", {}), indent=2))
+    if section in (None, "decision") and (cand_dir / "decision.json").exists():
+        typer.echo("=== decision.json ===")
+        typer.echo((cand_dir / "decision.json").read_text())
 
 
 @app.command()
@@ -282,12 +355,40 @@ def compare(
     """Compare candidate performance against baseline."""
     typer.echo(f"[compare] Comparing {candidate} vs {baseline} on {bench}")
     
-    # TODO: Implement actual comparison logic
-    from heretix_promptstudio.evaluate import compare_candidates
-    # comparison = compare_candidates(candidate, baseline, bench)
-    # display_comparison(comparison)
-    
-    typer.echo("[Not yet implemented]")
+    from heretix_promptstudio.store import get_current_session, SessionStore
+    session = get_current_session()
+    if not session:
+        for sess in SessionStore.list_sessions():
+            store = SessionStore(sess["session_id"])
+            if (store.session_dir / candidate).exists():
+                session = store
+                break
+    if not session:
+        typer.echo("No session found for candidate", err=True)
+        raise typer.Exit(1)
+    cand_dir = session.session_dir / candidate
+    base_dir = session.session_dir / baseline if baseline != "current" else None
+    if not (cand_dir / "benchmark_results.json").exists():
+        typer.echo("Candidate has no benchmark results. Run eval first.")
+        raise typer.Exit(1)
+    cand_data = json.loads((cand_dir / "benchmark_results.json").read_text())
+    if baseline == "current":
+        typer.echo("Baseline 'current' comparison not implemented in CLI yet.")
+        typer.echo(json.dumps(cand_data.get("aggregate_metrics", {}), indent=2))
+        raise typer.Exit(0)
+    if not base_dir or not (base_dir / "benchmark_results.json").exists():
+        typer.echo("Baseline candidate missing benchmark results.")
+        raise typer.Exit(1)
+    base_data = json.loads((base_dir / "benchmark_results.json").read_text())
+    cm = cand_data.get("aggregate_metrics", {})
+    bm = base_data.get("aggregate_metrics", {})
+    typer.echo("=== Comparison (candidate - baseline) ===")
+    for key in ["median_ci_width", "median_stability", "json_validity_rate", "mean_prob"]:
+        if key in cm and key in bm and cm[key] is not None and bm[key] is not None:
+            delta = cm[key] - bm[key]
+            typer.echo(f"{key}: {cm[key]:.3f} vs {bm[key]:.3f} (Δ={delta:+.3f})")
+        else:
+            typer.echo(f"{key}: N/A")
 
 
 @app.command()
@@ -297,17 +398,26 @@ def precheck(
     """Run constraint validation on a candidate."""
     typer.echo(f"[precheck] Validating constraints for {candidate}")
     
-    # TODO: Implement actual precheck logic
+    from heretix_promptstudio.store import get_current_session, SessionStore
     from heretix_promptstudio.constraints import validate_candidate
-    # issues = validate_candidate(candidate)
-    # if issues:
-    #     typer.echo("Constraint violations found:")
-    #     for issue in issues:
-    #         typer.echo(f"  - {issue}")
-    # else:
-    #     typer.echo("✓ All constraints pass")
-    
-    typer.echo("[Not yet implemented]")
+    session = get_current_session()
+    if not session:
+        for sess in SessionStore.list_sessions():
+            store = SessionStore(sess["session_id"])
+            if (store.session_dir / candidate).exists():
+                session = store
+                break
+    if not session:
+        typer.echo(f"Error: Could not find candidate {candidate}", err=True)
+        raise typer.Exit(1)
+    issues = validate_candidate(str(session.session_dir / candidate))
+    if issues:
+        typer.echo("Constraint violations found:")
+        for issue in issues:
+            typer.echo(f"  - {issue}")
+        raise typer.Exit(2)
+    else:
+        typer.echo("✓ All constraints pass")
 
 
 @app.command()
@@ -340,12 +450,12 @@ def gc(
     if dry_run:
         typer.echo("DRY RUN - No deletions will occur")
     
-    # TODO: Implement actual garbage collection
     from heretix_promptstudio.store import cleanup_old_sessions
-    # deleted = cleanup_old_sessions(older_than_days=older_than, dry_run=dry_run)
-    # typer.echo(f"Cleaned up {len(deleted)} sessions")
-    
-    typer.echo("[Not yet implemented]")
+    deleted = cleanup_old_sessions(older_than_days=older_than, dry_run=dry_run)
+    if dry_run:
+        typer.echo(f"Would delete {len(deleted)} sessions: {', '.join(deleted) if deleted else '<none>'}")
+    else:
+        typer.echo(f"Deleted {len(deleted)} sessions")
 
 
 def main():
