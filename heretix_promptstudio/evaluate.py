@@ -476,9 +476,79 @@ def evaluate_benchmark(
         "aggregate_metrics": aggregate_metrics,
         "timestamp": int(time.time())
     }
-    
+
+    # Write generic and bench-specific files
     (candidate_dir / "benchmark_results.json").write_text(json.dumps(bench_results, indent=2))
-    
+    bench_stem = Path(bench_path).stem
+    (candidate_dir / f"benchmark_results_{bench_stem}.json").write_text(json.dumps(bench_results, indent=2))
+
+    return bench_results
+
+
+def evaluate_benchmark_current(
+    candidate_id: str,
+    bench_path: Path,
+    session_dir: Path,
+    K: int = 8,
+    R: int = 2,
+    quick: bool = False
+) -> Dict[str, Any]:
+    """Evaluate the current production SYSTEM_RPL on a benchmark for comparison.
+
+    Results are saved under the candidate directory as baseline_current_<bench>.json.
+    """
+    # Load production prompt
+    from heretix_rpl.rpl_prompts import SYSTEM_RPL as PROD_SYSTEM_RPL
+
+    # Load benchmark
+    with open(bench_path) as f:
+        bench_data = yaml.safe_load(f)
+
+    claims = bench_data.get("claims", [])
+
+    # Get session seed if available
+    config_file = session_dir / "config.json"
+    session_seed = None
+    if config_file.exists():
+        config = json.loads(config_file.read_text())
+        session_seed = config.get("seed")
+
+    evaluator = StandaloneEvaluator(PROD_SYSTEM_RPL, session_seed=session_seed)
+
+    if quick:
+        K, R = 5, 1
+
+    results = []
+    for claim_data in claims:
+        claim_text = claim_data["claim"]
+        # Apply invariance context if present
+        if "invariance_context" in claim_data:
+            claim_text = claim_data["invariance_context"] + " " + claim_text
+        res = evaluator.evaluate_claim(claim_text, K=K, R=R)
+        res["tags"] = claim_data.get("tags", [])
+        res["claim_data"] = claim_data
+        results.append(res)
+
+    aggregate_metrics = compute_benchmark_metrics(results)
+
+    bench_results = {
+        "candidate_id": candidate_id,
+        "benchmark": str(bench_path),
+        "sampling": {"K": K, "R": R},
+        "n_claims": len(claims),
+        "quick_mode": quick,
+        "results": results,
+        "aggregate_metrics": aggregate_metrics,
+        "timestamp": int(time.time()),
+        "baseline": "current_production"
+    }
+
+    # Save under candidate folder
+    cand_dir = session_dir / candidate_id
+    cand_dir.mkdir(parents=True, exist_ok=True)
+    stem = Path(bench_path).stem
+    (cand_dir / f"baseline_current_{stem}.json").write_text(json.dumps(bench_results, indent=2))
+
     return bench_results
 
 

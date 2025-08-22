@@ -11,6 +11,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any
 import json
+import json
 
 
 def apply_to_production(
@@ -123,18 +124,19 @@ def apply_to_production(
 
 
 def _validate_candidate_ready(candidate_dir: Path) -> Dict[str, Any]:
-    """Validate that candidate is ready for production."""
-    # Check for evaluation results
-    bench_file = candidate_dir / "benchmark_results.json"
-    if not bench_file.exists():
-        return {
-            "ready": False,
-            "message": "No evaluation results found. Run 'eval' first."
-        }
-    
-    bench_results = json.loads(bench_file.read_text())
-    
-    # Check for decision
+    """Validate that candidate is ready for production.
+
+    Requirements:
+    - A recorded accept decision
+    - Train and holdout benchmark results present and each passes all gates
+    - Baseline 'current' comparison on the train bench shows ≥1 improvement and 0 regressions
+    """
+    from heretix_promptstudio.metrics import check_gates
+    from heretix_promptstudio.evaluate import evaluate_benchmark_current
+    from heretix_promptstudio.constraints import PromptConstraints
+    from heretix_rpl.rpl_prompts import SYSTEM_RPL as PROD_SYSTEM_RPL
+
+    # Must have a decision
     decision_file = candidate_dir / "decision.json"
     if not decision_file.exists():
         return {
@@ -148,27 +150,101 @@ def _validate_candidate_ready(candidate_dir: Path) -> Dict[str, Any]:
             "ready": False,
             "message": f"Candidate was {decision.get('action', 'not decided')}, not accepted"
         }
-    
-    # Check gates using metrics module
-    from heretix_promptstudio.metrics import check_gates
-    
-    all_pass, gates = check_gates(bench_results)
-    
-    if not all_pass:
-        failed_gates = [name for name, result in gates.items() 
-                       if isinstance(result, dict) and not result.get("passed")]
-        return {
-            "ready": False,
-            "message": f"Failed gates: {', '.join(failed_gates)}"
-        }
-    
-    # Check for at least one improvement
-    # (This would require loading baseline and comparing, simplified here)
-    
-    return {
-        "ready": True,
-        "message": "Candidate ready for production"
-    }
+
+    # Locate benchmark result files
+    bench_generic = candidate_dir / "benchmark_results.json"
+    bench_files = list(candidate_dir.glob("benchmark_results_*.json"))
+    bench_results_list = []
+    if bench_generic.exists():
+        try:
+            bench_results_list.append(json.loads(bench_generic.read_text()))
+        except Exception:
+            pass
+    for bf in bench_files:
+        try:
+            bench_results_list.append(json.loads(bf.read_text()))
+        except Exception:
+            continue
+
+    if not bench_results_list:
+        return {"ready": False, "message": "No evaluation results found. Run 'eval' first."}
+
+    # Identify train and holdout by filename or path content
+    train_res = None
+    holdout_res = None
+    for br in bench_results_list:
+        bench_path = br.get("benchmark", "")
+        stem = Path(bench_path).stem.lower()
+        if "holdout" in stem or "holdout" in bench_path.lower():
+            holdout_res = br
+        else:
+            # choose the last non-holdout as train
+            train_res = br
+
+    if train_res is None:
+        return {"ready": False, "message": "Train benchmark results not found. Evaluate on train bench."}
+    if holdout_res is None:
+        return {"ready": False, "message": "Holdout benchmark results not found. Evaluate on holdout bench."}
+
+    # Gates must pass on both
+    train_pass, train_gates = check_gates(train_res)
+    if not train_pass:
+        failed = [n for n, r in train_gates.items() if isinstance(r, dict) and not r.get("passed")]
+        return {"ready": False, "message": f"Train gates failed: {', '.join(failed)}"}
+    hold_pass, hold_gates = check_gates(holdout_res)
+    if not hold_pass:
+        failed = [n for n, r in hold_gates.items() if isinstance(r, dict) and not r.get("passed")]
+        return {"ready": False, "message": f"Holdout gates failed: {', '.join(failed)}"}
+
+    # Baseline comparison on train: evaluate current production prompt on same bench
+    session_dir = candidate_dir.parent
+    train_bench_path = Path(train_res.get("benchmark"))
+    baseline_res = evaluate_benchmark_current(
+        candidate_id=candidate_dir.name,
+        bench_path=train_bench_path,
+        session_dir=session_dir,
+        K=train_res.get("sampling", {}).get("K", 8),
+        R=train_res.get("sampling", {}).get("R", 2),
+        quick=train_res.get("quick_mode", False)
+    )
+
+    # Compare metrics
+    cand_metrics = train_res.get("aggregate_metrics", {})
+    base_metrics = baseline_res.get("aggregate_metrics", {})
+    ci_cand = cand_metrics.get("median_ci_width")
+    ci_base = base_metrics.get("median_ci_width")
+    stab_cand = cand_metrics.get("median_stability")
+    stab_base = base_metrics.get("median_stability")
+
+    # Token counts: candidate metadata vs production prompt estimate
+    cand_meta = json.loads((candidate_dir / "metadata.json").read_text()) if (candidate_dir / "metadata.json").exists() else {}
+    cand_tokens = cand_meta.get("estimated_tokens")
+    prod_tokens = PromptConstraints().estimate_tokens(PROD_SYSTEM_RPL)
+
+    improvements = []
+    regressions = []
+    if isinstance(ci_cand, (int, float)) and isinstance(ci_base, (int, float)):
+        if ci_cand < ci_base:
+            improvements.append("median_ci_width")
+        elif ci_cand > ci_base:
+            regressions.append("median_ci_width")
+    if isinstance(stab_cand, (int, float)) and isinstance(stab_base, (int, float)):
+        if stab_cand > stab_base:
+            improvements.append("median_stability")
+        elif stab_cand < stab_base:
+            regressions.append("median_stability")
+    if isinstance(cand_tokens, int):
+        if cand_tokens < prod_tokens:
+            improvements.append("prompt_tokens")
+        elif cand_tokens > prod_tokens:
+            regressions.append("prompt_tokens")
+
+    if not improvements:
+        return {"ready": False, "message": "No improvements over current production on train bench."}
+    if regressions:
+        return {"ready": False, "message": f"Regressions detected: {', '.join(regressions)}"}
+
+    return {"ready": True, "message": "Candidate ready for production"}
 
 
 def _extract_system_rpl(content: str) -> str:

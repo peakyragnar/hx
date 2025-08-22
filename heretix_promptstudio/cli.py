@@ -356,6 +356,7 @@ def compare(
     typer.echo(f"[compare] Comparing {candidate} vs {baseline} on {bench}")
     
     from heretix_promptstudio.store import get_current_session, SessionStore
+    from heretix_promptstudio.evaluate import evaluate_benchmark_current
     session = get_current_session()
     if not session:
         for sess in SessionStore.list_sessions():
@@ -367,26 +368,48 @@ def compare(
         typer.echo("No session found for candidate", err=True)
         raise typer.Exit(1)
     cand_dir = session.session_dir / candidate
-    base_dir = session.session_dir / baseline if baseline != "current" else None
-    if not (cand_dir / "benchmark_results.json").exists():
+    # Load candidate metrics (from bench-specific file if available)
+    bench_stem = bench.stem
+    cand_file_specific = cand_dir / f"benchmark_results_{bench_stem}.json"
+    cand_file_generic = cand_dir / "benchmark_results.json"
+    if cand_file_specific.exists():
+        cand_data = json.loads(cand_file_specific.read_text())
+    elif cand_file_generic.exists():
+        cand_data = json.loads(cand_file_generic.read_text())
+    else:
         typer.echo("Candidate has no benchmark results. Run eval first.")
         raise typer.Exit(1)
-    cand_data = json.loads((cand_dir / "benchmark_results.json").read_text())
+
     if baseline == "current":
-        typer.echo("Baseline 'current' comparison not implemented in CLI yet.")
-        typer.echo(json.dumps(cand_data.get("aggregate_metrics", {}), indent=2))
-        raise typer.Exit(0)
-    if not base_dir or not (base_dir / "benchmark_results.json").exists():
-        typer.echo("Baseline candidate missing benchmark results.")
-        raise typer.Exit(1)
-    base_data = json.loads((base_dir / "benchmark_results.json").read_text())
+        base_data = evaluate_benchmark_current(
+            candidate_id=candidate,
+            bench_path=bench,
+            session_dir=session.session_dir,
+            K=cand_data.get("sampling", {}).get("K", 8),
+            R=cand_data.get("sampling", {}).get("R", 2),
+            quick=cand_data.get("quick_mode", False)
+        )
+    else:
+        base_dir = session.session_dir / baseline
+        base_file_specific = base_dir / f"benchmark_results_{bench_stem}.json"
+        base_file_generic = base_dir / "benchmark_results.json"
+        if base_dir.exists() and base_file_specific.exists():
+            base_data = json.loads(base_file_specific.read_text())
+        elif base_dir.exists() and base_file_generic.exists():
+            base_data = json.loads(base_file_generic.read_text())
+        else:
+            typer.echo("Baseline candidate missing benchmark results.")
+            raise typer.Exit(1)
+
     cm = cand_data.get("aggregate_metrics", {})
     bm = base_data.get("aggregate_metrics", {})
-    typer.echo("=== Comparison (candidate - baseline) ===")
+    typer.echo("=== Comparison (candidate vs baseline) ===")
     for key in ["median_ci_width", "median_stability", "json_validity_rate", "mean_prob"]:
-        if key in cm and key in bm and cm[key] is not None and bm[key] is not None:
-            delta = cm[key] - bm[key]
-            typer.echo(f"{key}: {cm[key]:.3f} vs {bm[key]:.3f} (Δ={delta:+.3f})")
+        cval = cm.get(key)
+        bval = bm.get(key)
+        if isinstance(cval, (int, float)) and isinstance(bval, (int, float)):
+            delta = cval - bval
+            typer.echo(f"{key}: {cval:.3f} vs {bval:.3f} (Δ={delta:+.3f})")
         else:
             typer.echo(f"{key}: N/A")
 
