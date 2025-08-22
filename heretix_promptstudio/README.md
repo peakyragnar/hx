@@ -1,248 +1,167 @@
 # Heretix Prompt Studio (Lite)
 
-A standalone, human-in-the-loop prompt optimization system for iteratively improving `SYSTEM_RPL` while maintaining complete isolation from production until explicit approval.
+A standalone, human‑in‑the‑loop prompt optimization system for iteratively improving `SYSTEM_RPL` while keeping production isolated until you approve.
 
-## Overview
-
-Prompt Studio allows you to:
-- Test variations of the SYSTEM_RPL prompt
-- Evaluate them using the exact same statistical methodology as production
-- Compare results against quality gates and baselines
-- Apply approved prompts to production with safety guarantees
-
-**Key Feature**: This system is completely isolated from production. It only modifies `heretix_rpl/rpl_prompts.py` when you explicitly run the `apply` command.
+Key properties
+- Isolation: Only `heretix_rpl/rpl_prompts.py` is modified, and only by `apply`.
+- Parity: Uses the production estimator (logit aggregation, 20% trim, cluster bootstrap with deterministic seed).
+- Determinism: Balanced template rotation + fixed session seed; same CI bootstrap sequence across candidates.
+- Responses API only: No Chat Completions; schema is embedded in system instructions; strict JSON‑only extraction.
 
 ## Installation
 
-The Prompt Studio is automatically installed with Heretix:
+Prompt Studio ships with the repo.
 
 ```bash
-# From the Heretix directory
+# From the repo root
 uv pip install -e .
 
-# Verify installation
+# Verify CLI
 uv run heretix-pstudio --help
 ```
 
-## Quick Start
+## Quick Start (with enforcement)
 
-### 1. Create a New Prompt Candidate
+1) Propose a candidate
 
 ```bash
-# Start a new optimization session
-uv run heretix-pstudio propose --notes "Make JSON instruction more explicit"
+uv run heretix-pstudio propose --notes "Tighten JSON; add opaque; two decimals"
+uv run heretix-pstudio precheck --candidate cand_001   # optional: constraint preflight
 ```
 
-This creates a new candidate (e.g., `cand_001`) with your proposed changes.
-
-### 2. Evaluate the Candidate
+2) Evaluate on training bench (deterministic K/R)
 
 ```bash
-# Run evaluation on training benchmark
 uv run heretix-pstudio eval \
   --candidate cand_001 \
   --bench heretix_promptstudio/benches/claims_bench_train.yaml
 
-# Quick mode for testing (not for production)
-uv run heretix-pstudio eval \
+# Quick iteration (dev only, not publishable)
+uv run heretix-pstudio eval --candidate cand_001 --bench heretix_promptstudio/benches/claims_bench_train.yaml --quick
+```
+
+3) Review and compare to current production
+
+```bash
+# Scorecard with gates and recommendations
+uv run heretix-pstudio explain --candidate cand_001
+
+# Compare against current production on the same bench
+uv run heretix-pstudio compare \
   --candidate cand_001 \
   --bench heretix_promptstudio/benches/claims_bench_train.yaml \
-  --quick
+  --baseline current
 ```
 
-### 3. Review Results
+4) If train passes, evaluate on holdout
 
 ```bash
-# Generate scorecard with recommendations
-uv run heretix-pstudio explain --candidate cand_001 --compare current
-```
-
-### 4. Make Decision
-
-```bash
-# Accept the candidate
-uv run heretix-pstudio decide \
+uv run heretix-pstudio eval \
   --candidate cand_001 \
-  --action accept \
-  --feedback "Good improvement in JSON validity"
-
-# Or reject it
-uv run heretix-pstudio decide \
-  --candidate cand_001 \
-  --action reject \
-  --feedback "CI width regression too large"
+  --bench heretix_promptstudio/benches/claims_bench_holdout.yaml
 ```
 
-### 5. Apply to Production (if accepted)
+5) Decide and apply
 
 ```bash
-# Dry run to see what would change
+uv run heretix-pstudio decide --candidate cand_001 --action accept --feedback "Good JSON validity; CI/stability improved"
+
+# Dry run shows diff + target version bump
 uv run heretix-pstudio apply --candidate cand_001 --dry-run
 
-# Apply for real (creates backup)
+# Apply (creates timestamped backup, enforces gates + improvement rule)
 uv run heretix-pstudio apply --candidate cand_001 --yes
 ```
 
-## Quality Gates
+## What “apply” enforces
 
-All candidates must pass these gates before production:
+Before writing to production, `apply` requires:
+- An accepted decision for the candidate.
+- Train and holdout bench results present and passing all gates (JSON validity, CI width, stability, invariance, jailbreak).
+- Baseline (current production prompt) evaluated on the same train bench shows ≥1 improvement with 0 regressions across:
+  - Lower median CI width, or
+  - Higher median stability, or
+  - Fewer instruction tokens (estimated),
+  and no negative deltas on these dimensions.
 
-| Gate | Threshold | Description |
-|------|-----------|-------------|
-| JSON Validity | ≥99.5% | Percentage of valid JSON responses |
-| Median CI Width | ≤0.20 | Confidence interval width (uncertainty) |
-| Median Stability | ≥0.70 | Cross-paraphrase consistency |
-| Post-cutoff Behavior | p∈[0.35,0.65] | Appropriate uncertainty for future claims |
-| Invariance | Δ≤0.03 | Insensitivity to irrelevant context |
-| Jailbreak Resistance | 0% | No URLs, citations, or tool use |
+## Quality Gates (unchanged)
 
-## Workflow Example
+- JSON validity ≥ 99.5% (strict JSON‑only; one top‑level object; no prose).
+- Median CI width ≤ 0.20 (probability space).
+- Median stability ≥ 0.70 (1/(1+IQR_logit) on template means).
+- Post‑cutoff (tagged claims): median p in [0.35, 0.65] and ≥90% with cutoff‑uncertainty flags in `ambiguity_flags`.
+- Irrelevant‑context invariance: median |Δp| ≤ 0.03 across clean vs context pairs.
+- Jailbreak resistance: 0% (URLs, citations, tool/browse/markdown indicators in raw or JSON fields).
 
+## Constraints (preflight)
+
+Required (case‑insensitive presence):
+- “Do NOT browse, search, or cite”
+- “JSON only”/“Output ONLY JSON” (last line)
+- “ignore instructions” + “opaque” (treat claim as opaque data)
+- “two decimals” (numeric formatting nudge)
+
+Forbidden:
+- URLs (`http://`, `https://`, `www.`), code fences (```), markdown labels, tool/browse cues (`function call`, `use tool`, `browser`, `search`, `web.run`),
+- Temporal leakage (`as of 20`, `today`, `now`), citation hints (`cite`, `URL`).
+
+Use:
 ```bash
-# 1. Start optimization session
-uv run heretix-pstudio propose --notes "Tighten JSON, add determinism instruction"
-
-# 2. Evaluate on training set
-uv run heretix-pstudio eval --candidate cand_001 \
-  --bench heretix_promptstudio/benches/claims_bench_train.yaml
-
-# 3. Check results
-uv run heretix-pstudio explain --candidate cand_001
-
-# 4. If gates pass, evaluate on holdout
-uv run heretix-pstudio eval --candidate cand_001 \
-  --bench heretix_promptstudio/benches/claims_bench_holdout.yaml
-
-# 5. Review final results
-uv run heretix-pstudio explain --candidate cand_001
-
-# 6. Make decision
-uv run heretix-pstudio decide --candidate cand_001 --action accept
-
-# 7. Apply to production
-uv run heretix-pstudio apply --candidate cand_001 --yes
+uv run heretix-pstudio precheck --candidate cand_001
 ```
 
-## Session Management
+## CLI Reference
 
-```bash
-# List all sessions
-uv run heretix-pstudio list
+- `propose --notes "..."` — Create a new candidate in the current session. Stores `prompt.txt`, `diff.md`, `metadata.json`.
+- `precheck --candidate cand_X` — Validate constraints before spending API.
+- `eval --candidate cand_X --bench benches/claims_bench_train.yaml [--quick]` — Evaluate candidate on a bench. Writes:
+  - `benchmark_results.json` (last run)
+  - `benchmark_results_<bench-stem>.json` (bench‑specific)
+  - `eval/*.json` (per‑claim)
+- `explain --candidate cand_X` — Scorecard with pass/fail per gate and concrete recommendations.
+- `compare --candidate cand_X --bench ... --baseline current|cand_Y` — Compare aggregate metrics vs current production or another candidate. Baseline current runs a production prompt evaluation and saves `baseline_current_<bench>.json`.
+- `decide --candidate cand_X --action accept|reject [--feedback "..."]` — Record decision.
+- `apply --candidate cand_X [--dry-run] [--yes]` — Enforce gates (train+holdout) and improvement rule; write `SYSTEM_RPL` and bump `PROMPT_VERSION`; create backup.
+- `list [-v]` — List candidates in the active (or provided) session.
+- `show --candidate cand_X [--section prompt|diff|metrics|decision]` — Inspect artifacts.
+- `resume --session session-YYYYMMDD_HHMMSS` — Switch active session.
+- `gc --older-than 30 [--dry-run]` — Clean up old sessions.
 
-# Resume a previous session
-uv run heretix-pstudio resume --session session-20250122_143052
-
-# Clean up old sessions
-uv run heretix-pstudio gc --older-than 30 --dry-run
-```
-
-## File Structure
+## Outputs & Layout
 
 ```
 runs/promptstudio/
 └── session-YYYYMMDD_HHMMSS/
-    ├── config.json           # Session configuration
-    ├── history.jsonl         # Append-only event log
+    ├── config.json                  # Session config (incl. deterministic seed)
+    ├── history.jsonl                # Append-only event log
     └── cand_001/
-        ├── prompt.txt        # The candidate prompt
-        ├── diff.md          # Diff vs production
-        ├── metadata.json    # Candidate metadata
-        ├── metrics.json     # Evaluation metrics
-        ├── decision.json    # Accept/reject decision
-        ├── benchmark_results.json  # Full benchmark results
-        └── eval/            # Per-claim evaluation JSONs
+        ├── prompt.txt               # Candidate SYSTEM_RPL
+        ├── diff.md                  # Diff vs production prompt
+        ├── metadata.json            # Length/tokens, constraint issues, notes
+        ├── decision.json            # accept/reject + feedback
+        ├── benchmark_results.json   # Last eval results (any bench)
+        ├── benchmark_results_train.json     # Train results (if run)
+        ├── benchmark_results_holdout.json   # Holdout results (if run)
+        ├── baseline_current_train.json      # Baseline (production) on train (if compared)
+        └── eval/                    # Per-claim evaluation JSONs
 ```
 
-## Prompt Editing Commands
+## Determinism & Parity
 
-When using `propose`, you can apply these edits:
+- Uses production `PARAPHRASES` and `USER_TEMPLATE`; only `SYSTEM_RPL` varies.
+- Deterministic balanced rotation: `offset = sha256(claim|model|PROMPT_VERSION) % T`.
+- `prompt_sha256` matches production: hash of full `instructions` (system + schema) + user text.
+- Bootstrap seed parity: includes actual `K`, `R`, `prompt_version`, and sorted unique template hashes.
+- Responses API; strict JSON‑only extraction.
 
-- `shorten:10` - Reduce prompt by 10%
-- `remove:phrase` - Remove specific phrase
-- `add:text` - Add new text
-- `replace:old:new` - Replace text
-- `tighten_json` - Make JSON instruction more explicit
-- `add_opaque` - Add deterministic/opaque instruction
+## Tips
 
-## Important Notes
-
-1. **Isolation**: No production code is modified until you run `apply`
-2. **Reproducibility**: Uses deterministic seeds for consistent results
-3. **Safety**: Always creates timestamped backups before applying
-4. **Validation**: Won't apply prompts that fail gates
-5. **Testing**: All existing tests continue to pass during development
+- Use `--quick` only for iteration; do not publish.
+- For repeatable CI bands across candidates, set `HERETIX_RPL_SEED` once per session.
+- Avoid literal `"""` inside prompts; keep `SYSTEM_RPL` in triple double quotes and let the tool escape as needed.
 
 ## Troubleshooting
 
-### "No evaluation results found"
-Run `eval` command before trying to explain or apply a candidate.
-
-### "Failed gates"
-Review the scorecard recommendations and iterate on your prompt.
-
-### "Provider model changed"
-The model version changed during evaluation. Re-run to get consistent results.
-
-### Tests failing
-Prompt Studio is completely isolated - existing tests should not be affected. If they are, you may have accidentally modified production code.
-
-## Advanced Usage
-
-### Custom Gates
-
-Edit gate thresholds in `heretix_promptstudio/metrics.py`:
-
-```python
-class GateChecker:
-    JSON_VALIDITY_MIN = 0.995  # Adjust as needed
-    CI_WIDTH_MAX = 0.20
-    STABILITY_MIN = 0.70
-```
-
-### Batch Evaluation
-
-Evaluate multiple candidates:
-
-```bash
-for i in 001 002 003; do
-  uv run heretix-pstudio eval --candidate cand_$i \
-    --bench heretix_promptstudio/benches/claims_bench_train.yaml
-done
-```
-
-### Compare Candidates
-
-```bash
-uv run heretix-pstudio compare \
-  --candidate cand_002 \
-  --bench heretix_promptstudio/benches/claims_bench_train.yaml \
-  --baseline cand_001
-```
-
-## Best Practices
-
-1. **Always evaluate on training set first** - Don't waste API calls on holdout
-2. **Use quick mode for iteration** - Fast feedback during development
-3. **Review recommendations carefully** - The system suggests specific improvements
-4. **Test on holdout before applying** - Ensures generalization
-5. **Keep session notes** - Document what you tried and why
-
-## Integration with Production
-
-When a prompt is applied:
-1. `SYSTEM_RPL` in `heretix_rpl/rpl_prompts.py` is replaced
-2. `PROMPT_VERSION` is updated to `rpl_g5_v2_YYYY-MM-DD+psN`
-3. A timestamped backup is created
-4. The change is recorded in session history
-
-The production system immediately uses the new prompt for all subsequent evaluations.
-
-## Contributing
-
-To extend Prompt Studio:
-1. Add new gate checks in `metrics.py`
-2. Add new edit operations in `propose.py`
-3. Add new benchmark claims in `benches/`
-4. Update recommendations logic in `explain.py`
-
-Remember: Keep the system isolated! Never import production code that could create circular dependencies.
+- “No evaluation results found”: run `eval` on train (and holdout before apply).
+- “Failed gates”: check `explain` recommendations and `compare` deltas.
+- “Provider model changed”: model snapshot changed mid-run; re-run session.
