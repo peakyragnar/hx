@@ -6,7 +6,7 @@ Provides actionable insights based on evaluation results.
 
 import json
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 import numpy as np
 
 from heretix_promptstudio.metrics import GateChecker

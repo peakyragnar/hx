@@ -36,15 +36,35 @@ def propose(
     session: Optional[str] = typer.Option(None, help="Session ID (creates new if not specified)")
 ):
     """Create a new SYSTEM_RPL candidate with selected edits."""
+    from heretix_promptstudio.store import SessionStore
+    from heretix_promptstudio.propose import PromptProposer
+    
     typer.echo(f"[propose] Creating new candidate with notes: {notes}")
-    typer.echo(f"Session: {session or 'new'}")
     
-    # TODO: Implement actual propose logic
-    from heretix_promptstudio.propose import create_candidate
-    # candidate_id = create_candidate(notes, session)
-    # typer.echo(f"Created candidate: {candidate_id}")
+    # Create or load session
+    store = SessionStore(session_id=session)
+    typer.echo(f"Session: {store.session_id}")
     
-    typer.echo("[Not yet implemented]")
+    # Create proposer and candidate
+    proposer = PromptProposer(store.session_dir)
+    candidate_id = proposer.create_candidate(notes)
+    
+    # Load candidate info for display
+    candidate_data = proposer.load_candidate(candidate_id)
+    metadata = candidate_data.get("metadata", {})
+    
+    typer.echo(f"\n✅ Created candidate: {candidate_id}")
+    typer.echo(f"   Prompt length: {metadata.get('prompt_length', 'unknown')} chars")
+    typer.echo(f"   Estimated tokens: {metadata.get('estimated_tokens', 'unknown')}")
+    
+    if metadata.get("constraint_issues"):
+        typer.echo("\n⚠️  Constraint issues:")
+        for issue in metadata["constraint_issues"]:
+            typer.echo(f"   - {issue}")
+    else:
+        typer.echo("   ✅ All constraints pass")
+    
+    typer.echo(f"\nNext: Run 'heretix-pstudio eval --candidate {candidate_id} --bench <benchmark.yaml>'")
 
 
 @app.command()
@@ -56,6 +76,10 @@ def eval(
     r: Optional[int] = typer.Option(None, help="Override R (replicates)")
 ):
     """Evaluate a candidate on a benchmark."""
+    from heretix_promptstudio.store import get_current_session, SessionStore
+    from heretix_promptstudio.evaluate import evaluate_benchmark
+    from heretix_promptstudio.metrics import check_gates
+    
     typer.echo(f"[eval] Evaluating candidate {candidate} on benchmark {bench}")
     
     if quick:
@@ -68,12 +92,58 @@ def eval(
     
     typer.echo(f"Parameters: K={k}, R={r}")
     
-    # TODO: Implement actual evaluation logic
-    from heretix_promptstudio.evaluate import run_evaluation
-    # results = run_evaluation(candidate, bench, k=k, r=r)
-    # typer.echo(f"Evaluation complete. Median CI width: {results['median_ci_width']:.3f}")
+    # Find session containing this candidate
+    session = get_current_session()
+    if not session:
+        # Try to find session by candidate
+        for sess_info in SessionStore.list_sessions():
+            try:
+                store = SessionStore(sess_info["session_id"])
+                if (store.session_dir / candidate).exists():
+                    session = store
+                    break
+            except:
+                continue
     
-    typer.echo("[Not yet implemented]")
+    if not session:
+        typer.echo(f"Error: Could not find candidate {candidate}", err=True)
+        raise typer.Exit(1)
+    
+    try:
+        # Run evaluation
+        typer.echo(f"Using session: {session.session_id}")
+        typer.echo("Starting evaluation (this may take a few minutes)...")
+        
+        results = evaluate_benchmark(
+            candidate_id=candidate,
+            bench_path=bench,
+            session_dir=session.session_dir,
+            K=k,
+            R=r,
+            quick=quick
+        )
+        
+        # Check gates
+        all_pass, gates = check_gates(results)
+        
+        # Display summary
+        metrics = results.get("aggregate_metrics", {})
+        typer.echo(f"\n✅ Evaluation complete!")
+        typer.echo(f"   Claims evaluated: {metrics.get('n_claims_evaluated', 0)}")
+        typer.echo(f"   Median CI width: {metrics.get('median_ci_width', 'N/A'):.3f}")
+        typer.echo(f"   Median stability: {metrics.get('median_stability', 'N/A'):.3f}")
+        typer.echo(f"   JSON validity: {metrics.get('json_validity_rate', 'N/A'):.1%}")
+        
+        if all_pass:
+            typer.echo("\n✅ All gates PASS")
+        else:
+            typer.echo("\n❌ Some gates FAILED")
+        
+        typer.echo(f"\nNext: Run 'heretix-pstudio explain --candidate {candidate}' for detailed analysis")
+        
+    except Exception as e:
+        typer.echo(f"Error during evaluation: {e}", err=True)
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -82,17 +152,39 @@ def explain(
     compare: Optional[str] = typer.Option("current", help="Compare against (current/another candidate)")
 ):
     """Generate scorecard and recommendations for a candidate."""
+    from heretix_promptstudio.store import get_current_session, SessionStore
+    from heretix_promptstudio.explain import ExplainEngine
+    
     typer.echo(f"[explain] Generating scorecard for {candidate}")
     
     if compare:
         typer.echo(f"Comparing against: {compare}")
     
-    # TODO: Implement actual explanation logic
-    from heretix_promptstudio.explain import generate_scorecard
-    # scorecard = generate_scorecard(candidate, baseline=compare)
-    # display_scorecard(scorecard)
+    # Find session containing this candidate
+    session = get_current_session()
+    if not session:
+        for sess_info in SessionStore.list_sessions():
+            try:
+                store = SessionStore(sess_info["session_id"])
+                if (store.session_dir / candidate).exists():
+                    session = store
+                    break
+            except:
+                continue
     
-    typer.echo("[Not yet implemented]")
+    if not session:
+        typer.echo(f"Error: Could not find candidate {candidate}", err=True)
+        raise typer.Exit(1)
+    
+    try:
+        engine = ExplainEngine()
+        scorecard = engine.generate_scorecard(candidate, session.session_dir, baseline=compare)
+        formatted = engine.format_scorecard(scorecard)
+        typer.echo(formatted)
+        
+    except Exception as e:
+        typer.echo(f"Error generating scorecard: {e}", err=True)
+        raise typer.Exit(1)
 
 
 @app.command()
