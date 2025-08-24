@@ -16,7 +16,7 @@ Commands:
 
 import typer
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 import json
 import os
@@ -37,11 +37,18 @@ CURRENT_SESSION = None
 @app.command()
 def propose(
     notes: str = typer.Option(..., help="Description of proposed changes"),
-    session: Optional[str] = typer.Option(None, help="Session ID (creates new if not specified)")
+    session: Optional[str] = typer.Option(None, help="Session ID (creates new if not specified)"),
+    from_candidate: Optional[str] = typer.Option(None, help="Start from an existing candidate's prompt instead of production"),
+    from_file: Optional[Path] = typer.Option(None, help="Load base prompt text from a file (exact content)"),
+    auto: bool = typer.Option(False, help="Apply edits based on 'explain' recommendations for --from-candidate"),
+    ensure_required: bool = typer.Option(False, help="Add edits to include required phrases if missing"),
+    edit: Optional[List[str]] = typer.Option(None, help="Additional edit operations (can repeat)")
 ):
-    """Create a new SYSTEM_RPL candidate with selected edits."""
-    from heretix_promptstudio.store import SessionStore
-    from heretix_promptstudio.propose import PromptProposer
+    """Create a new SYSTEM_RPL candidate, optionally starting from an existing candidate and auto-applying recommendations."""
+    from heretix_promptstudio.store import SessionStore, get_current_session
+    from heretix_promptstudio.propose import PromptProposer, edits_from_recommendations
+    from heretix_promptstudio.constraints import PromptConstraints
+    from heretix_promptstudio.explain import ExplainEngine
     
     typer.echo(f"[propose] Creating new candidate with notes: {notes}")
     
@@ -49,15 +56,84 @@ def propose(
     store = SessionStore(session_id=session)
     typer.echo(f"Session: {store.session_id}")
     
+    # Determine base prompt
+    base_prompt: Optional[str] = None
+    base_source = "production"
+    # Guard incompatible options
+    if from_candidate and from_file:
+        typer.echo("Error: Use either --from-candidate or --from-file, not both", err=True)
+        raise typer.Exit(1)
+    if from_candidate:
+        # Locate the candidate in current or any session
+        base_store = get_current_session() or store
+        found = False
+        for sess_info in SessionStore.list_sessions():
+            try:
+                s = SessionStore(sess_info["session_id"])
+                cand_dir = s.session_dir / from_candidate
+                if cand_dir.exists() and (cand_dir / "prompt.txt").exists():
+                    base_store = s
+                    base_prompt = (cand_dir / "prompt.txt").read_text()
+                    base_source = f"{from_candidate} ({s.session_id})"
+                    found = True
+                    break
+            except Exception:
+                continue
+        if not found:
+            typer.echo(f"Error: could not find --from-candidate {from_candidate}", err=True)
+            raise typer.Exit(1)
+    elif from_file:
+        if not Path(from_file).exists():
+            typer.echo(f"Error: --from-file not found: {from_file}", err=True)
+            raise typer.Exit(1)
+        base_prompt = Path(from_file).read_text()
+        base_source = f"file:{from_file}"
+    
+    # Prepare edits (robustly handle None)
+    proposed_edits: List[str] = []
+    if edit:
+        proposed_edits.extend(list(edit))
+    # Optionally ensure required phrases if missing in base
+    if ensure_required:
+        tmp_proposer = PromptProposer(store.session_dir)
+        base_for_check = base_prompt if base_prompt is not None else tmp_proposer.get_current_production_prompt()
+        validator = PromptConstraints()
+        _, base_issues = validator.check_prompt(base_for_check)
+        base_issues_text = "\n".join(base_issues).lower()
+        if "missing required phrase: 'opaque'" in base_issues_text:
+            proposed_edits.append('add_opaque')
+        if "missing required phrase: 'ignore instructions'" in base_issues_text:
+            proposed_edits.append('add_ignore_instructions')
+    if auto:
+        if not from_candidate:
+            typer.echo("--auto requires --from-candidate to read recommendations", err=True)
+            raise typer.Exit(1)
+        # Generate recommendations for the base candidate
+        try:
+            engine = ExplainEngine()
+            scorecard = engine.generate_scorecard(from_candidate, base_store.session_dir, baseline="current")
+            recs = scorecard.get("recommendations", [])
+            auto_edits = edits_from_recommendations(recs)
+            proposed_edits.extend(auto_edits)
+            if auto_edits:
+                typer.echo(f"Auto-applied edits from recommendations: {', '.join(auto_edits)}")
+            else:
+                typer.echo("No auto-edits inferred from recommendations.")
+        except Exception as e:
+            typer.echo(f"Warning: could not derive recommendations automatically: {e}")
+    
     # Create proposer and candidate
     proposer = PromptProposer(store.session_dir)
-    candidate_id = proposer.create_candidate(notes)
+    candidate_id = proposer.create_candidate(notes, base_prompt=base_prompt, edits=proposed_edits)
     
     # Load candidate info for display
     candidate_data = proposer.load_candidate(candidate_id)
     metadata = candidate_data.get("metadata", {})
     
     typer.echo(f"\n✅ Created candidate: {candidate_id}")
+    typer.echo(f"   Base: {base_source}")
+    if proposed_edits:
+        typer.echo(f"   Edits: {', '.join(proposed_edits)}")
     typer.echo(f"   Prompt length: {metadata.get('prompt_length', 'unknown')} chars")
     typer.echo(f"   Estimated tokens: {metadata.get('estimated_tokens', 'unknown')}")
     

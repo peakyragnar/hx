@@ -16,7 +16,7 @@ class PromptConstraints:
         "Raw Prior Lens",
         "JSON",
         "Do NOT browse, search, or cite",
-        "ignore instructions",
+        "ignore instructions",  # also accepts "ignore any instructions"
         "opaque",  # treat claim as opaque data
         "two decimals"  # numeric probability formatting hint
     ]
@@ -30,9 +30,7 @@ class PromptConstraints:
         "function_call", # Function calling
         "tool",          # Tool use
         "web.run",       # Web execution
-        "http://", "https://", "www.",  # URLs
-        "as of 20", "today", "now",      # temporal leakage
-        "cite", "URL"                      # citation hints
+        "http://", "https://", "www."   # URLs (literal)
     ]
     
     # Additional forbidden patterns (regex)
@@ -40,6 +38,9 @@ class PromptConstraints:
         r'\bfunction\s+call\b',  # "function call" with space
         r'\buse\s+tool\b',        # "use tool"
         r'\bcall\s+tool\b',       # "call tool"
+        r'\bnow\b',                # temporal leakage (word-bound)
+        r'\btoday\b',              # temporal leakage (word-bound)
+        r'\bas of\s+20',           # temporal leakage pattern
     ]
     
     # Maximum prompt length
@@ -64,13 +65,19 @@ class PromptConstraints:
         if len(prompt) < self.MIN_LENGTH:
             issues.append(f"Prompt too short: {len(prompt)} chars (min: {self.MIN_LENGTH})")
         
-        # Check required phrases
+        # Check required phrases (case-insensitive; handle variants)
+        prompt_lower = prompt.lower()
         for phrase in self.REQUIRED_PHRASES:
-            if phrase not in prompt:
+            pl = phrase.lower()
+            ok = False
+            if pl == "ignore instructions":
+                ok = ("ignore instructions" in prompt_lower) or ("ignore any instructions" in prompt_lower)
+            else:
+                ok = pl in prompt_lower
+            if not ok:
                 issues.append(f"Missing required phrase: '{phrase}'")
         
-        # Check forbidden tokens (case-insensitive)
-        prompt_lower = prompt.lower()
+        # Check forbidden tokens (case-insensitive simple substrings)
         for token in self.FORBIDDEN_TOKENS:
             if token.lower() in prompt_lower:
                 issues.append(f"Contains forbidden token: '{token}'")
@@ -114,7 +121,7 @@ class PromptConstraints:
     def _check_prompt_structure(self, prompt: str) -> bool:
         """Check if prompt has basic required structure."""
         # Must have "Rules" or similar section
-        has_rules = any(marker in prompt for marker in ["Rules:", "Instructions:", "Guidelines:"])
+        has_rules = any(marker.lower() in prompt.lower() for marker in ["Rules:", "Instructions:", "Guidelines:"])
         
         # Must mention evaluation/claim
         has_eval = any(word in prompt.lower() for word in ["evaluate", "estimate", "probability", "claim"])

@@ -8,6 +8,80 @@ Key properties
 - Determinism: Balanced template rotation + fixed session seed; same CI bootstrap sequence across candidates.
 - Responses API only: No Chat Completions; schema is embedded in system instructions; strict JSON‑only extraction.
 
+## System Overview
+
+Prompt Studio provides a safe sandbox to propose new `SYSTEM_RPL` prompts, evaluate them with production‑parity metrics, explain failures, iterate with targeted edits, and only apply to production when statistically safer and strictly better than the current baseline.
+
+Core ideas
+- Single‑file isolation: Production prompt lives in `heretix_rpl/rpl_prompts.py`. Prompt Studio writes candidates under `runs/promptstudio/...` and touches production only at `apply` time with backups.
+- Metric parity: All aggregation and seeds match production so “improvements” are real and portable.
+- Strict gates: Candidates must pass JSON validity, CI width, stability, invariance, post‑cutoff behavior, and jailbreak resistance.
+- Baseline enforcement: On the same bench, the current production prompt must show ≥1 regression‑free improvement when compared to the candidate; otherwise, `apply` is blocked.
+- Human‑in‑the‑loop: You review scorecards and diffs; optional auto‑edits translate recommendations into concrete prompt changes.
+
+### Architecture
+
+- CLI: `heretix_promptstudio/cli.py` (entry: `heretix-pstudio`)
+- Propose/edit: `propose.py` (create candidates, diffs, auto‑map recommendations → edits)
+- Evaluate: `evaluate.py` (Responses API, strict JSON parsing, production aggregation + seeds)
+- Explain: `explain.py` (scorecard, gate failures, recommendations)
+- Constraints: `constraints.py` (required/forbidden text, JSON‑only last‑line rule)
+- Apply: `apply.py` (gate + baseline enforcement; safe patching; backup and version bump)
+- Store: `store.py` (session folders, artifacts, history)
+
+Production dependencies used for parity
+- `heretix_rpl/aggregation.py`, `heretix_rpl/seed.py`, `heretix_rpl/rpl_schema.py`, `heretix_rpl/config.py`, and `heretix_rpl/rpl_prompts.py` (for `PARAPHRASES`, `USER_TEMPLATE`, `PROMPT_VERSION`).
+
+Environment
+- `OPENAI_API_KEY` is loaded automatically from `.env` via `python-dotenv`.
+- Set `HERETIX_RPL_SEED` once per session for fully repeatable bootstrap draws.
+
+### Flow Chart (end‑to‑end)
+
+```
+ ┌───────────┐    propose / precheck      eval (train)        explain         iterate
+ │  You (HIL)├──────────────┬───────────────┬──────────────┬───────────────┐
+ └─────┬─────┘              │               │              │               │
+       │                    ▼               │              │               │
+       │            ┌──────────────┐        │              │               │
+       │            │ Candidate dir│        │              │               │
+       │            │ prompt.txt    │        │              │               │
+       │            │ diff.md       │        │              │               │
+       │            └──────┬───────┘        │              │               │
+       │                   │                 │              │               │
+       │                   ▼                 │              │               │
+       │           precheck constraints      │              │               │
+       │              (required, forbidden)  │              │               │
+       │                   │                 │              │               │
+       │                   ▼                 │              │               │
+       │       ┌─────────────────────┐       │              │               │
+       │       │ Responses API calls │──────►│ per‑claim    │               │
+       │       │ (SYSTEM_RPL variant)│       │ results (K×R)│               │
+       │       └─────────┬───────────┘       │              │               │
+       │                  │                  ▼              │               │
+       │                  │          aggregate_clustered     │               │
+       │                  │          (logit, 20% trim, B)   │               │
+       │                  │                  │              │               │
+       │                  ▼                  ▼              │               │
+       │            aggregate metrics ─────► gates ──────────┤               │
+       │                  │                                 │               │
+       │                  └── compare vs baseline (current) ─┘               │
+       │                                  │                                  │
+       │                                  ▼                                  │
+       │                          scorecard + recs ◄─────────────────────────┘
+       │                                  │
+       │                             decide accept?
+       │                                  │ yes
+       │                                  ▼
+       │                           eval (holdout)
+       │                                  │ pass gates
+       │                                  ▼
+       │                             apply (safe)
+       │                    ┌─────────────────────────────┐
+       └───────────────────►│ heretix_rpl/rpl_prompts.py  │ (backup + version bump)
+                            └─────────────────────────────┘
+```
+
 ## Installation
 
 Prompt Studio ships with the repo.
@@ -26,6 +100,11 @@ uv run heretix-pstudio --help
 
 ```bash
 uv run heretix-pstudio propose --notes "Tighten JSON; add opaque; two decimals"
+# Or iterate from an evaluated candidate and auto-apply 'explain' recommendations
+uv run heretix-pstudio propose \
+  --notes "apply recs from cand_001; add invariance" \
+  --from-candidate cand_001 \
+  --auto
 uv run heretix-pstudio precheck --candidate cand_001   # optional: constraint preflight
 ```
 
@@ -112,7 +191,7 @@ uv run heretix-pstudio precheck --candidate cand_001
 
 ## CLI Reference
 
-- `propose --notes "..."` — Create a new candidate in the current session. Stores `prompt.txt`, `diff.md`, `metadata.json`.
+- `propose --notes "..." [--from-candidate cand_X | --from-file path] [--auto] [--ensure-required] [--edit <op>]` — Create a new candidate. `--from-file` loads exact prompt text from a file. `--from-candidate` starts from another candidate’s prompt. `--auto` maps `explain` recommendations into edits. `--ensure-required` adds edits to include required phrases if missing. `--edit` can be repeated to apply explicit ops like `add_invariance`, `tighten_json`, `add_ignore_instructions`.
 - `precheck --candidate cand_X` — Validate constraints before spending API.
 - `eval --candidate cand_X --bench benches/claims_bench_train.yaml [--quick]` — Evaluate candidate on a bench. Writes:
   - `benchmark_results.json` (last run)
@@ -165,3 +244,11 @@ runs/promptstudio/
 - “No evaluation results found”: run `eval` on train (and holdout before apply).
 - “Failed gates”: check `explain` recommendations and `compare` deltas.
 - “Provider model changed”: model snapshot changed mid-run; re-run session.
+
+## Glossary
+
+- HIL: Human‑in‑the‑loop (you guide propose/decide/apply).
+- K, R: Paraphrase slots and replicates per slot.
+- CI width: Width of 95% bootstrap CI on probability scale after logit aggregation.
+- Stability: Calibrated measure from paraphrase IQR on logit means.
+- Invariance: Sensitivity to irrelevant context or paraphrase; lower is better.
