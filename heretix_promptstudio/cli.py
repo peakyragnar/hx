@@ -92,7 +92,8 @@ def propose(
     # Prepare edits (robustly handle None)
     proposed_edits: List[str] = []
     if edit:
-        proposed_edits.extend(list(edit))
+        # Typer provides a list already; avoid using builtin 'list' since this module defines a command named 'list'.
+        proposed_edits.extend(edit)
     # Optionally ensure required phrases if missing in base
     if ensure_required:
         tmp_proposer = PromptProposer(store.session_dir)
@@ -153,7 +154,8 @@ def eval(
     bench: Path = typer.Option(..., help="Path to benchmark YAML file"),
     quick: bool = typer.Option(False, help="Quick mode (K=5, R=1) - not for production"),
     k: Optional[int] = typer.Option(None, help="Override K (paraphrase slots)"),
-    r: Optional[int] = typer.Option(None, help="Override R (replicates)")
+    r: Optional[int] = typer.Option(None, help="Override R (replicates)"),
+    session: Optional[str] = typer.Option(None, help="Session ID to use (disambiguates same candidate IDs)")
 ):
     """Evaluate a candidate on a benchmark."""
     from heretix_promptstudio.store import get_current_session, SessionStore
@@ -173,18 +175,29 @@ def eval(
     typer.echo(f"Parameters: K={k}, R={r}")
     
     # Find session containing this candidate
-    session = get_current_session()
-    if not session:
-        # Try to find session by candidate
-        for sess_info in SessionStore.list_sessions():
-            try:
-                store = SessionStore(sess_info["session_id"])
-                if (store.session_dir / candidate).exists():
-                    session = store
-                    break
-            except:
-                continue
-    
+    if session:
+        try:
+            store = SessionStore(session)
+        except Exception:
+            typer.echo(f"Error: Session not found: {session}", err=True)
+            raise typer.Exit(1)
+        if not (store.session_dir / candidate).exists():
+            typer.echo(f"Error: Candidate {candidate} not found in session {session}", err=True)
+            raise typer.Exit(1)
+        session = store
+    else:
+        session = get_current_session()
+        if not session:
+            # Try to find session by candidate
+            for sess_info in SessionStore.list_sessions():
+                try:
+                    store = SessionStore(sess_info["session_id"])
+                    if (store.session_dir / candidate).exists():
+                        session = store
+                        break
+                except:
+                    continue
+
     if not session:
         typer.echo(f"Error: Could not find candidate {candidate}", err=True)
         raise typer.Exit(1)
@@ -229,7 +242,8 @@ def eval(
 @app.command()
 def explain(
     candidate: str = typer.Option(..., help="Candidate ID"),
-    compare: Optional[str] = typer.Option("current", help="Compare against (current/another candidate)")
+    compare: Optional[str] = typer.Option("current", help="Compare against (current/another candidate)"),
+    session: Optional[str] = typer.Option(None, help="Session ID to use (disambiguates same candidate IDs)")
 ):
     """Generate scorecard and recommendations for a candidate."""
     from heretix_promptstudio.store import get_current_session, SessionStore
@@ -241,17 +255,28 @@ def explain(
         typer.echo(f"Comparing against: {compare}")
     
     # Find session containing this candidate
-    session = get_current_session()
-    if not session:
-        for sess_info in SessionStore.list_sessions():
-            try:
-                store = SessionStore(sess_info["session_id"])
-                if (store.session_dir / candidate).exists():
-                    session = store
-                    break
-            except:
-                continue
-    
+    if session:
+        try:
+            store = SessionStore(session)
+        except Exception:
+            typer.echo(f"Error: Session not found: {session}", err=True)
+            raise typer.Exit(1)
+        if not (store.session_dir / candidate).exists():
+            typer.echo(f"Error: Candidate {candidate} not found in session {session}", err=True)
+            raise typer.Exit(1)
+        session = store
+    else:
+        session = get_current_session()
+        if not session:
+            for sess_info in SessionStore.list_sessions():
+                try:
+                    store = SessionStore(sess_info["session_id"])
+                    if (store.session_dir / candidate).exists():
+                        session = store
+                        break
+                except:
+                    continue
+
     if not session:
         typer.echo(f"Error: Could not find candidate {candidate}", err=True)
         raise typer.Exit(1)
@@ -386,7 +411,8 @@ def list(
 @app.command()
 def show(
     candidate: str = typer.Option(..., help="Candidate ID"),
-    section: Optional[str] = typer.Option(None, help="Section to show: prompt/diff/metrics/decision")
+    section: Optional[str] = typer.Option(None, help="Section to show: prompt/diff/metrics/decision"),
+    session: Optional[str] = typer.Option(None, help="Session ID to use (disambiguates same candidate IDs)")
 ):
     """Display details of a specific candidate."""
     typer.echo(f"[show] Displaying {candidate}")
@@ -395,13 +421,24 @@ def show(
         typer.echo(f"Section: {section}")
     
     from heretix_promptstudio.store import get_current_session, SessionStore
-    session = get_current_session()
-    if not session:
-        for sess in SessionStore.list_sessions():
-            store = SessionStore(sess["session_id"])
-            if (store.session_dir / candidate).exists():
-                session = store
-                break
+    if session:
+        try:
+            store = SessionStore(session)
+        except Exception:
+            typer.echo(f"Error: Session not found: {session}", err=True)
+            raise typer.Exit(1)
+        if not (store.session_dir / candidate).exists():
+            typer.echo(f"Error: Candidate {candidate} not found in session {session}", err=True)
+            raise typer.Exit(1)
+        session = store
+    else:
+        session = get_current_session()
+        if not session:
+            for sess in SessionStore.list_sessions():
+                store = SessionStore(sess["session_id"])
+                if (store.session_dir / candidate).exists():
+                    session = store
+                    break
     if not session:
         typer.echo(f"Error: Could not find candidate {candidate}", err=True)
         raise typer.Exit(1)
@@ -430,23 +467,36 @@ def show(
 def compare(
     candidate: str = typer.Option(..., help="Candidate ID"),
     bench: Path = typer.Option(..., help="Benchmark to compare on"),
-    baseline: str = typer.Option("current", help="Baseline for comparison")
+    baseline: str = typer.Option("current", help="Baseline for comparison"),
+    session: Optional[str] = typer.Option(None, help="Session ID to use (disambiguates same candidate IDs)"),
+    use_cached_baseline: bool = typer.Option(False, help="Reuse baseline_current_<bench>.json if present")
 ):
     """Compare candidate performance against baseline."""
     typer.echo(f"[compare] Comparing {candidate} vs {baseline} on {bench}")
     
     from heretix_promptstudio.store import get_current_session, SessionStore
     from heretix_promptstudio.evaluate import evaluate_benchmark_current
-    session = get_current_session()
-    if not session:
-        for sess in SessionStore.list_sessions():
-            store = SessionStore(sess["session_id"])
-            if (store.session_dir / candidate).exists():
-                session = store
-                break
-    if not session:
-        typer.echo("No session found for candidate", err=True)
-        raise typer.Exit(1)
+    if session:
+        try:
+            store = SessionStore(session)
+        except Exception:
+            typer.echo(f"Error: Session not found: {session}", err=True)
+            raise typer.Exit(1)
+        if not (store.session_dir / candidate).exists():
+            typer.echo(f"Error: Candidate {candidate} not found in session {session}", err=True)
+            raise typer.Exit(1)
+        session = store
+    else:
+        session = get_current_session()
+        if not session:
+            for sess in SessionStore.list_sessions():
+                store = SessionStore(sess["session_id"])
+                if (store.session_dir / candidate).exists():
+                    session = store
+                    break
+        if not session:
+            typer.echo("No session found for candidate", err=True)
+            raise typer.Exit(1)
     cand_dir = session.session_dir / candidate
     # Load candidate metrics (from bench-specific file if available)
     bench_stem = bench.stem
@@ -461,14 +511,28 @@ def compare(
         raise typer.Exit(1)
 
     if baseline == "current":
-        base_data = evaluate_benchmark_current(
-            candidate_id=candidate,
-            bench_path=bench,
-            session_dir=session.session_dir,
-            K=cand_data.get("sampling", {}).get("K", 8),
-            R=cand_data.get("sampling", {}).get("R", 2),
-            quick=cand_data.get("quick_mode", False)
-        )
+        if use_cached_baseline:
+            cached = cand_dir / f"baseline_current_{bench_stem}.json"
+            if cached.exists():
+                base_data = json.loads(cached.read_text())
+            else:
+                base_data = evaluate_benchmark_current(
+                    candidate_id=candidate,
+                    bench_path=bench,
+                    session_dir=session.session_dir,
+                    K=cand_data.get("sampling", {}).get("K", 8),
+                    R=cand_data.get("sampling", {}).get("R", 2),
+                    quick=cand_data.get("quick_mode", False)
+                )
+        else:
+            base_data = evaluate_benchmark_current(
+                candidate_id=candidate,
+                bench_path=bench,
+                session_dir=session.session_dir,
+                K=cand_data.get("sampling", {}).get("K", 8),
+                R=cand_data.get("sampling", {}).get("R", 2),
+                quick=cand_data.get("quick_mode", False)
+            )
     else:
         base_dir = session.session_dir / baseline
         base_file_specific = base_dir / f"benchmark_results_{bench_stem}.json"
@@ -496,23 +560,35 @@ def compare(
 
 @app.command()
 def precheck(
-    candidate: str = typer.Option(..., help="Candidate ID")
+    candidate: str = typer.Option(..., help="Candidate ID"),
+    session: Optional[str] = typer.Option(None, help="Session ID to use (disambiguates same candidate IDs)")
 ):
     """Run constraint validation on a candidate."""
     typer.echo(f"[precheck] Validating constraints for {candidate}")
     
     from heretix_promptstudio.store import get_current_session, SessionStore
     from heretix_promptstudio.constraints import validate_candidate
-    session = get_current_session()
-    if not session:
-        for sess in SessionStore.list_sessions():
-            store = SessionStore(sess["session_id"])
-            if (store.session_dir / candidate).exists():
-                session = store
-                break
-    if not session:
-        typer.echo(f"Error: Could not find candidate {candidate}", err=True)
-        raise typer.Exit(1)
+    if session:
+        try:
+            store = SessionStore(session)
+        except Exception:
+            typer.echo(f"Error: Session not found: {session}", err=True)
+            raise typer.Exit(1)
+        if not (store.session_dir / candidate).exists():
+            typer.echo(f"Error: Candidate {candidate} not found in session {session}", err=True)
+            raise typer.Exit(1)
+        session = store
+    else:
+        session = get_current_session()
+        if not session:
+            for sess in SessionStore.list_sessions():
+                store = SessionStore(sess["session_id"])
+                if (store.session_dir / candidate).exists():
+                    session = store
+                    break
+        if not session:
+            typer.echo(f"Error: Could not find candidate {candidate}", err=True)
+            raise typer.Exit(1)
     issues = validate_candidate(str(session.session_dir / candidate))
     if issues:
         typer.echo("Constraint violations found:")

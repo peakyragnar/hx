@@ -192,17 +192,17 @@ uv run heretix-pstudio precheck --candidate cand_001
 ## CLI Reference
 
 - `propose --notes "..." [--from-candidate cand_X | --from-file path] [--auto] [--ensure-required] [--edit <op>]` — Create a new candidate. `--from-file` loads exact prompt text from a file. `--from-candidate` starts from another candidate’s prompt. `--auto` maps `explain` recommendations into edits. `--ensure-required` adds edits to include required phrases if missing. `--edit` can be repeated to apply explicit ops like `add_invariance`, `tighten_json`, `add_ignore_instructions`.
-- `precheck --candidate cand_X` — Validate constraints before spending API.
-- `eval --candidate cand_X --bench benches/claims_bench_train.yaml [--quick]` — Evaluate candidate on a bench. Writes:
+- `precheck --candidate cand_X [--session <id>]` — Validate constraints before spending API.
+- `eval --candidate cand_X --bench benches/claims_bench_train.yaml [--quick] [--session <id>]` — Evaluate candidate on a bench. Writes:
   - `benchmark_results.json` (last run)
   - `benchmark_results_<bench-stem>.json` (bench‑specific)
   - `eval/*.json` (per‑claim)
-- `explain --candidate cand_X` — Scorecard with pass/fail per gate and concrete recommendations.
-- `compare --candidate cand_X --bench ... --baseline current|cand_Y` — Compare aggregate metrics vs current production or another candidate. Baseline current runs a production prompt evaluation and saves `baseline_current_<bench>.json`.
+- `explain --candidate cand_X [--session <id>]` — Scorecard with pass/fail per gate and concrete recommendations.
+- `compare --candidate cand_X --bench ... --baseline current|cand_Y [--session <id>] [--use-cached-baseline]` — Compare aggregate metrics vs current production or another candidate. With `--baseline current`, `--use-cached-baseline` reuses `baseline_current_<bench>.json` if present instead of re-running.
 - `decide --candidate cand_X --action accept|reject [--feedback "..."]` — Record decision.
 - `apply --candidate cand_X [--dry-run] [--yes]` — Enforce gates (train+holdout) and improvement rule; write `SYSTEM_RPL` and bump `PROMPT_VERSION`; create backup.
 - `list [-v]` — List candidates in the active (or provided) session.
-- `show --candidate cand_X [--section prompt|diff|metrics|decision]` — Inspect artifacts.
+- `show --candidate cand_X [--section prompt|diff|metrics|decision] [--session <id>]` — Inspect artifacts.
 - `resume --session session-YYYYMMDD_HHMMSS` — Switch active session.
 - `gc --older-than 30 [--dry-run]` — Clean up old sessions.
 
