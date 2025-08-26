@@ -15,7 +15,7 @@ def test_cli_smoke_single_version(tmp_path: Path):
     cfg_path = tmp_path / "cfg.yaml"
     cfg_path.write_text(
         "\n".join([
-            "claim: 'tariffs don't cause inflation'",
+            'claim: "tariffs don\'t cause inflation"',
             "model: gpt-5",
             "prompt_version: rpl_g5_v2",
             "K: 6",
@@ -42,7 +42,7 @@ def test_cli_smoke_multi_version(tmp_path: Path):
     cfg_path = tmp_path / "cfg.yaml"
     cfg_path.write_text(
         "\n".join([
-            "claim: 'tariffs don't cause inflation'",
+            'claim: "tariffs don\'t cause inflation"',
             "model: gpt-5",
             "prompt_version: rpl_g5_v2",
             "K: 4",
