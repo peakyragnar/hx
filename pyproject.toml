@@ -1,7 +1,7 @@
 [project]
-name = "heretix-rpl"
+name = "heretix"
 version = "0.1.0"
-description = "Raw Prior Lens evaluator for Heretix"
+description = "Heretix RPL harness (clean package)"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -28,10 +28,8 @@ dev = [
 ]
 
 [project.scripts]
-heretix-rpl = "heretix_rpl.cli:main"
-heretix-rpl-explain = "heretix_rpl.explainer:main"
-heretix-pstudio = "heretix_promptstudio.cli:main"
+heretix = "heretix.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["heretix_rpl*", "heretix_promptstudio*"]
-exclude = ["runs*", "tests*"]
+include = ["heretix*"]
+exclude = ["legacy*", "heretix_rpl*", "heretix_promptstudio*", "runs*", "tests*"]
