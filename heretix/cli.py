@@ -15,8 +15,8 @@ from .rpl import run_single_version
 app = typer.Typer(help="Heretix (new) RPL harness")
 
 
-@app.command()
-def run(
+@app.command("run")
+def cmd_run(
     config: Path = typer.Option(..., exists=True, dir_okay=False, help="Path to run config YAML/JSON"),
     prompt_version: List[str] = typer.Option(None, help="Override prompt versions to run (one or many)"),
     out: Path = typer.Option(Path("runs/rpl_run.json"), help="Output JSON file (A/B summary)"),
@@ -57,4 +57,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
