@@ -1,0 +1,31 @@
+#!/bin/bash
+# Pre-commit hook for Heretix RPL
+# Runs fast statistical tests before allowing commit
+
+echo "🧪 Running fast statistical tests..."
+
+# Check if uv is available and use it if so
+if command -v uv &> /dev/null; then
+    PYTEST="uv run pytest"
+else
+    PYTEST="python -m pytest"
+fi
+
+# Check if pytest is installed
+if ! $PYTEST --version &> /dev/null 2>&1; then
+    echo "❌ pytest not found. Install with: uv pip install -e '.[test]'"
+    exit 1
+fi
+
+# Run fast tests only (exclude slow marked tests)
+$PYTEST tests -m "not slow" -x --tb=short --quiet
+
+# Check test result
+if [ $? -ne 0 ]; then
+    echo "❌ Fast tests failed! Fix issues or use --no-verify to bypass."
+    echo "   To run tests manually: pytest tests -m 'not slow'"
+    exit 1
+fi
+
+echo "✅ Fast tests passed!"
+exit 0

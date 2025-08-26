@@ -8,7 +8,7 @@ Complete Guide: Running Heretix RPL System
   cd Heretix
 
   # Install dependencies using uv
-  uv install
+  uv sync
 
   # Set up environment variables
   echo "OPENAI_API_KEY=your-api-key-here" > .env

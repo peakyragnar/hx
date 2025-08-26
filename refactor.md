@@ -5,13 +5,13 @@
 
 ## Tooling (uv) & Dev Workflow
 - Package manager and runner: uv (do not use venv/pip/poetry).
-- Install dependencies: `uv install` (repo includes `uv.lock`).
+- Setup environment: `uv sync` (creates venv and installs deps from `pyproject.toml`/`uv.lock`).
 - Run commands: always prefix with `uv run`.
   - Examples:
     - `uv run heretix run --config runs/claim.yaml`
     - `uv run heretix view --run RUN_ID --mode inspect`
     - `uv run pytest -q`
-- Dependency changes: prefer `uv add <package>` (or edit `pyproject.toml` then `uv lock && uv install`).
+- Dependency changes: prefer `uv add <package>` (or edit `pyproject.toml` then `uv lock && uv sync`).
 - Environment variables:
   - `OPENAI_API_KEY` required (use `.env` or shell export).
   - Optional: `HERETIX_RPL_SEED` (fix bootstrap CI), `HERETIX_RPL_NO_CACHE=1` (bypass cache).

@@ -11,9 +11,9 @@ Heretix measures a model’s internal prior over claims and rewards durable beli
 
 ## Quick Start (New Harness)
 
-- Install deps (uv):
+- Setup environment (uv):
 ```
-uv install
+uv sync
 ```
 
 - Create a minimal run config (example):
