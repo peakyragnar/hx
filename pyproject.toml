@@ -28,7 +28,7 @@ dev = [
 ]
 
 [project.scripts]
-heretix = "heretix.cli:main"
+heretix = "heretix.cli:app"
 
 [tool.setuptools.packages.find]
 include = ["heretix*"]
