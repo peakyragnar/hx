@@ -15,6 +15,13 @@ from .rpl import run_single_version
 app = typer.Typer(help="Heretix (new) RPL harness")
 
 
+@app.callback()
+def _root_callback():
+    """Heretix CLI root."""
+    # No root options; subcommands handle actions.
+    pass
+
+
 @app.command("run")
 def cmd_run(
     config: Path = typer.Option(..., exists=True, dir_okay=False, help="Path to run config YAML/JSON"),
@@ -51,9 +58,6 @@ def cmd_run(
     typer.echo(f"Wrote {out}")
 
 
-def main():
-    app()
-
-
 if __name__ == "__main__":
-    main()
+    # Allow module execution via: python -m heretix.cli
+    app()
