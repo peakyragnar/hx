@@ -27,6 +27,7 @@ def cmd_run(
     config: Path = typer.Option(..., exists=True, dir_okay=False, help="Path to run config YAML/JSON"),
     prompt_version: List[str] = typer.Option(None, help="Override prompt versions to run (one or many)"),
     out: Path = typer.Option(Path("runs/rpl_run.json"), help="Output JSON file (A/B summary)"),
+    mock: bool = typer.Option(False, help="Use deterministic mock provider (no network) for smoke tests"),
 ):
     """Run single or multiple prompt versions and print compact A/B results."""
     load_dotenv()
@@ -43,7 +44,7 @@ def cmd_run(
         local_cfg.prompt_version = v
         prompt_file = local_cfg.prompt_file_path or (Path(__file__).parent / "prompts" / f"{v}.yaml")
         typer.echo(f"Running {local_cfg.model}  K={local_cfg.K} R={local_cfg.R}  version={v}")
-        res = run_single_version(local_cfg, prompt_file=str(prompt_file))
+        res = run_single_version(local_cfg, prompt_file=str(prompt_file), mock=mock)
         results.append(res)
 
     # A/B table summary to stdout

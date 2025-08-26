@@ -36,6 +36,11 @@ export OPENAI_API_KEY=sk-...
 uv run heretix run --config runs/rpl_example.yaml --out runs/new_rpl.json
 ```
 
+- Smoke test (no network):
+```
+uv run heretix run --config runs/rpl_example.yaml --out runs/smoke.json --mock
+```
+
 - Output includes: p_RPL, CI95, stability, cache_hit_rate, rpl_compliance_rate.
 
 Legacy CLI is available under `legacy/` for reference but is not installed by default.
@@ -48,6 +53,7 @@ HERETIX_RPL_SEED=42 uv run heretix run --config runs/rpl_example.yaml
 ## Docs
 - New harness design: see `refactor.md` (Tooling with uv, repo structure, phases)
 - Estimator and stats: `documentation/aggregation.md`, `documentation/STATS_SPEC.md`
+- Smoke tests: `documentation/smoke_tests.md`
 - Legacy docs remain in `documentation/` and are referenced by the archived code under `legacy/`.
 
 ## Determinism & Provenance

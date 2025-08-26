@@ -18,6 +18,7 @@ from .metrics import compute_stability_calibrated, stability_band_from_iqr
 from .cache import make_cache_key, get_cached_sample
 from .storage import _ensure_db, insert_run, insert_samples
 from .provider.openai_gpt5 import score_claim
+from .provider.mock import score_claim_mock
 
 
 def _logit(p: float) -> float:
@@ -44,7 +45,7 @@ def _has_citation_or_url(text: str) -> bool:
     return ("http://" in t) or ("https://" in t) or ("www." in t)
 
 
-def run_single_version(cfg: RunConfig, *, prompt_file: str) -> Dict[str, Any]:
+def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) -> Dict[str, Any]:
     prompts = _load_prompts(prompt_file)
     prompt_version_full = str(prompts.get("version"))
     system_text = str(prompts.get("system"))
@@ -107,14 +108,24 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str) -> Dict[str, Any]:
                     cache_hits += 1
 
             if row is None:
-                out = score_claim(
-                    claim=cfg.claim,
-                    system_text=system_text,
-                    user_template=user_template,
-                    paraphrase_text=paraphrase_text,
-                    model=cfg.model,
-                    max_output_tokens=cfg.max_output_tokens,
-                )
+                if mock or os.getenv("HERETIX_MOCK"):
+                    out = score_claim_mock(
+                        claim=cfg.claim,
+                        system_text=system_text,
+                        user_template=user_template,
+                        paraphrase_text=paraphrase_text,
+                        model=cfg.model,
+                        max_output_tokens=cfg.max_output_tokens,
+                    )
+                else:
+                    out = score_claim(
+                        claim=cfg.claim,
+                        system_text=system_text,
+                        user_template=user_template,
+                        paraphrase_text=paraphrase_text,
+                        model=cfg.model,
+                        max_output_tokens=cfg.max_output_tokens,
+                    )
                 raw = out.get("raw", {})
                 meta = out.get("meta", {})
                 timing = out.get("timing", {})
