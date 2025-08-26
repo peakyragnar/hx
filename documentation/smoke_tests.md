@@ -21,9 +21,13 @@ Expected:
 - JSON written to `runs/smoke.json`.
 - SQLite database `runs/heretix.sqlite` contains the run in `runs` and sample rows in `samples`.
 
-## Pytest (optional, if installed)
+## Pytest (optional)
 - There is a minimal test at `heretix/tests/test_smoke.py` that uses the mock provider.
-- If `pytest` is available in your environment:
+- Install test extras (one-time):
+```
+uv sync --extra test
+```
+- Then run:
 ```
 uv run -m pytest heretix/tests/test_smoke.py -q
 ```
