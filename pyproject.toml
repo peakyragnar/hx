@@ -33,3 +33,6 @@ heretix = "heretix.cli:main"
 [tool.setuptools.packages.find]
 include = ["heretix*"]
 exclude = ["legacy*", "heretix_rpl*", "heretix_promptstudio*", "runs*", "tests*"]
+
+[tool.uv]
+package = true
