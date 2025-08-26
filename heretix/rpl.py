@@ -207,8 +207,9 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str) -> Dict[str, Any]:
             "R": cfg.R,
             "T": T_stage,
             "B": cfg.B,
-            "seed": cfg.seed if cfg.seed is not None else None,
-            "bootstrap_seed": seed_val,
+            # Store seeds as strings to avoid 64-bit overflow constraints in SQLite INTEGER columns
+            "seed": (str(cfg.seed) if cfg.seed is not None else None),
+            "bootstrap_seed": str(seed_val),
             "prob_true_rpl": p_hat,
             "ci_lo": lo_p,
             "ci_hi": hi_p,
@@ -253,4 +254,3 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str) -> Dict[str, Any]:
             "cache_hit_rate": cache_hit_rate,
         },
     }
-
