@@ -19,8 +19,12 @@ env/
 .venv/
 uv.lock
 
+# pyenv
+.python-version
+
 # Output files
 runs/
+!runs/rpl_example.yaml
 *.json
 
 # IDE

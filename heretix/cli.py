@@ -31,8 +31,9 @@ def cmd_run(
 ):
     """Run single or multiple prompt versions and print compact A/B results."""
     load_dotenv()
-    if not os.getenv("OPENAI_API_KEY"):
-        typer.echo("ERROR: OPENAI_API_KEY not set (set in env or .env)", err=True)
+    # Only require API key for live runs; allow --mock runs without it
+    if not mock and not os.getenv("HERETIX_MOCK") and not os.getenv("OPENAI_API_KEY"):
+        typer.echo("ERROR: OPENAI_API_KEY not set (required for live runs)", err=True)
         raise typer.Exit(1)
 
     cfg = load_run_config(str(config))

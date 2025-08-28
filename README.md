@@ -45,6 +45,10 @@ uv run heretix run --config runs/rpl_example.yaml --out runs/smoke.json --mock
 
 Legacy CLI is available under `legacy/` for reference but is not installed by default.
 
+## Tests
+- New harness (default): `uv run pytest -q`
+- Include legacy (optional): `uv run pytest heretix/tests legacy/tests -q`
+
 ## One‑Liner (Deterministic CI)
 ```
 HERETIX_RPL_SEED=42 uv run heretix run --config runs/rpl_example.yaml

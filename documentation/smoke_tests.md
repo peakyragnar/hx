@@ -22,14 +22,19 @@ Expected:
 - SQLite database `runs/heretix.sqlite` contains the run in `runs` and sample rows in `samples`.
 
 ## Pytest (optional)
-- There is a minimal test at `heretix/tests/test_smoke.py` that uses the mock provider.
+- Phase‑1 new harness tests live in `heretix/tests/` and are the default test path via `pytest.ini`.
 - Install test extras (one-time):
 ```
 uv sync --extra test
 ```
-- Then run:
+- Then run the new harness suite (default):
 ```
-uv run -m pytest heretix/tests/test_smoke.py -q
+uv run pytest -q
+```
+
+- To also run legacy tests explicitly:
+```
+uv run pytest heretix/tests legacy/tests -q
 ```
 
 Note: The repository uses uv. We do not fetch dev dependencies automatically; the CLI smoke path does not require pytest.
