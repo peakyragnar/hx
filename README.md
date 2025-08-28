@@ -41,9 +41,28 @@ uv run heretix run --config runs/rpl_example.yaml --out runs/new_rpl.json
 uv run heretix run --config runs/rpl_example.yaml --out runs/smoke.json --mock
 ```
 
+- Describe plan (no network):
+```
+uv run heretix describe --config runs/rpl_example.yaml
+```
+
 - Output includes: p_RPL, CI95, stability, cache_hit_rate, rpl_compliance_rate.
 
 Legacy CLI is available under `legacy/` for reference but is not installed by default.
+
+## Batch Mode
+- Prepare a claims file (JSONL; one object per line with `claim`):
+```
+cat > runs/claims.jsonl << 'EOF'
+{"claim": "tariffs don't cause inflation"}
+{"claim": "nuclear energy is safer than fossil fuels"}
+EOF
+```
+- Update your config to include `claims_file: runs/claims.jsonl` and run:
+```
+uv run heretix run --config runs/rpl_example.yaml --out runs/batch.jsonl --mock
+```
+- Each line in `batch.jsonl` is a compact JSON summary for one claim.
 
 ## Tests
 - New harness (default): `uv run pytest -q`

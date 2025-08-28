@@ -70,9 +70,12 @@ Testing Instructions (Phase‑1)
   - JSON artifact written to the path passed via --out
 
 CLI (Current)
-- Entrypoint: uv run heretix run --config <file> [--out <file>] [--mock]
+- Entrypoints:
+  - `uv run heretix describe --config <file>`: print effective config and sampling plan (no network)
+  - `uv run heretix run --config <file> [--out <file>] [--mock] [--dry-run]`
 - Config file keys (YAML/JSON):
   - claim (str)
+  - claims_file (str, optional): path to JSONL or text file with one claim per line (batch mode)
   - model (str): gpt-5
   - prompt_version (str): rpl_g5_v2
   - K (int): paraphrase slots used (balanced across selected templates)
@@ -80,6 +83,7 @@ CLI (Current)
   - T (int, optional): number of templates to include from the bank (<= size of bank)
   - B (int): bootstrap resamples (default 5000)
   - max_output_tokens (int)
+  - prompts_file (str, optional): explicit prompt YAML path (overrides prompt_version)
 
 Outputs & Interpretation
 - Aggregates:
@@ -98,6 +102,7 @@ Outputs & Interpretation
 - Persistence:
   - SQLite DB: runs/heretix.sqlite (tables: runs, samples)
   - JSON summary file: path passed to --out
+  - JSONL batch file: if `--out` ends with `.jsonl` and `claims_file` is set, one JSON object per claim is written
 
 Repository Map (Active)
 - heretix/cli.py: Typer CLI (heretix run)
