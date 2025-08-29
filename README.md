@@ -26,6 +26,7 @@ K: 8
 R: 2
 T: 8
 B: 5000
+seed: 42
 max_output_tokens: 1024
 EOF
 ```
