@@ -102,11 +102,13 @@ def test_cli_run_batch_jsonl(tmp_path: Path):
 
 
 def test_cli_prompts_file_override(tmp_path: Path):
-    # Copy prompt YAML and bump version
+    # Copy prompt YAML and bump version (YAML-aware to avoid brittle string replace)
+    import yaml
     src = Path(__file__).resolve().parents[1] / "prompts" / "rpl_g5_v2.yaml"
     custom = tmp_path / "prompt.yaml"
-    text = src.read_text().replace("rpl_g5_v2_2025-08-21", "rpl_g5_custom_2099-01-01")
-    custom.write_text(text)
+    y = yaml.safe_load(src.read_text())
+    y["version"] = "rpl_g5_custom_2099-01-01"
+    custom.write_text(yaml.safe_dump(y, sort_keys=False))
 
     cfg_path = tmp_path / "cfg.yaml"
     cfg_path.write_text(
@@ -131,4 +133,3 @@ def test_cli_prompts_file_override(tmp_path: Path):
     assert result.exit_code == 0, result.output
     doc = json.loads(out_path.read_text())
     assert doc["runs"][0]["prompt_version"].startswith("rpl_g5_custom_2099-01-01")
-

@@ -35,16 +35,11 @@ def score_claim(
     paraphrased = paraphrase_text.replace("{CLAIM}", claim)
     user_text = f"{paraphrased}\n\n" + user_template.replace("{CLAIM}", claim)
     schema_instructions = (
-        "Return ONLY valid JSON with exactly these fields:\n"
-        "{\n"
-        "  \"prob_true\": number between 0 and 1,\n"
-        "  \"confidence_self\": number between 0 and 1,\n"
-        "  \"assumptions\": array of strings,\n"
-        "  \"reasoning_bullets\": array of 3-6 strings,\n"
-        "  \"contrary_considerations\": array of 2-4 strings,\n"
-        "  \"ambiguity_flags\": array of strings\n"
-        "}\n"
-        "Output ONLY the JSON object, no other text."
+        "Return ONLY JSON matching this schema: "
+        "{ \"prob_true\": 0..1, \"confidence_self\": 0..1, "
+        "\"assumptions\": [string], \"reasoning_bullets\": [3-6 strings], "
+        "\"contrary_considerations\": [2-4 strings], \"ambiguity_flags\": [string] } "
+        "Output the JSON object only."
     )
     full_instructions = system_text + "\n\n" + schema_instructions
     prompt_sha256 = hashlib.sha256((full_instructions + "\n\n" + user_text).encode("utf-8")).hexdigest()
@@ -109,4 +104,3 @@ def score_claim(
             "latency_ms": latency_ms,
         },
     }
-
