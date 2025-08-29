@@ -42,6 +42,11 @@ def _ensure_db(path: Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
         )
         """
     )
+    # Attempt to add new columns for forward-compat schema
+    try:
+        conn.execute("ALTER TABLE runs ADD COLUMN prompt_char_len_max INTEGER")
+    except Exception:
+        pass
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS samples (
@@ -92,6 +97,7 @@ def _ensure_db(path: Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
             sampler_json TEXT,
             counts_by_template_json TEXT,
             artifact_json_path TEXT,
+            prompt_char_len_max INTEGER,
             FOREIGN KEY (run_id) REFERENCES runs(run_id)
         )
         """

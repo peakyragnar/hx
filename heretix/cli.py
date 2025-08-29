@@ -269,11 +269,13 @@ def cmd_describe(
     )
     full_instructions = system_text + "\n\n" + schema_instructions
     tpl_hashes = []
+    prompt_len_list = []
     for idx in tpl_indices:
         ptxt = paraphrases[idx].replace("{CLAIM}", tmp.claim)
         utext = f"{ptxt}\n\n" + user_template.replace("{CLAIM}", tmp.claim)
         h = hashlib.sha256((full_instructions + "\n\n" + utext).encode("utf-8")).hexdigest()
         tpl_hashes.append(h)
+        prompt_len_list.append(len(full_instructions + "\n\n" + utext))
 
     if cfg.seed is not None:
         seed_eff = int(cfg.seed)
@@ -304,6 +306,7 @@ def cmd_describe(
             "T": T_stage,
             "B": cfg.B,
             "seed": cfg.seed,
+            "max_prompt_chars": cfg.max_prompt_chars,
             "max_output_tokens": cfg.max_output_tokens,
         },
         "plan": {
@@ -314,6 +317,8 @@ def cmd_describe(
             "planned_counts": counts,
             "planned_imbalance_ratio": ratio,
             "bootstrap_seed_effective": seed_eff,
+            "prompt_char_len_max": (max(prompt_len_list) if prompt_len_list else 0),
+            "prompt_char_len_over_cap": (max(prompt_len_list) > int(cfg.max_prompt_chars) if (prompt_len_list and cfg.max_prompt_chars) else False),
         },
     }
     typer.echo(json.dumps(summary, indent=2))

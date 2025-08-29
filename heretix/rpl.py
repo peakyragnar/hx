@@ -66,6 +66,28 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
     tpl_indices = order[:T_stage]
     seq = balanced_indices_with_rotation(T_stage, cfg.K, offset=0)  # already rotated via tpl_indices
 
+    # Compose instruction prefix (system + schema) once
+    schema_instructions = (
+        "Return ONLY valid JSON with exactly these fields:\n"
+        "{\n  \"prob_true\": number between 0 and 1,\n  \"confidence_self\": number between 0 and 1,\n  \"assumptions\": array of strings,\n  \"reasoning_bullets\": array of 3-6 strings,\n  \"contrary_considerations\": array of 2-4 strings,\n  \"ambiguity_flags\": array of strings\n}\n"
+        "Output ONLY the JSON object, no other text."
+    )
+    full_instructions = system_text + "\n\n" + schema_instructions
+
+    # Compute per-template prompt lengths and enforce cap
+    prompt_lengths: Dict[int, int] = {}
+    for pidx in tpl_indices:
+        paraphrase_text = paraphrases[pidx]
+        paraphrased = paraphrase_text.replace("{CLAIM}", cfg.claim)
+        user_text = f"{paraphrased}\n\n" + user_template.replace("{CLAIM}", cfg.claim)
+        plen = len(full_instructions + "\n\n" + user_text)
+        prompt_lengths[pidx] = plen
+    prompt_char_len_max = max(prompt_lengths.values()) if prompt_lengths else 0
+    if cfg.max_prompt_chars is not None and prompt_char_len_max > int(cfg.max_prompt_chars):
+        raise ValueError(
+            f"Prompt length {prompt_char_len_max} exceeds max_prompt_chars={cfg.max_prompt_chars}. Reduce claim length or template text."
+        )
+
     # sampling loop
     runs: List[Dict[str, Any]] = []
     by_tpl: Dict[str, List[float]] = {}
@@ -85,12 +107,6 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
         # Compose prompt once per slot to compute stable prompt_sha256 for this template
         paraphrased = paraphrase_text.replace("{CLAIM}", cfg.claim)
         user_text = f"{paraphrased}\n\n" + user_template.replace("{CLAIM}", cfg.claim)
-        schema_instructions = (
-            "Return ONLY valid JSON with exactly these fields:\n"
-            "{\n  \"prob_true\": number between 0 and 1,\n  \"confidence_self\": number between 0 and 1,\n  \"assumptions\": array of strings,\n  \"reasoning_bullets\": array of 3-6 strings,\n  \"contrary_considerations\": array of 2-4 strings,\n  \"ambiguity_flags\": array of strings\n}\n"
-            "Output ONLY the JSON object, no other text."
-        )
-        full_instructions = system_text + "\n\n" + schema_instructions
         prompt_sha256 = hashlib.sha256((full_instructions + "\n\n" + user_text).encode("utf-8")).hexdigest()
 
         occ_idx = occ_by_hash.get(prompt_sha256, 0)
@@ -246,6 +262,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             "sampler_json": json.dumps({"T_bank": T_bank, "T": T_stage, "seq": seq, "tpl_indices": tpl_indices}),
             "counts_by_template_json": json.dumps(counts),
             "artifact_json_path": None,
+            "prompt_char_len_max": prompt_char_len_max,
         },
     )
 
@@ -278,6 +295,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             "sampler_json": json.dumps({"T_bank": T_bank, "T": T_stage, "seq": seq, "tpl_indices": tpl_indices}),
             "counts_by_template_json": json.dumps(counts),
             "artifact_json_path": None,
+            "prompt_char_len_max": prompt_char_len_max,
         },
     )
     # Map execution to the exact cached samples used (valid only)
@@ -305,6 +323,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             "counts_by_template": counts,
             "imbalance_ratio": imb,
             "template_iqr_logit": iqr_l,
+            "prompt_char_len_max": prompt_char_len_max,
         },
         "aggregates": {
             "prob_true_rpl": p_hat,
