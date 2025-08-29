@@ -21,8 +21,8 @@ class RunConfig:
     B: int = 5000
     seed: Optional[int] = None
     max_output_tokens: int = 1024
-    # Prompt character limit (system + schema + user text). Enforced per-template when set.
-    max_prompt_chars: Optional[int] = None
+    # Prompt character limit (system + schema + user text). Enforced globally.
+    max_prompt_chars: Optional[int] = 1200
     no_cache: bool = False
     prompts_file: Optional[str] = None  # explicit path; defaults by prompt_version
 
