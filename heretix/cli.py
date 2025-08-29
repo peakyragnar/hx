@@ -15,6 +15,7 @@ from .rpl import run_single_version
 from .sampler import rotation_offset, balanced_indices_with_rotation, planned_counts
 from .seed import make_bootstrap_seed
 import yaml
+from .storage import _ensure_db, update_run_artifact_path
 
 
 app = typer.Typer(help="Heretix (new) RPL harness")
@@ -164,6 +165,13 @@ def cmd_run(
                 )
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_text(json.dumps({"runs": results}, indent=2))
+            # Persist artifact path for each run included here
+            try:
+                conn = _ensure_db()
+                for r in results:
+                    update_run_artifact_path(conn, r.get("run_id"), str(out))
+            except Exception:
+                pass
             typer.echo(f"Wrote {out}")
         return
 
@@ -195,6 +203,13 @@ def cmd_run(
 
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps({"runs": results}, indent=2))
+    # Persist artifact path for each run included here
+    try:
+        conn = _ensure_db()
+        for r in results:
+            update_run_artifact_path(conn, r.get("run_id"), str(out))
+    except Exception:
+        pass
     typer.echo(f"Wrote {out}")
 
 

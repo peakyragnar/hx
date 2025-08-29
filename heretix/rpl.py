@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import yaml
+import uuid
 
 from .config import RunConfig
 from .sampler import rotation_offset, balanced_indices_with_rotation, planned_counts
@@ -16,7 +17,7 @@ from .seed import make_bootstrap_seed
 from .aggregate import aggregate_clustered
 from .metrics import compute_stability_calibrated, stability_band_from_iqr
 from .cache import make_cache_key, get_cached_sample
-from .storage import _ensure_db, insert_run, insert_samples
+from .storage import _ensure_db, insert_run, insert_samples, insert_execution, insert_execution_samples
 from .provider.openai_gpt5 import score_claim
 from .provider.mock import score_claim_mock
 
@@ -215,6 +216,8 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
     for it in runs:
         it["row"]["run_id"] = run_id
     insert_samples(conn, [it["row"] for it in runs])
+    # execution id for this invocation
+    execution_id = f"exec-{uuid.uuid4().hex[:12]}"
     insert_run(
         conn,
         {
@@ -246,7 +249,47 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
         },
     )
 
+    # Insert immutable execution summary and mapping to used samples (valid only)
+    insert_execution(
+        conn,
+        {
+            "execution_id": execution_id,
+            "run_id": run_id,
+            "created_at": int(time.time()),
+            "claim": cfg.claim,
+            "model": cfg.model,
+            "prompt_version": prompt_version_full,
+            "K": cfg.K,
+            "R": cfg.R,
+            "T": T_stage,
+            "B": cfg.B,
+            "seed": (str(cfg.seed) if cfg.seed is not None else None),
+            "bootstrap_seed": str(seed_val),
+            "prob_true_rpl": p_hat,
+            "ci_lo": lo_p,
+            "ci_hi": hi_p,
+            "ci_width": (hi_p - lo_p),
+            "template_iqr_logit": iqr_l,
+            "stability_score": stability,
+            "imbalance_ratio": imb,
+            "rpl_compliance_rate": rpl_compliance_rate,
+            "cache_hit_rate": cache_hit_rate,
+            "config_json": json.dumps(cfg.__dict__),
+            "sampler_json": json.dumps({"T_bank": T_bank, "T": T_stage, "seq": seq, "tpl_indices": tpl_indices}),
+            "counts_by_template_json": json.dumps(counts),
+            "artifact_json_path": None,
+        },
+    )
+    # Map execution to the exact cached samples used (valid only)
+    exec_maps = [
+        {"execution_id": execution_id, "cache_key": it["row"]["cache_key"]}
+        for it in runs
+        if it["row"].get("json_valid")
+    ]
+    insert_execution_samples(conn, exec_maps)
+
     return {
+        "execution_id": execution_id,
         "run_id": run_id,
         "claim": cfg.claim,
         "model": cfg.model,
