@@ -5,6 +5,7 @@ from typing import List, Optional, Iterable
 import json
 import os
 import sys
+import hashlib
 
 import typer
 from dotenv import load_dotenv
