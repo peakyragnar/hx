@@ -11,9 +11,9 @@ from heretix.rpl import run_single_version
 DB_PATH = Path("runs/heretix.sqlite")
 
 
-def test_db_persistence_and_counts():
+def test_db_persistence_and_counts(tmp_path: Path):
     cfg = RunConfig(
-        claim="tariffs don't cause inflation",
+        claim=f"tariffs don't cause inflation [db_smoke_{tmp_path.name}]",
         model="gpt-5",
         prompt_version="rpl_g5_v2",
         K=3,
