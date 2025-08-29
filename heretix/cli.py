@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from .config import load_run_config, RunConfig
 from .rpl import run_single_version
 from .sampler import rotation_offset, balanced_indices_with_rotation, planned_counts
+from .seed import make_bootstrap_seed
 import yaml
 
 
@@ -241,6 +242,40 @@ def cmd_describe(
     tpl_indices = order[:T_stage]
     seq = balanced_indices_with_rotation(T_stage, tmp.K, offset=0)
     counts, ratio = planned_counts(seq, T_stage)
+    # Compute planned bootstrap seed with precedence (config > env > derived)
+    # Build template hashes for selected templates
+    system_text = str(doc.get("system"))
+    user_template = str(doc.get("user_template"))
+    schema_instructions = (
+        "Return ONLY valid JSON with exactly these fields:\n"
+        "{\n  \"prob_true\": number between 0 and 1,\n  \"confidence_self\": number between 0 and 1,\n  \"assumptions\": array of strings,\n  \"reasoning_bullets\": array of 3-6 strings,\n  \"contrary_considerations\": array of 2-4 strings,\n  \"ambiguity_flags\": array of strings\n}\n"
+        "Output ONLY the JSON object, no other text."
+    )
+    full_instructions = system_text + "\n\n" + schema_instructions
+    tpl_hashes = []
+    for idx in tpl_indices:
+        ptxt = paraphrases[idx].replace("{CLAIM}", tmp.claim)
+        utext = f"{ptxt}\n\n" + user_template.replace("{CLAIM}", tmp.claim)
+        h = hashlib.sha256((full_instructions + "\n\n" + utext).encode("utf-8")).hexdigest()
+        tpl_hashes.append(h)
+
+    if cfg.seed is not None:
+        seed_eff = int(cfg.seed)
+    elif os.getenv("HERETIX_RPL_SEED") is not None:
+        seed_eff = int(os.getenv("HERETIX_RPL_SEED"))
+    else:
+        seed_eff = make_bootstrap_seed(
+            claim=tmp.claim,
+            model=tmp.model,
+            prompt_version=str(doc.get("version")),
+            k=tmp.K,
+            r=tmp.R,
+            template_hashes=sorted(set(tpl_hashes)),
+            center="trimmed",
+            trim=0.2,
+            B=tmp.B,
+        )
+
     summary = {
         "config": {
             "claim": cfg.claim,
@@ -252,6 +287,7 @@ def cmd_describe(
             "R": cfg.R,
             "T": T_stage,
             "B": cfg.B,
+            "seed": cfg.seed,
             "max_output_tokens": cfg.max_output_tokens,
         },
         "plan": {
@@ -261,6 +297,7 @@ def cmd_describe(
             "seq": seq,
             "planned_counts": counts,
             "planned_imbalance_ratio": ratio,
+            "bootstrap_seed_effective": seed_eff,
         },
     }
     typer.echo(json.dumps(summary, indent=2))

@@ -68,6 +68,11 @@ uv run heretix run --config runs/rpl_example.yaml --out runs/batch.jsonl --mock
 - New harness (default): `uv run pytest -q`
 - Include legacy (optional): `uv run pytest heretix/tests legacy/tests -q`
 
+## Determinism
+- Set a bootstrap seed in the config (`seed: 42`) to fix CI draws.
+- Precedence: config `seed` > `HERETIX_RPL_SEED` env > derived deterministic value.
+- The effective `bootstrap_seed` is shown in outputs and persisted in the DB.
+
 ## One‑Liner (Deterministic CI)
 ```
 HERETIX_RPL_SEED=42 uv run heretix run --config runs/rpl_example.yaml

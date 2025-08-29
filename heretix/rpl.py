@@ -74,30 +74,37 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
     attempted = 0
     valid_count = 0
 
+    # Track how many slots we've assigned per template (by prompt hash) to make replicate_idx unique per occurrence
+    occ_by_hash: Dict[str, int] = {}
+
     for k_slot, local_tpl_idx in enumerate(seq):
         pidx = tpl_indices[local_tpl_idx]
         paraphrase_text = paraphrases[pidx]
+
+        # Compose prompt once per slot to compute stable prompt_sha256 for this template
+        paraphrased = paraphrase_text.replace("{CLAIM}", cfg.claim)
+        user_text = f"{paraphrased}\n\n" + user_template.replace("{CLAIM}", cfg.claim)
+        schema_instructions = (
+            "Return ONLY valid JSON with exactly these fields:\n"
+            "{\n  \"prob_true\": number between 0 and 1,\n  \"confidence_self\": number between 0 and 1,\n  \"assumptions\": array of strings,\n  \"reasoning_bullets\": array of 3-6 strings,\n  \"contrary_considerations\": array of 2-4 strings,\n  \"ambiguity_flags\": array of strings\n}\n"
+            "Output ONLY the JSON object, no other text."
+        )
+        full_instructions = system_text + "\n\n" + schema_instructions
+        prompt_sha256 = hashlib.sha256((full_instructions + "\n\n" + user_text).encode("utf-8")).hexdigest()
+
+        occ_idx = occ_by_hash.get(prompt_sha256, 0)
+        occ_by_hash[prompt_sha256] = occ_idx + 1
+
         for r in range(cfg.R):
             attempted += 1
-            # Compose prompt to compute prompt_sha256 in provider
-            # Cache key uses prompt_sha256, not paraphrase index
-            # First try cache: we need prompt_sha256; compute from ingredients
-            # We deterministically recompute prompt_sha256 same as provider
-            paraphrased = paraphrase_text.replace("{CLAIM}", cfg.claim)
-            user_text = f"{paraphrased}\n\n" + user_template.replace("{CLAIM}", cfg.claim)
-            schema_instructions = (
-                "Return ONLY valid JSON with exactly these fields:\n"
-                "{\n  \"prob_true\": number between 0 and 1,\n  \"confidence_self\": number between 0 and 1,\n  \"assumptions\": array of strings,\n  \"reasoning_bullets\": array of 3-6 strings,\n  \"contrary_considerations\": array of 2-4 strings,\n  \"ambiguity_flags\": array of strings\n}\n"
-                "Output ONLY the JSON object, no other text."
-            )
-            full_instructions = system_text + "\n\n" + schema_instructions
-            prompt_sha256 = hashlib.sha256((full_instructions + "\n\n" + user_text).encode("utf-8")).hexdigest()
+            # Make replicate index unique per template across all slots
+            replicate_idx_global = int(occ_idx * cfg.R + r)
             ckey = make_cache_key(
                 claim=cfg.claim,
                 model=cfg.model,
                 prompt_version=prompt_version_full,
                 prompt_sha256=prompt_sha256,
-                replicate_idx=r,
+                replicate_idx=replicate_idx_global,
                 max_output_tokens=cfg.max_output_tokens,
             )
 
@@ -142,7 +149,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
                     "cache_key": ckey,
                     "prompt_sha256": meta.get("prompt_sha256"),
                     "paraphrase_idx": int(pidx),
-                    "replicate_idx": int(r),
+                    "replicate_idx": int(replicate_idx_global),
                     "prob_true": prob if prob == prob else None,
                     "logit": lgt if lgt == lgt else None,
                     "provider_model_id": meta.get("provider_model_id"),
@@ -168,9 +175,11 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
         raise ValueError(f"Too few valid samples: {valid_count} < 3")
 
     # aggregation
-    env_seed = os.getenv("HERETIX_RPL_SEED")
-    if env_seed is not None:
-        seed_val = int(env_seed)
+    # Seed precedence: config seed > env > derived deterministic
+    if cfg.seed is not None:
+        seed_val = int(cfg.seed)
+    elif os.getenv("HERETIX_RPL_SEED") is not None:
+        seed_val = int(os.getenv("HERETIX_RPL_SEED"))
     else:
         seed_val = make_bootstrap_seed(
             claim=cfg.claim,

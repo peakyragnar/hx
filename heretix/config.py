@@ -32,8 +32,8 @@ def load_run_config(path: str | Path) -> RunConfig:
     p = Path(path)
     data = yaml.safe_load(p.read_text()) if p.suffix in {".yaml", ".yml"} else json.loads(p.read_text())
     cfg = RunConfig(**data)
-    # env overrides
-    if os.getenv("HERETIX_RPL_SEED") is not None:
+    # Env fallback (config takes precedence)
+    if cfg.seed is None and os.getenv("HERETIX_RPL_SEED") is not None:
         try:
             cfg.seed = int(os.getenv("HERETIX_RPL_SEED"))
         except Exception:
