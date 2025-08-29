@@ -1,4 +1,4 @@
-claim: "tariffs don't cause inflation"
+claim: "Women's are better at long distance running"
 model: gpt-5
 prompt_version: rpl_g5_v2
 K: 12
@@ -6,4 +6,5 @@ R: 3
 T: 6
 B: 1000
 seed: 42
+max_prompt_chars: 1200
 max_output_tokens: 1024
