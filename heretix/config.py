@@ -10,7 +10,7 @@ import yaml
 
 @dataclass
 class RunConfig:
-    claim: str
+    claim: Optional[str] = None
     model: str = "gpt-5"
     prompt_version: str = "rpl_g5_v2"
     # Batch support: optional path to a claims file (JSONL or plain text; one claim per line)

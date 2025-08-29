@@ -13,7 +13,7 @@ DB_PATH = Path("runs/heretix.sqlite")
 
 def test_db_row_count_matches_k_times_r(tmp_path: Path):
     cfg = RunConfig(
-        claim="tariffs don't cause inflation",
+        claim=f"tariffs don't cause inflation [db_kxr_{tmp_path.name}]",
         model="gpt-5",
         prompt_version="rpl_g5_v2",
         K=12,
@@ -35,7 +35,7 @@ def test_db_row_count_matches_k_times_r(tmp_path: Path):
 def test_cache_hit_behavior(tmp_path: Path):
     # First run: expect near-0 cache hit rate
     cfg = RunConfig(
-        claim="tariffs don't cause inflation",
+        claim=f"tariffs don't cause inflation [cache_{tmp_path.name}]",
         model="gpt-5",
         prompt_version="rpl_g5_v2",
         K=8,
@@ -56,4 +56,3 @@ def test_cache_hit_behavior(tmp_path: Path):
     cfg.no_cache = True
     res3 = run_single_version(cfg, prompt_file=prompt_file, mock=True)
     assert res3["aggregates"]["cache_hit_rate"] == 0.0
-
