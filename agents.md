@@ -82,6 +82,8 @@ CLI (Current)
   - R (int): replicates per slot
   - T (int, optional): number of templates to include from the bank (<= size of bank)
   - B (int): bootstrap resamples (default 5000)
+  - seed (int, optional): bootstrap seed; precedence is config seed > HERETIX_RPL_SEED env > derived deterministic
+  - max_prompt_chars (int, default 1200): hard cap on composed prompt length (system+schema+user); run fails fast if exceeded
   - max_output_tokens (int)
   - prompts_file (str, optional): explicit prompt YAML path (overrides prompt_version)
 
@@ -103,6 +105,7 @@ Outputs & Interpretation
   - SQLite DB: runs/heretix.sqlite (tables: runs, samples)
   - JSON summary file: path passed to --out
   - JSONL batch file: if `--out` ends with `.jsonl` and `claims_file` is set, one JSON object per claim is written
+  - Seeds: runs row stores both configured `seed` (if any) and effective `bootstrap_seed` for auditability
 
 Repository Map (Active)
 - heretix/cli.py: Typer CLI (heretix run)
