@@ -118,6 +118,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             attempted += 1
             # Make replicate index unique per template across all slots
             replicate_idx_global = int(occ_idx * cfg.R + r)
+            provider_mode = "MOCK" if (mock or os.getenv("HERETIX_MOCK")) else "LIVE"
             ckey = make_cache_key(
                 claim=cfg.claim,
                 model=cfg.model,
@@ -125,6 +126,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
                 prompt_sha256=prompt_sha256,
                 replicate_idx=replicate_idx_global,
                 max_output_tokens=cfg.max_output_tokens,
+                provider_mode=provider_mode,
             )
 
             row = None
@@ -134,7 +136,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
                     cache_hits += 1
 
             if row is None:
-                if mock or os.getenv("HERETIX_MOCK"):
+                if provider_mode == "MOCK":
                     out = score_claim_mock(
                         claim=cfg.claim,
                         system_text=system_text,

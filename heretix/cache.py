@@ -15,11 +15,11 @@ def make_cache_key(
     prompt_sha256: str,
     replicate_idx: int,
     max_output_tokens: int,
+    provider_mode: str,  # "MOCK" or "LIVE" (or provider label)
 ) -> str:
-    s = f"{claim}|{model}|{prompt_version}|{prompt_sha256}|{replicate_idx}|{max_output_tokens}"
+    s = f"{claim}|{model}|{prompt_version}|{prompt_sha256}|{replicate_idx}|{max_output_tokens}|{provider_mode}"
     return hashlib.sha256(s.encode("utf-8")).hexdigest()
 
 
 def get_cached_sample(cache_key: str, db_path: Path = DEFAULT_DB_PATH) -> Optional[Dict[str, Any]]:
     return _get_cached_sample(cache_key, db_path)
-
