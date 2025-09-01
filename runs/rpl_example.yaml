@@ -1,9 +1,9 @@
-claim: "Women's are better at long distance running"
+claim: "Donald Trump is the best president ever"
 model: gpt-5
 prompt_version: rpl_g5_v2
-K: 12
+K: 18
 R: 3
-T: 6
+T: 8
 B: 5000
 seed: 42
 max_prompt_chars: 1200
