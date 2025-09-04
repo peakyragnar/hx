@@ -75,7 +75,6 @@ CLI (Current)
   - `uv run heretix run --config <file> [--out <file>] [--mock] [--dry-run]`
 - Config file keys (YAML/JSON):
   - claim (str)
-  - claims_file (str, optional): path to JSONL or text file with one claim per line (batch mode)
   - model (str): gpt-5
   - prompt_version (str): rpl_g5_v2
   - K (int): paraphrase slots used (balanced across selected templates)
@@ -104,7 +103,6 @@ Outputs & Interpretation
 - Persistence:
   - SQLite DB: runs/heretix.sqlite (tables: runs, samples)
   - JSON summary file: path passed to --out
-  - JSONL batch file: if `--out` ends with `.jsonl` and `claims_file` is set, one JSON object per claim is written
   - Seeds: runs row stores both configured `seed` (if any) and effective `bootstrap_seed` for auditability
 
 Repository Map (Active)

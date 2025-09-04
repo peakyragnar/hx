@@ -54,7 +54,7 @@
   - Phases 1–2: only GPT‑5 adapter is active.
   - Phase 3: add provider stubs and wire compare UX (strict config parity required).
 - core/aggregate: frozen clustered estimator (no alternatives).
-- core/storage: SQLite with normalized columns + JSON blobs; JSONL export/import.
+- core/storage: SQLite with normalized columns + JSON blobs.
 - core/cache: deterministic sample reuse keyed by `(claim|model|prompt_version|prompt_sha256|replicate_idx|max_output_tokens)`.
 - cli: `run` (single), `view` (inspect/compare/weekly), `sweep` (optional, Phase 3).
 
@@ -67,7 +67,7 @@
   - `heretix/provider/` (`openai_gpt5.py`, `__init__.py`)
   - `heretix/aggregate.py` (wraps frozen clustered estimator)
   - `heretix/cache.py` (sample cache)
-  - `heretix/storage.py` (SQLite schema + JSONL I/O)
+  - `heretix/storage.py` (SQLite schema + JSON I/O)
   - `heretix/rpl.py` (single-run engine)
   - `heretix/auto_preset.py` (Auto‑RPL preset; Phase 3)
   - `heretix/view/` (`inspect.py`, `compare.py`, `weekly.py`)

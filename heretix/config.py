@@ -13,8 +13,6 @@ class RunConfig:
     claim: Optional[str] = None
     model: str = "gpt-5"
     prompt_version: str = "rpl_g5_v2"
-    # Batch support: optional path to a claims file (JSONL or plain text; one claim per line)
-    claims_file: Optional[str] = None
     K: int = 8
     R: int = 2
     T: Optional[int] = None  # number of templates to use (defaults to all in YAML)

@@ -83,97 +83,7 @@ def cmd_run(
             "planned_imbalance_ratio": ratio,
         }
 
-    # Helper: read claims from a file (JSONL or plain text)
-    def _read_claims(path: Path) -> List[str]:
-        claims: List[str] = []
-        for line in path.read_text().splitlines():
-            s = line.strip()
-            if not s or s.startswith("#"):
-                continue
-            try:
-                obj = json.loads(s)
-                if isinstance(obj, dict) and "claim" in obj:
-                    claims.append(str(obj["claim"]))
-                elif isinstance(obj, str):
-                    claims.append(obj)
-                else:
-                    # Fallback: treat raw line as the claim text
-                    claims.append(s)
-            except Exception:
-                claims.append(s)
-        return claims
-
-    # Batch mode detection: claims_file present
-    is_batch = bool(cfg.claims_file)
-
-    if is_batch:
-        # Read all claims
-        claims_path = Path(cfg.claims_file)
-        if not claims_path.exists():
-            typer.echo(f"ERROR: claims_file not found: {claims_path}", err=True)
-            raise typer.Exit(1)
-        claim_list = _read_claims(claims_path)
-        if dry_run:
-            # For dry-run in batch, preview high-level plan only
-            # Use the first version only for preview; batch always runs one prompt_version set unless overridden
-            v = versions[0]
-            local_cfg = RunConfig(**{**cfg.__dict__})
-            local_cfg.claim = claim_list[0] if claim_list else cfg.claim
-            local_cfg.prompt_version = v
-            prompt_file = Path(local_cfg.prompt_file_path or (Path(__file__).parent / "prompts" / f"{v}.yaml"))
-            plan = _plan_summary(local_cfg, prompt_file)
-            preview = {
-                "mode": "batch",
-                "n_claims": len(claim_list),
-                "versions": versions,
-                "plan": plan,
-            }
-            typer.echo(json.dumps(preview, indent=2))
-            return
-
-        # Streaming JSONL if out endswith .jsonl; else write a big JSON array
-        out.parent.mkdir(parents=True, exist_ok=True)
-        write_jsonl = out.suffix.lower() == ".jsonl"
-        if write_jsonl:
-            with out.open("w") as f:
-                for idx, claim in enumerate(claim_list):
-                    for v in versions:
-                        local_cfg = RunConfig(**{**cfg.__dict__})
-                        local_cfg.claim = claim
-                        local_cfg.prompt_version = v
-                        prompt_file = local_cfg.prompt_file_path or (Path(__file__).parent / "prompts" / f"{v}.yaml")
-                        typer.echo(f"[{idx+1}/{len(claim_list)}] Running {local_cfg.model}  K={local_cfg.K} R={local_cfg.R}  version={v}")
-                        res = run_single_version(local_cfg, prompt_file=str(prompt_file), mock=mock)
-                        f.write(json.dumps(res) + "\n")
-            typer.echo(f"Wrote {out}")
-        else:
-            results = []
-            for idx, claim in enumerate(claim_list):
-                for v in versions:
-                    local_cfg = RunConfig(**{**cfg.__dict__})
-                    local_cfg.claim = claim
-                    local_cfg.prompt_version = v
-                    prompt_file = local_cfg.prompt_file_path or (Path(__file__).parent / "prompts" / f"{v}.yaml")
-                    typer.echo(f"[{idx+1}/{len(claim_list)}] Running {local_cfg.model}  K={local_cfg.K} R={local_cfg.R}  version={v}")
-                    res = run_single_version(local_cfg, prompt_file=str(prompt_file), mock=mock)
-                    results.append(res)
-            # Print A/B summary lines
-            for r in results:
-                a = r["aggregates"]
-                typer.echo(
-                    f"v={r['prompt_version']}  p={a['prob_true_rpl']:.3f}  CI95=[{a['ci95'][0]:.3f},{a['ci95'][1]:.3f}]  width={a['ci_width']:.3f}  stab={a['stability_score']:.3f}  compl={a['rpl_compliance_rate']:.2f}  cache={a['cache_hit_rate']:.2f}"
-                )
-            out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text(json.dumps({"runs": results}, indent=2))
-            # Persist artifact path for each run included here
-            try:
-                conn = _ensure_db()
-                for r in results:
-                    update_run_artifact_path(conn, r.get("run_id"), str(out))
-            except Exception:
-                pass
-            typer.echo(f"Wrote {out}")
-        return
+    # Single-claim only: batch mode removed
 
     # Single-claim path (default)
     if dry_run:
@@ -220,30 +130,9 @@ def cmd_describe(
     """Describe the effective configuration and sampling plan (no network)."""
     cfg = load_run_config(str(config))
     prompt_file = Path(cfg.prompt_file_path or (Path(__file__).parent / "prompts" / f"{cfg.prompt_version}.yaml"))
-    # For batch, claim placeholder to compute rotation; we don’t need to be exact here
-    claim_preview = cfg.claim
-    if cfg.claims_file and not cfg.claim:
-        try:
-            # Peek first non-empty line
-            with open(cfg.claims_file, "r") as fh:
-                for line in fh:
-                    s = line.strip()
-                    if s:
-                        try:
-                            obj = json.loads(s)
-                            claim_preview = obj.get("claim", s) if isinstance(obj, dict) else (obj if isinstance(obj, str) else s)
-                        except Exception:
-                            claim_preview = s
-                        break
-        except Exception:
-            pass
     # Compose a temporary cfg
     tmp = RunConfig(**{**cfg.__dict__})
-    tmp.claim = claim_preview
-    plan = {
-        "batch": bool(cfg.claims_file),
-        "claims_file": cfg.claims_file,
-    }
+    tmp.claim = cfg.claim
     # Build the same plan as dry-run
     doc = yaml.safe_load(prompt_file.read_text())
     paraphrases = [str(x) for x in doc.get("paraphrases", [])]
@@ -297,7 +186,6 @@ def cmd_describe(
     summary = {
         "config": {
             "claim": cfg.claim,
-            "claims_file": cfg.claims_file,
             "model": cfg.model,
             "prompt_version": cfg.prompt_version,
             "prompt_version_full": str(doc.get("version")),

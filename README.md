@@ -52,19 +52,8 @@ uv run heretix describe --config runs/rpl_example.yaml
 
 Legacy CLI is available under `legacy/` for reference but is not installed by default.
 
-## Batch Mode
-- Prepare a claims file (JSONL; one object per line with `claim`):
-```
-cat > runs/claims.jsonl << 'EOF'
-{"claim": "tariffs don't cause inflation"}
-{"claim": "nuclear energy is safer than fossil fuels"}
-EOF
-```
-- Update your config to include `claims_file: runs/claims.jsonl` and run:
-```
-uv run heretix run --config runs/rpl_example.yaml --out runs/batch.jsonl --mock
-```
-- Each line in `batch.jsonl` is a compact JSON summary for one claim.
+## Single-Claim Workflow
+- Use `claim:` in your config and run with `heretix run` as above. Outputs persist to SQLite and a single JSON file for easy inspection.
 
 ## Tests
 - New harness (default): `uv run pytest -q`

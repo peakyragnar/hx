@@ -64,41 +64,7 @@ def test_cli_run_dry_run(tmp_path: Path):
     assert not out_path.exists()
 
 
-def test_cli_run_batch_jsonl(tmp_path: Path):
-    # Prepare claims file (JSONL)
-    claims = tmp_path / "claims.jsonl"
-    claims.write_text("\n".join([
-        json.dumps({"claim": "claim A"}),
-        json.dumps({"claim": "claim B"}),
-    ]) + "\n")
-
-    cfg_path = tmp_path / "cfg.yaml"
-    cfg_path.write_text(
-        "\n".join([
-            f"claims_file: {claims}",
-            "model: gpt-5",
-            "prompt_version: rpl_g5_v2",
-            "K: 4",
-            "R: 1",
-            "T: 4",
-            "B: 5000",
-            "max_output_tokens: 128",
-        ])
-    )
-    out_path = tmp_path / "batch.jsonl"
-    result = runner.invoke(app, [
-        "run",
-        "--config", str(cfg_path),
-        "--out", str(out_path),
-        "--mock",
-    ])
-    assert result.exit_code == 0, result.output
-    lines = [l for l in out_path.read_text().splitlines() if l.strip()]
-    assert len(lines) == 2
-    # Ensure lines parse and contain core fields
-    objs = [json.loads(l) for l in lines]
-    for o in objs:
-        assert "run_id" in o and "aggregates" in o and "aggregation" in o
+## Batch mode removed in single-claim-only design
 
 
 def test_cli_prompts_file_override(tmp_path: Path):
