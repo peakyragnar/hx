@@ -101,49 +101,83 @@ HERETIX_RPL_SEED=42 uv run heretix run --config runs/rpl_example.yaml
 HERETIX_RPL_NO_CACHE=1 uv run heretix run --config runs/rpl_example.yaml
 ```
 
-## 11) Troubleshooting
-- Missing API key: set `OPENAI_API_KEY` in your shell or `.env`.
-- Prompt too long: reduce `K`/`T` or shorten the claim; the run fails fast if `max_prompt_chars` is exceeded.
-- Unstable or wide CI: inspect `counts_by_template` and `template_iqr_logit`; adjust `K` and/or `T` or exclude the flakiest templates (do not change estimator math).
+## 11) Prompt versions and identity (read this once)
 
-## References
-- Configuration details: `documentation/configuration.md`
-- SQLite tips and queries: `documentation/sqlite.md`
-- Stats & estimator spec: `documentation/STATS_SPEC.md`
+Prompts are identified by the `version:` string inside the YAML (not the filename). That value is stored in the DB and used in cache keys.
 
----
+- New prompt version: create or copy a YAML under `heretix/prompts/` (e.g., `rpl_g5_v3.yaml`) and bump the internal `version:` to something like `rpl_g5_v3_YYYY-MM-DD`.
+- Running a version: pass `--prompt-version rpl_g5_v3`. The CLI loads `heretix/prompts/rpl_g5_v3.yaml` unless you explicitly set `prompts_file` in the config.
+- Uniqueness: `run_id` = hash of `(claim | model | prompt_version_full | K | R)`. Changing the YAML `version:` or K/R creates a new `run_id` (separate row in DB).
+- Re‑runs: Re‑running the same `run_id` updates `runs` (aggregate) but always appends a new immutable row in `executions` (history is preserved). Samples reuse cache when possible.
 
-# Prompt Evaluation: A/B and Cohort Compare
+Best practice: always bump `version:` any time you edit system, user_template, or paraphrases.
 
-## A/B Compare (single claim)
-Compare two prompt versions on the same claim with parity checks and a clear winner:
+## 12) A/B compare (single claim) — simple path
+
+Minimal workflow (assumes v2 already exists in DB):
+
+1) Run the new version once (stores v3 in DB):
 ```
-HERETIX_RPL_SEED=42 uv run heretix run --config runs/rpl_example.yaml \
-  --prompt-version rpl_g5_v2 --prompt-version rpl_g5_candidate --out runs/ab.json
-
+uv run heretix run --config runs/rpl_example.yaml \
+  --prompt-version rpl_g5_v3 --out runs/rpl_v3.json
+```
+2) Generate A/B HTML (read‑only; no model calls):
+```
 uv run python scripts/compare_ab.py \
-  --claim "tariffs don't cause inflation" \
-  --version-a rpl_g5_v2 --version-b rpl_g5_candidate \
-  --since-days 90 --out runs/reports/ab.html && \
+  --claim "<your exact claim from the config>" \
+  --version-a rpl_g5_v2 --version-b rpl_g5_v3 \
+  --since-days 365 --out runs/reports/ab.html && \
 open -a "Google Chrome" runs/reports/ab.html
 ```
-What you’ll see:
-- Side‑by‑side metrics (p_RPL, CI width, stability, compliance, PQS).
-- Gates (Compliance, Stability, Precision) with PASS/FAIL.
-- A clear “Winner” banner with tie‑break on CI width → Stability → PQS.
 
-## Cohort Compare (breadth)
-Compare two prompt versions across many claims (no new runs required; reads DB):
+Notes:
+- Compare is DB‑only; it does not call the model. It needs both versions for the exact claim in the DB.
+- Parity: keep `model`, `K/R/T`, `B`, `max_output_tokens` identical; only change `prompt_version`.
+- Seed: `HERETIX_RPL_SEED=42` stabilizes bootstrap CI decisions (does not fix model outputs).
+
+What you’ll see in A/B HTML:
+- Side‑by‑side metrics (p_RPL, CI width, stability, compliance, PQS) and PASS/FAIL gates.
+- Clear winner banner (gates → narrower CI width → higher stability → higher PQS).
+- “What changed?”: config diffs and prompt diffs (system/user changed? paraphrase bank sizes and overlap).
+
+## 13) Cohort compare (breadth; DB‑only)
+
+Compare two versions across many claims (latest per claim in a time window):
 ```
 uv run python scripts/compare_cohort.py \
-  --version-a rpl_g5_v2 --version-b rpl_g5_candidate \
+  --version-a rpl_g5_v2 --version-b rpl_g5_v3 \
   --since-days 30 --out runs/reports/cohort.html && \
 open -a "Google Chrome" runs/reports/cohort.html
 ```
 Options:
 - `--model gpt-5` to restrict model.
-- `--claims-file runs/claims.txt` to limit to a fixed set (one claim per line).
+- `--claims-file runs/claims.txt` to limit the cohort (one claim per line).
+
 Output:
-- Aggregate metrics (median CI width, median stability, mean compliance, median PQS) and cohort winner.
-- Per‑claim table with Δ (B−A) for CI width, stability, PQS.
-- Any excluded claims listed with the parity reason.
+- Aggregate metrics: median CI width, median stability, mean compliance, median PQS, and cohort winner.
+- Per‑claim deltas (B−A) for CI width, stability, PQS; excluded claims listed with parity reasons.
+
+## 14) Understanding PQS and gates
+
+- PQS (0–100): composite quality score summarizing precision, stability, and integrity.
+  - PQS = 100 × [0.4 × Stability + 0.4 × (1 − min(CI_width, 0.5)/0.5) + 0.2 × Compliance].
+  - 80–100: excellent; 65–79: good; 50–64: marginal; <50: weak.
+- Gates (shown with PASS/FAIL):
+  - Compliance ≥ 0.98 (strict JSON, no URLs/citations)
+  - Stability ≥ 0.25 (templates broadly agree)
+  - CI width ≤ 0.30 (≤0.20 ideal)
+
+Use gates to accept/reject; use PQS to choose among passes.
+
+## 15) Troubleshooting
+
+- Missing API key: set `OPENAI_API_KEY` in your shell or `.env`.
+- Prompt too long: reduce `K`/`T` or shorten the claim; the run fails fast if `max_prompt_chars` is exceeded.
+- Unstable or wide CI: inspect `counts_by_template` and `template_iqr_logit`; adjust `K` and/or `T` or exclude the flakiest templates (do not change estimator math).
+- A/B says “Missing latest execution for: A or B”: you haven’t run that prompt version for the exact claim yet (or it’s outside the time window). Run the missing version once, or widen `--since-days`.
+- A/B shows “nothing changed” in prompt diffs: version name changed but content is identical; edit system/user/paraphrases to test a real change.
+
+## References
+- Configuration details: `documentation/configuration.md`
+- SQLite tips and queries: `documentation/sqlite.md`
+- Stats & estimator spec: `documentation/STATS_SPEC.md`

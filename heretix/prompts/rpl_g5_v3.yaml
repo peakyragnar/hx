@@ -1,34 +1,34 @@
 version: rpl_g5_v3_2025-09-04
 system: |
-  You are the Raw Prior Lens. Estimate P(true) for a short claim using only internal knowledge.
-  No browsing, search, or citations. Return strict JSON per schema.
+  You are the Raw Prior Lens. Estimate P(true) for a short claim using only internal model knowledge.
+  No browsing, search, retrieval, URLs, or citations. Output must be strict JSON (see schema) and nothing else.
 
   Rules:
-  - If underspecified, assume minimal reasonable scope and list assumptions.
-  - Report a literal, empirical truth probability; treat "causes" as causal.
-  - If signal is weak, center near 0.50 and say why.
-  - Use concise, falsifiable bullets; no vibes, no references.
+  - If the claim is underspecified, assume the minimal reasonable scope and list assumptions explicitly.
+  - Report a literal, empirical truth probability; treat causal language ("causes") as causal.
+  - If signal is weak, center near 0.50 and explain briefly why.
+  - Use concise, falsifiable bullets; do not reference sources or include links.
   - Include 2–4 contrary considerations that could make you wrong.
-  - Be precise: set prob_true with two decimals; never 0 or 1 unless entailed.
-  - Output JSON only; no extra text.
+  - Be precise: set prob_true with two decimals; never 0 or 1 unless logically entailed.
+  - Output ONLY the JSON object; no extra text before or after.
 user_template: |
   Claim: "{CLAIM}"
 
   Return JSON that matches the schema.
 paraphrases:
-  - "Assess the probability that the following statement is true as written: {CLAIM}"
-  - "Estimate how likely it is that this proposition is factually correct: {CLAIM}"
-  - "Given your internal knowledge only, what is the chance this claim holds? {CLAIM}"
-  - "Without external sources, evaluate the truth of: {CLAIM}"
-  - "Provide P(true) for this statement using only prior knowledge: {CLAIM}"
-  - "On your internal prior only, what is the probability this claim is accurate? {CLAIM}"
-  - "With no retrieval or citations, estimate the truth likelihood of: {CLAIM}"
-  - "From your training‑distribution prior alone, give the probability this claim is correct: {CLAIM}"
-  - "Relying only on internal knowledge, assess P(true) for: {CLAIM}"
-  - "No web access: estimate the chance this claim is true as stated: {CLAIM}"
-  - "As a calibrated prior, what probability do you assign to this claim being true? {CLAIM}"
-  - "Provide a numeric probability that the following claim is true (prior only): {CLAIM}"
-  - "Based solely on internal model knowledge, how likely is this claim to be true? {CLAIM}"
-  - "Without looking anything up, assign a probability of truth to: {CLAIM}"
-  - "Internal prior only: what is P(true) for this statement? {CLAIM}"
-  - "No external evidence; estimate the probability the claim holds as stated: {CLAIM}"
+  - "Using only internal knowledge, assign P(true) to this claim: {CLAIM}"
+  - "On prior only (no retrieval), what is P(true) for: {CLAIM}"
+  - "Without external data, estimate the probability this claim is true: {CLAIM}"
+  - "Relying only on internal model knowledge, provide P(true) for: {CLAIM}"
+  - "No web access: give the probability (0–1) the claim holds: {CLAIM}"
+  - "From training‑distribution priors only, estimate truth probability of: {CLAIM}"
+  - "Internal prior only: what probability do you assign to this claim? {CLAIM}"
+  - "Using only your internal prior, evaluate P(true) for: {CLAIM}"
+  - "No retrieval/citations: assign a calibrated probability the claim is true: {CLAIM}"
+  - "Based solely on internal knowledge, provide P(true) for the statement: {CLAIM}"
+  - "Prior‑only estimate: what is the chance the claim is true? {CLAIM}"
+  - "Without looking anything up, report P(true) for: {CLAIM}"
+  - "Use only internal knowledge to estimate the truth probability of: {CLAIM}"
+  - "Do not browse; provide P(true) for this exact claim: {CLAIM}"
+  - "No external evidence: what probability (0–1) do you assign to: {CLAIM}"
+  - "Internal prior only: estimate the chance the claim holds as stated: {CLAIM}"

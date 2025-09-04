@@ -90,7 +90,12 @@ def cmd_run(
         v = versions[0]
         local_cfg = RunConfig(**{**cfg.__dict__})
         local_cfg.prompt_version = v
-        prompt_file = Path(local_cfg.prompt_file_path or (Path(__file__).parent / "prompts" / f"{v}.yaml"))
+        # If an explicit prompts_file was provided, respect it; otherwise select by version override
+        prompt_file = (
+            Path(local_cfg.prompt_file_path)
+            if local_cfg.prompts_file
+            else Path(__file__).parent / "prompts" / f"{v}.yaml"
+        )
         plan = _plan_summary(local_cfg, prompt_file)
         typer.echo(json.dumps({"mode": "single", "plan": plan}, indent=2))
         return
@@ -99,7 +104,11 @@ def cmd_run(
     for v in versions:
         local_cfg = RunConfig(**{**cfg.__dict__})
         local_cfg.prompt_version = v
-        prompt_file = local_cfg.prompt_file_path or (Path(__file__).parent / "prompts" / f"{v}.yaml")
+        prompt_file = (
+            Path(local_cfg.prompt_file_path)
+            if local_cfg.prompts_file
+            else (Path(__file__).parent / "prompts" / f"{v}.yaml")
+        )
         typer.echo(f"Running {local_cfg.model}  K={local_cfg.K} R={local_cfg.R}  version={v}")
         res = run_single_version(local_cfg, prompt_file=str(prompt_file), mock=mock)
         results.append(res)
@@ -129,7 +138,11 @@ def cmd_describe(
 ):
     """Describe the effective configuration and sampling plan (no network)."""
     cfg = load_run_config(str(config))
-    prompt_file = Path(cfg.prompt_file_path or (Path(__file__).parent / "prompts" / f"{cfg.prompt_version}.yaml"))
+    prompt_file = (
+        Path(cfg.prompt_file_path)
+        if cfg.prompts_file
+        else (Path(__file__).parent / "prompts" / f"{cfg.prompt_version}.yaml")
+    )
     # Compose a temporary cfg
     tmp = RunConfig(**{**cfg.__dict__})
     tmp.claim = cfg.claim
