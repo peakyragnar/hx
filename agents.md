@@ -164,8 +164,10 @@ Notes & Known Gaps (Roadmap)
 - Future lenses (MEL/HEL/SEL) and telemetry (DE/HDI) are planned; do not stub them into the CLI until approved
 
 References
+- How to run (end‑to‑end): documentation/how-to-run.md
+- Configuration details: documentation/configuration.md
+- SQLite tips and queries: documentation/sqlite.md
 - Stats & estimator spec: documentation/STATS_SPEC.md
-- Output anatomy & interpretation: documentation/output_anatomy.md, documentation/interpretation_guide.md, documentation/RPL-JSON-output.md
 - Refactor plan: refactor.md
 - README quick start: README.md
 

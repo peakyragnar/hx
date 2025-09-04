@@ -54,6 +54,7 @@ Legacy CLI is available under `legacy/` for reference but is not installed by de
 
 ## Single-Claim Workflow
 - Use `claim:` in your config and run with `heretix run` as above. Outputs persist to SQLite and a single JSON file for easy inspection.
+- See the detailed step‑by‑step guide in `documentation/how-to-run.md` (includes the HTML report and opening it in Chrome).
 
 ## Tests
 - New harness (default): `uv run pytest -q`
