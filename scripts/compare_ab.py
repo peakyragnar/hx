@@ -41,7 +41,7 @@ def fetch_latest_exec(conn: sqlite3.Connection, claim: str, version_like: str, s
     sql = (
         "SELECT execution_id, run_id, created_at, claim, model, prompt_version, K, R, T, B, seed, "
         "bootstrap_seed, prob_true_rpl, ci_lo, ci_hi, ci_width, stability_score, rpl_compliance_rate, "
-        "cache_hit_rate, prompt_char_len_max FROM executions WHERE " + " AND ".join(where) + " ORDER BY created_at DESC LIMIT 1"
+        "cache_hit_rate, prompt_char_len_max, config_json FROM executions WHERE " + " AND ".join(where) + " ORDER BY created_at DESC LIMIT 1"
     )
     cur = conn.execute(sql, tuple(params))
     row = cur.fetchone()
@@ -141,6 +141,55 @@ def render_html(a_row: Dict[str, Any], b_row: Dict[str, Any], a_metrics: Dict[st
     else:
         banner = "Result: tie"
 
+    # What changed? (config + prompt)
+    import json, yaml
+    def load_cfg(row: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            return json.loads(row.get("config_json") or "{}")
+        except Exception:
+            return {}
+    ca, cb = load_cfg(a_row), load_cfg(b_row)
+    # Config diffs (only show changed keys of interest)
+    keys = ["model", "K", "R", "T", "B", "max_output_tokens", "max_prompt_chars"]
+    diff_items = []
+    for k in keys:
+        va, vb = ca.get(k), cb.get(k)
+        if va != vb:
+            diff_items.append(f"<li>{html.escape(k)}: {html.escape(str(va))} → {html.escape(str(vb))}</li>")
+    cfg_diff_html = ("<ul>" + "".join(diff_items) + "</ul>") if diff_items else "<p class=\"muted\">No config changes</p>"
+
+    # Prompt YAML diff (system/user/paraphrases size + rough overlap)
+    def load_prompt(path: Optional[str]) -> Dict[str, Any]:
+        if not path:
+            return {}
+        p = Path(path)
+        if not p.exists():
+            return {}
+        try:
+            return yaml.safe_load(p.read_text()) or {}
+        except Exception:
+            return {}
+    pa = load_prompt(ca.get("prompt_file_path"))
+    pb = load_prompt(cb.get("prompt_file_path"))
+    sys_changed = (pa.get("system") or "") != (pb.get("system") or "")
+    usr_changed = (pa.get("user_template") or "") != (pb.get("user_template") or "")
+    paras_a = [str(x) for x in (pa.get("paraphrases") or [])]
+    paras_b = [str(x) for x in (pb.get("paraphrases") or [])]
+    set_a, set_b = set(paras_a), set(paras_b)
+    overlap = (len(set_a & set_b) / len(set_a | set_b)) if (set_a or set_b) else 1.0
+    prompt_diff_html = """
+      <div class=\"grid2\">
+        <div class=\"muted\">System changed?</div><div>{}</div><div></div>
+        <div class=\"muted\">User template changed?</div><div>{}</div><div></div>
+        <div class=\"muted\">Paraphrase bank size</div><div>{}</div><div>{}</div>
+        <div class=\"muted\">Paraphrase overlap (Jaccard)</div><div colspan=2>{:.0%}</div>
+      </div>
+    """.format(
+        "Yes" if sys_changed else "No",
+        "Yes" if usr_changed else "No",
+        len(paras_a), len(paras_b), overlap
+    )
+
     html_doc = f"""
     <!doctype html>
     <meta charset="utf-8" />
@@ -155,6 +204,11 @@ def render_html(a_row: Dict[str, Any], b_row: Dict[str, Any], a_metrics: Dict[st
         {''.join(rows)}
       </tbody>
     </table>
+    <h2>What changed?</h2>
+    <h3>Config</h3>
+    {cfg_diff_html}
+    <h3>Prompt</h3>
+    {prompt_diff_html}
     """
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(html_doc, encoding="utf-8")
@@ -197,4 +251,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

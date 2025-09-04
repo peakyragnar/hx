@@ -68,10 +68,12 @@ def main() -> None:
 
     a_rows = q(conn, "SELECT * FROM executions WHERE " + " AND ".join(base_where), tuple(base_params))
 
+    where_b = ["created_at >= ?", "prompt_version LIKE ?"]
     base_params_b: List[Any] = [ts_cut, f"{args.version_b}%"]
     if args.model:
+        where_b.append("model=?")
         base_params_b.append(args.model)
-    b_rows = q(conn, "SELECT * FROM executions WHERE " + " AND ".join([w if w != base_where[1] else "prompt_version LIKE ?"]) , tuple(base_params_b))
+    b_rows = q(conn, "SELECT * FROM executions WHERE " + " AND ".join(where_b), tuple(base_params_b))
 
     # Index latest per (claim)
     latest_a: Dict[str, Dict[str, Any]] = {}
@@ -178,7 +180,7 @@ def main() -> None:
         f"<tr><th>Mean Compliance</th><td>{agg['comp_mean_a']:.2f}</td><td>{agg['comp_mean_b']:.2f}</td><td>{(agg['comp_mean_b']-agg['comp_mean_a']):+.2f}</td></tr>"
     )
     rows_html.append(
-        f"<tr><th>Median PQS</th><td>{agg['pqs_med_a']:.0f}</td><td>{agg['pqs_med_b']:.0f}</td><td>{(agg['pqs_med_b']-agg['pqs_med_a']):+ .0f}</td></tr>"
+        f"<tr><th>Median PQS</th><td>{agg['pqs_med_a']:.0f}</td><td>{agg['pqs_med_b']:.0f}</td><td>{(agg['pqs_med_b']-agg['pqs_med_a']):+.0f}</td></tr>"
     )
 
     table_head = "<thead><tr><th>Claim</th><th>ver A</th><th>ver B</th><th>Δ CI width</th><th>Δ Stability</th><th>Δ PQS</th></tr></thead>"
@@ -196,6 +198,10 @@ def main() -> None:
         excl_lines = [f"<li>{html.escape(c)} — {html.escape(reason)}" for (c, reason) in excluded]
         excl_html = "<h2>Excluded (parity)</h2><ul>" + "".join(excl_lines) + "</ul>"
 
+    # Build per-claim tbody safely (avoid backslashes in f-expr)
+    no_overlap_html = '<tr><td colspan="6" class="muted">No overlapping claims</td></tr>'
+    tbody_claims = ("".join(table_rows)) if table_rows else no_overlap_html
+
     html_doc = f"""
     <!doctype html>
     <meta charset="utf-8" />
@@ -208,7 +214,7 @@ def main() -> None:
     {''.join(rows_html)}
     </tbody></table>
     <h2>Per-Claim Deltas</h2>
-    <table>{table_head}<tbody>{''.join(table_rows) if table_rows else '<tr><td colspan=6 class=\"muted\">No overlapping claims</td></tr>'}</tbody></table>
+    <table>{table_head}<tbody>{tbody_claims}</tbody></table>
     {excl_html}
     """
     out = Path(args.out)
@@ -219,4 +225,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

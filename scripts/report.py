@@ -125,6 +125,15 @@ def gen_report(db_path: Path, out_path: Path, run_id: Optional[str]) -> None:
     )
     per_tpl = query_all(cur)
 
+    # Integrity counts across samples
+    cur.execute(
+        "SELECT COUNT(*) AS total, SUM(json_valid) AS valid FROM samples WHERE run_id=?",
+        (run_id,),
+    )
+    _cnt = rowdict(cur) or {"total": 0, "valid": 0}
+    total_samples = int(_cnt.get("total") or 0)
+    valid_samples = int(_cnt.get("valid") or 0)
+
     # Build HTML
     title = f"Heretix RPL Report — {html.escape(exec_row['claim'] or '')}"
     css = """
@@ -175,6 +184,13 @@ def gen_report(db_path: Path, out_path: Path, run_id: Optional[str]) -> None:
       <div class="muted">CI95</div><div>[{float(exec_row['ci_lo']):.3f}, {float(exec_row['ci_hi']):.3f}] · width {pill(f"{width:.3f}", band)}</div>
       <div class="muted">Stability</div><div>{stability:.3f}</div>
       <div class="muted">Compliance · Cache</div><div>{compl:.2f} · {cache:.2f}</div>
+    </div>
+    <h2>Integrity</h2>
+    <div class="grid">
+      <div class="muted">Samples (attempted)</div><div>{total_samples}</div>
+      <div class="muted">Samples (valid/compliant)</div><div>{valid_samples}</div>
+      <div class="muted">Compliance rate</div><div>{compl:.2f}</div>
+      <div class="muted">Cache hit rate</div><div>{cache:.2f}</div>
     </div>
     <h2>Gates & Score</h2>
     <div class="grid">
