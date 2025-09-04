@@ -17,7 +17,7 @@ from .seed import make_bootstrap_seed
 from .aggregate import aggregate_clustered
 from .metrics import compute_stability_calibrated, stability_band_from_iqr
 from .cache import make_cache_key, get_cached_sample
-from .storage import _ensure_db, insert_run, insert_samples, insert_execution, insert_execution_samples
+from .storage import _ensure_db, insert_run, insert_samples, insert_execution, insert_execution_samples, insert_prompt
 from .provider.openai_gpt5 import score_claim
 from .provider.mock import score_claim_mock
 
@@ -233,6 +233,24 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
 
     # persist
     conn = _ensure_db()
+    # Persist prompt text for provenance (once per version)
+    try:
+        import json as _json
+        yaml_hash_basis = system_text + "\n\n" + user_template + "\n\n" + "\n".join(paraphrases)
+        yaml_hash = hashlib.sha256(yaml_hash_basis.encode("utf-8")).hexdigest()
+        insert_prompt(
+            conn,
+            prompt_version=prompt_version_full,
+            yaml_hash=yaml_hash,
+            system_text=system_text,
+            user_template=user_template,
+            paraphrases_json=_json.dumps(paraphrases),
+            source_path=str(prompt_file),
+            created_at=int(time.time()),
+            author_note=None,
+        )
+    except Exception:
+        pass
     for it in runs:
         it["row"]["run_id"] = run_id
     insert_samples(conn, [it["row"] for it in runs])

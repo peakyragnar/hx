@@ -77,7 +77,7 @@ def gen_report(db_path: Path, out_path: Path, run_id: Optional[str]) -> None:
     except Exception:
         counts_by_tpl = {}
 
-    # Load prompt file (system, user_template, paraphrases)
+    # Load prompt text: prefer DB 'prompts' table; fallback to prompt file path
     cfg_obj = {}
     prompt_file_path: Optional[str] = None
     try:
@@ -86,16 +86,32 @@ def gen_report(db_path: Path, out_path: Path, run_id: Optional[str]) -> None:
     except Exception:
         cfg_obj = {}
     claim_text = exec_row.get("claim") or cfg_obj.get("claim") or ""
-    prompt_doc: Dict[str, Any] = {}
     system_text = ""
     user_template = ""
     paraphrases: List[str] = []
-    if prompt_file_path and Path(prompt_file_path).exists():
+    # Try DB
+    try:
+        cur.execute(
+            "SELECT system_text, user_template, paraphrases_json FROM prompts WHERE prompt_version=?",
+            (exec_row["prompt_version"],),
+        )
+        prow = cur.fetchone()
+        if prow:
+            system_text = str(prow[0] or "")
+            user_template = str(prow[1] or "")
+            try:
+                paraphrases = [str(x) for x in json.loads(prow[2] or "[]")]
+            except Exception:
+                paraphrases = []
+    except Exception:
+        pass
+    # Fallback to file if DB missing
+    if not system_text and prompt_file_path and Path(prompt_file_path).exists():
         try:
-            prompt_doc = yaml.safe_load(Path(prompt_file_path).read_text())
-            system_text = str(prompt_doc.get("system", ""))
-            user_template = str(prompt_doc.get("user_template", ""))
-            paraphrases = [str(x) for x in prompt_doc.get("paraphrases", [])]
+            pdoc = yaml.safe_load(Path(prompt_file_path).read_text())
+            system_text = str(pdoc.get("system", ""))
+            user_template = str(pdoc.get("user_template", ""))
+            paraphrases = [str(x) for x in pdoc.get("paraphrases", [])]
         except Exception:
             pass
     # Recreate the schema instruction string used in the harness

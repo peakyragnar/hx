@@ -117,6 +117,22 @@ def _ensure_db(path: Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_prompt_model ON runs(prompt_version, model)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_samples_run ON samples(run_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_exec_run ON executions(run_id)")
+    # Prompts table stores full prompt text by prompt_version for provenance
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS prompts (
+            prompt_version TEXT PRIMARY KEY,
+            yaml_hash TEXT,
+            system_text TEXT,
+            user_template TEXT,
+            paraphrases_json TEXT,
+            source_path TEXT,
+            created_at INTEGER,
+            author_note TEXT
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_prompts_hash ON prompts(yaml_hash)")
     return conn
 
 
@@ -168,3 +184,57 @@ def update_run_artifact_path(conn: sqlite3.Connection, run_id: str, artifact_pat
         (artifact_path, run_id),
     )
     conn.commit()
+
+
+def insert_prompt(
+    conn: sqlite3.Connection,
+    *,
+    prompt_version: str,
+    yaml_hash: str,
+    system_text: str,
+    user_template: str,
+    paraphrases_json: str,
+    source_path: str | None,
+    created_at: int,
+    author_note: str | None = None,
+) -> None:
+    """Insert prompt text for a given version if not already present.
+
+    If a row exists with the same version but a different yaml_hash, the existing
+    row is kept (append-only by version); no overwrite occurs.
+    """
+    cur = conn.execute(
+        "SELECT yaml_hash FROM prompts WHERE prompt_version=?",
+        (prompt_version,),
+    )
+    row = cur.fetchone()
+    if row is None:
+        conn.execute(
+            """
+            INSERT INTO prompts (
+                prompt_version, yaml_hash, system_text, user_template,
+                paraphrases_json, source_path, created_at, author_note
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                prompt_version,
+                yaml_hash,
+                system_text,
+                user_template,
+                paraphrases_json,
+                source_path,
+                created_at,
+                author_note,
+            ),
+        )
+        conn.commit()
+    else:
+        # If existing hash differs, do not overwrite; leave as-is for auditability.
+        try:
+            existing_hash = row[0]
+            if existing_hash != yaml_hash:
+                # Best-effort informational print; avoid raising.
+                print(
+                    f"WARN: prompts[{prompt_version}] exists with different yaml_hash; keeping existing row.")
+        except Exception:
+            pass

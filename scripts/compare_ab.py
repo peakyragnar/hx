@@ -142,7 +142,7 @@ def render_html(a_row: Dict[str, Any], b_row: Dict[str, Any], a_metrics: Dict[st
         banner = "Result: tie"
 
     # What changed? (config + prompt)
-    import json, yaml
+    import json, yaml, sqlite3
     def load_cfg(row: Dict[str, Any]) -> Dict[str, Any]:
         try:
             return json.loads(row.get("config_json") or "{}")
@@ -159,18 +159,45 @@ def render_html(a_row: Dict[str, Any], b_row: Dict[str, Any], a_metrics: Dict[st
     cfg_diff_html = ("<ul>" + "".join(diff_items) + "</ul>") if diff_items else "<p class=\"muted\">No config changes</p>"
 
     # Prompt YAML diff (system/user/paraphrases size + rough overlap)
-    def load_prompt(path: Optional[str]) -> Dict[str, Any]:
-        if not path:
-            return {}
-        p = Path(path)
-        if not p.exists():
-            return {}
+    # Prefer DB-stored prompts; fallback to file paths
+    def get_prompt_from_db(cur: sqlite3.Cursor, version: str) -> Dict[str, Any]:
         try:
-            return yaml.safe_load(p.read_text()) or {}
+            cur.execute(
+                "SELECT system_text, user_template, paraphrases_json FROM prompts WHERE prompt_version=?",
+                (version,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return {}
+            sys_t = str(row[0] or "")
+            usr_t = str(row[1] or "")
+            try:
+                paras = [str(x) for x in json.loads(row[2] or "[]")]
+            except Exception:
+                paras = []
+            return {"system": sys_t, "user_template": usr_t, "paraphrases": paras}
         except Exception:
             return {}
-    pa = load_prompt(ca.get("prompt_file_path"))
-    pb = load_prompt(cb.get("prompt_file_path"))
+
+    conn_local = sqlite3.connect(str(DB_DEFAULT))
+    cur = conn_local.cursor()
+    pa = get_prompt_from_db(cur, a_row["prompt_version"]) or {}
+    pb = get_prompt_from_db(cur, b_row["prompt_version"]) or {}
+    # Fallback to files if needed
+    if not pa:
+        ppath = ca.get("prompt_file_path")
+        if ppath and Path(ppath).exists():
+            try:
+                pa = yaml.safe_load(Path(ppath).read_text()) or {}
+            except Exception:
+                pa = {}
+    if not pb:
+        ppath = cb.get("prompt_file_path")
+        if ppath and Path(ppath).exists():
+            try:
+                pb = yaml.safe_load(Path(ppath).read_text()) or {}
+            except Exception:
+                pb = {}
     sys_changed = (pa.get("system") or "") != (pb.get("system") or "")
     usr_changed = (pa.get("user_template") or "") != (pb.get("user_template") or "")
     paras_a = [str(x) for x in (pa.get("paraphrases") or [])]
