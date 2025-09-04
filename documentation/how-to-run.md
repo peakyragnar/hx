@@ -111,3 +111,39 @@ HERETIX_RPL_NO_CACHE=1 uv run heretix run --config runs/rpl_example.yaml
 - SQLite tips and queries: `documentation/sqlite.md`
 - Stats & estimator spec: `documentation/STATS_SPEC.md`
 
+---
+
+# Prompt Evaluation: A/B and Cohort Compare
+
+## A/B Compare (single claim)
+Compare two prompt versions on the same claim with parity checks and a clear winner:
+```
+HERETIX_RPL_SEED=42 uv run heretix run --config runs/rpl_example.yaml \
+  --prompt-version rpl_g5_v2 --prompt-version rpl_g5_candidate --out runs/ab.json
+
+uv run python scripts/compare_ab.py \
+  --claim "tariffs don't cause inflation" \
+  --version-a rpl_g5_v2 --version-b rpl_g5_candidate \
+  --since-days 90 --out runs/reports/ab.html && \
+open -a "Google Chrome" runs/reports/ab.html
+```
+What you’ll see:
+- Side‑by‑side metrics (p_RPL, CI width, stability, compliance, PQS).
+- Gates (Compliance, Stability, Precision) with PASS/FAIL.
+- A clear “Winner” banner with tie‑break on CI width → Stability → PQS.
+
+## Cohort Compare (breadth)
+Compare two prompt versions across many claims (no new runs required; reads DB):
+```
+uv run python scripts/compare_cohort.py \
+  --version-a rpl_g5_v2 --version-b rpl_g5_candidate \
+  --since-days 30 --out runs/reports/cohort.html && \
+open -a "Google Chrome" runs/reports/cohort.html
+```
+Options:
+- `--model gpt-5` to restrict model.
+- `--claims-file runs/claims.txt` to limit to a fixed set (one claim per line).
+Output:
+- Aggregate metrics (median CI width, median stability, mean compliance, median PQS) and cohort winner.
+- Per‑claim table with Δ (B−A) for CI width, stability, PQS.
+- Any excluded claims listed with the parity reason.

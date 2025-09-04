@@ -152,6 +152,12 @@ def gen_report(db_path: Path, out_path: Path, run_id: Optional[str]) -> None:
     compl = float(exec_row["rpl_compliance_rate"] or 0.0)
     cache = float(exec_row["cache_hit_rate"] or 0.0)
     band = "ok" if width <= 0.20 else ("warn" if width <= 0.35 else "bad")
+    # Gates
+    gate_compliance_ok = compl >= 0.98
+    gate_stability_ok = stability >= 0.25
+    gate_precision_ok = width <= 0.30
+    # Composite Prompt Quality Score (PQS)
+    pqs = int((0.4 * stability + 0.4 * (1 - min(width, 0.5) / 0.5) + 0.2 * compl) * 100)
 
     head = f"""
     <div class="grid">
@@ -169,6 +175,13 @@ def gen_report(db_path: Path, out_path: Path, run_id: Optional[str]) -> None:
       <div class="muted">CI95</div><div>[{float(exec_row['ci_lo']):.3f}, {float(exec_row['ci_hi']):.3f}] · width {pill(f"{width:.3f}", band)}</div>
       <div class="muted">Stability</div><div>{stability:.3f}</div>
       <div class="muted">Compliance · Cache</div><div>{compl:.2f} · {cache:.2f}</div>
+    </div>
+    <h2>Gates & Score</h2>
+    <div class="grid">
+      <div class="muted">Compliance ≥ 0.98</div><div>{pill('PASS','ok') if gate_compliance_ok else pill('FAIL','bad')}</div>
+      <div class="muted">Stability ≥ 0.25</div><div>{pill('PASS','ok') if gate_stability_ok else pill('FAIL','bad')}</div>
+      <div class="muted">CI width ≤ 0.30</div><div>{pill('PASS','ok') if gate_precision_ok else pill('FAIL','bad')}</div>
+      <div class="muted">PQS</div><div><b>{pqs}</b> (0–100)</div>
     </div>
     """
 
