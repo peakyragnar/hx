@@ -12,6 +12,7 @@ import yaml
 from heretix.config import load_run_config, RunConfig
 from heretix.rpl import run_single_version
 import heretix as _heretix_pkg
+from dotenv import load_dotenv
 
 
 def _read_claims(path: Path) -> List[str]:
@@ -44,6 +45,11 @@ def _pqs_v1(width: float, stability: float, compliance: float) -> int:
 
 
 def main() -> None:
+    # Load environment variables from .env so OPENAI_API_KEY works like the CLI
+    try:
+        load_dotenv()
+    except Exception:
+        pass
     ap = argparse.ArgumentParser(description="Run a prompt version across a cohort of claims and produce a simple HTML summary.")
     ap.add_argument("--claims-file", required=True, help="Path to text/JSONL file with one claim per line")
     ap.add_argument("--config", required=True, help="Path to run config YAML/JSON (single-claim config)")
@@ -158,4 +164,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
