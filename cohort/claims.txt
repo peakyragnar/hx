@@ -1,3 +1,50 @@
-# Add one claim per line (or JSONL with {"claim": "..."})
-"tariffs don't cause inflation"
-"AGI will arrive by 2030"
+The surface of the Earth is covered mostly by water
+Water boils at 100 degrees Celsius at sea level
+The human body needs oxygen to survive
+Smoking increases the risk of lung cancer
+Vaccines reduce the incidence of infectious diseases
+The speed of light in vacuum is approximately 299,792,458 meters per second
+Earth orbits the Sun
+Blue is a color in the rainbow
+Antarctica contains most of the world's ice
+Lead exposure is harmful to human health
+The Amazon rainforest produces significant water vapor through transpiration
+Seat belts reduce fatalities in car crashes
+HIV can be transmitted through unprotected sexual contact
+The Pacific Ocean is the largest ocean on Earth
+Photosynthesis converts carbon dioxide and water into glucose and oxygen
+Mercury is toxic to humans at sufficient exposure levels
+Pluto is classified as a dwarf planet
+The Earth is roughly spherical
+Solar panels can generate electricity from sunlight
+Penicillin is an antibiotic discovered in the 20th century
+The Earth is flat
+Humans can breathe unaided in space
+Vaccines cause autism
+The Sun revolves around the Earth
+Drinking bleach cures viral infections
+5G signals cause COVID-19
+The Great Wall of China is visible from the Moon with the naked eye
+Eating carrots at night grants night vision like a cat
+The North Star is the brightest star in the night sky
+Gold is magnetic under normal conditions
+Humans can survive weeks without water
+Lightning never strikes the same place twice
+Sugar causes hyperactivity in all children
+The seasons are caused by Earth's distance from the Sun
+Boiling water makes it safe to drink lead-contaminated water
+Artificial general intelligence will arrive by 2035
+A universal basic income increases entrepreneurship in most countries
+Quantum computers will break RSA‑2048 within 10 years
+Nuclear fusion will supply a significant share of grid power by 2045
+A carbon tax reduces emissions without harming growth in most economies
+Social media use causes depression in teenagers
+Autonomous vehicles will reduce traffic fatalities by more than 50%
+Red meat consumption substantially increases mortality for most adults
+Remote work increases productivity for most knowledge workers
+Tariffs do not cause inflation
+AI regulation will significantly slow the pace of innovation
+Heat pumps will replace most gas furnaces in cold climates by 2040
+Cryptocurrency will become a mainstream payment method within 5 years
+Gene editing will eliminate most monogenic diseases by 2040
+Space tourism will be affordable to the middle class by 2040
