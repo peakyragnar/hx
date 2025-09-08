@@ -1,181 +1,183 @@
-Complete Guide: Running Heretix RPL System
+# Heretix RPL — How To Run (Phase‑1, Single‑Claim)
 
-  Prerequisites
+This guide walks you through a full, end‑to‑end run using the new RPL harness, including generating an HTML report and opening it in Chrome.
 
-  1. Setup Environment
-  # Clone repository
-  git clone https://github.com/peakyragnar/hx.git
-  cd Heretix
+## 1) Requirements
+- Python 3.10+
+- uv package manager installed
+- OpenAI API key for live runs (`OPENAI_API_KEY`)
 
-  # Install dependencies using uv
-  uv install
+## 2) Install dependencies
+```
+uv sync
+```
 
-  # Set up environment variables
-  echo "OPENAI_API_KEY=your-api-key-here" > .env
+## 3) Create a run config
+Create `runs/rpl_example.yaml` (single‑claim):
+```
+claim: "tariffs don't cause inflation"
+model: gpt-5
+prompt_version: rpl_g5_v2
+K: 8
+R: 2
+T: 8
+B: 5000
+max_prompt_chars: 1200
+max_output_tokens: 1024
+```
 
-  Running Evaluations: Three Approaches
+Notes:
+- `K` = paraphrase slots; `R` = replicates per slot; `T` = templates used (<= size of the bank in `heretix/prompts/rpl_g5_v2.yaml`).
+- `max_prompt_chars` enforces a hard cap on the composed prompt length (system+schema+user); the run fails fast if exceeded.
 
-  1️⃣ Single Evaluation (Basic RPL)
+## 4) Optional: Describe the plan (no network)
+```
+uv run heretix describe --config runs/rpl_example.yaml
+```
+This prints template selection, planned counts, rotation offset, and the effective bootstrap seed.
 
-  For a simple one-shot evaluation with manual parameters:
+## 5) Live run (network; requires API key)
+Set your API key (one of these):
+```
+export OPENAI_API_KEY=sk-...
+# or create a .env file in repo root with: OPENAI_API_KEY=sk-...
+```
+Run RPL and write a JSON summary:
+```
+uv run heretix run --config runs/rpl_example.yaml --out runs/rpl.json
+```
+Stdout shows a compact line with p_RPL, CI95, width, stability, compliance, and cache. The JSON file contains full aggregates and diagnostics.
 
-  # Basic run with defaults (K=7, R=3)
-  uv run heretix-rpl rpl --claim "tariffs don't cause inflation" --out runs/my_claim.json
+## 6) Smoke run (no network)
+For quick iteration without calling the provider:
+```
+uv run heretix run --config runs/rpl_example.yaml --mock --out runs/smoke.json
+```
 
-  # Custom sampling parameters
-  uv run heretix-rpl rpl --claim "AI will surpass human intelligence by 2030" \
-    --k 10 --r 5 --out runs/ai_claim.json
+## 7) Inspect artifacts
+- JSON summary:
+```
+jq '.runs[0].aggregates' runs/rpl.json
+```
+- SQLite database (created at `runs/heretix.sqlite`):
+```
+sqlite3 runs/heretix.sqlite '.tables'
+sqlite3 runs/heretix.sqlite "SELECT run_id, datetime(created_at,'unixepoch','localtime') AS ts, claim, prompt_version, K,R,T,B, prob_true_rpl, ci_lo, ci_hi, ci_width, stability_score FROM runs ORDER BY created_at DESC LIMIT 1;"
+```
+More DB tips are in `documentation/sqlite.md`.
 
-  # Check the results
-  cat runs/my_claim.json | jq '.aggregates'
+## 8) Generate an HTML report
+Create a static HTML report for the latest execution:
+```
+uv run python scripts/report.py
+```
+This writes `runs/report.html` with:
+- Headline metrics (p_RPL, CI95, width, stability, compliance, cache)
+- Prompt text (system, schema, user template)
+- Selected templates with resolved user text, prompt_sha256, and prompt length
+- Aggregation counts by template hash
 
-  What happens:
-  - Sends claim to GPT-5 with K different paraphrase templates
-  - Each template is evaluated R times (replicates)
-  - Aggregates results using clustered method (equal template weighting, trimmed mean, bootstrap CI)
-  - Outputs probability estimate with confidence interval and stability metrics
+To target a specific run or change the output path:
+```
+uv run python scripts/report.py --run-id <RUN_ID> --out runs/my_report.html
+```
 
-  2️⃣ Auto-RPL (Adaptive, Recommended)
+## 9) Open the report in Chrome
+macOS:
+```
+open -a "Google Chrome" runs/report.html
+```
+Other platforms:
+- Linux: `google-chrome runs/report.html` or `xdg-open runs/report.html`
+- Windows (PowerShell): `Start-Process "chrome.exe" runs\report.html`
 
-  The intelligent way - automatically escalates sampling until quality gates pass:
+## 10) Determinism and cache controls
+- Fix bootstrap draws for reproducible CI decisions (does not fix model outputs):
+```
+HERETIX_RPL_SEED=42 uv run heretix run --config runs/rpl_example.yaml
+```
+- Bypass cache to force fresh samples:
+```
+HERETIX_RPL_NO_CACHE=1 uv run heretix run --config runs/rpl_example.yaml
+```
 
-  # Run Auto-RPL with adaptive sampling
-  uv run heretix-rpl auto --claim "nuclear energy is safer than fossil fuels" \
-    --out runs/nuclear_auto.json
+## 11) Prompt versions and identity (read this once)
 
-  # Watch it work (verbose by default):
-  # [auto] Stage 1/3: T=8, K=8, R=2
-  # [auto] Stage 1 metrics: p=0.723 width=0.113 stability=0.201 imbalance=1.00
-  # [auto] Escalating to Stage 2: T=16, K=16, R=2
-  # ...continues until gates pass or limits reached
+Prompts are identified by the `version:` string inside the YAML (not the filename). That value is stored in the DB and used in cache keys.
 
-  Quality Gates (automatic checking):
-  - ✅ CI width ≤ 0.20 (uncertainty control)
-  - ✅ Stability ≥ 0.70 (template consistency)
-  - ✅ Imbalance ≤ 1.50 (balanced sampling)
+- New prompt version: create or copy a YAML under `heretix/prompts/` (e.g., `rpl_g5_v3.yaml`) and bump the internal `version:` to something like `rpl_g5_v3_YYYY-MM-DD`.
+- Running a version: pass `--prompt-version rpl_g5_v3`. The CLI loads `heretix/prompts/rpl_g5_v3.yaml` unless you explicitly set `prompts_file` in the config.
+- Uniqueness: `run_id` = hash of `(claim | model | prompt_version_full | K | R)`. Changing the YAML `version:` or K/R creates a new `run_id` (separate row in DB).
+- Re‑runs: Re‑running the same `run_id` updates `runs` (aggregate) but always appends a new immutable row in `executions` (history is preserved). Samples reuse cache when possible.
 
-  3️⃣ Batch Monitoring (Sentinel Tracking)
+Best practice: always bump `version:` any time you edit system, user_template, or paraphrases.
 
-  For tracking multiple claims over time:
+## 12) A/B compare (single claim) — simple path
 
-  # Create sentinel benchmark file
-  cat > bench/my_sentinels.json << 'EOF'
-  [
-    {"claim": "climate change is primarily human-caused"},
-    {"claim": "vaccines are generally safe"},
-    {"claim": "quantum computers will break RSA encryption"}
-  ]
-  EOF
+Minimal workflow (assumes v2 already exists in DB):
 
-  # Run monitor with progress tracking
-  uv run heretix-rpl monitor --bench bench/my_sentinels.json \
-    --out runs/monitor/$(date +%Y%m%d).jsonl
+1) Run the new version once (stores v3 in DB):
+```
+uv run heretix run --config runs/rpl_example.yaml \
+  --prompt-version rpl_g5_v3 --out runs/rpl_v3.json
+```
+2) Generate A/B HTML (read‑only; no model calls):
+```
+uv run python scripts/compare_ab.py \
+  --claim "<your exact claim from the config>" \
+  --version-a rpl_g5_v2 --version-b rpl_g5_v3 \
+  --since-days 365 --out runs/reports/ab.html && \
+open -a "Google Chrome" runs/reports/ab.html
+```
 
-  # Quick mode for faster testing (K=5, R=1)
-  uv run heretix-rpl monitor --bench bench/my_sentinels.json \
-    --quick --out runs/monitor/quick_test.jsonl
+Notes:
+- Compare is DB‑only; it does not call the model. It needs both versions for the exact claim in the DB.
+- Parity: keep `model`, `K/R/T`, `B`, `max_output_tokens` identical; only change `prompt_version`.
+- Seed: `HERETIX_RPL_SEED=42` stabilizes bootstrap CI decisions (does not fix model outputs).
 
-  Analyzing Results
+What you’ll see in A/B HTML:
+- Side‑by‑side metrics (p_RPL, CI width, stability, compliance, PQS) and PASS/FAIL gates.
+- Clear winner banner (gates → narrower CI width → higher stability → higher PQS).
+- “What changed?”: config diffs and prompt diffs (system/user changed? paraphrase bank sizes and overlap).
 
-  📊 Inspect Individual Runs
+## 13) Cohort compare (breadth; DB‑only)
 
-  # Basic inspection - shows per-template statistics
-  uv run heretix-rpl inspect --run runs/nuclear_auto.json
+Compare two versions across many claims (latest per claim in a time window):
+```
+uv run python scripts/compare_cohort.py \
+  --version-a rpl_g5_v2 --version-b rpl_g5_v3 \
+  --since-days 30 --out runs/reports/cohort.html && \
+open -a "Google Chrome" runs/reports/cohort.html
+```
+Options:
+- `--model gpt-5` to restrict model.
+- `--claims-file runs/claims.txt` to limit the cohort (one claim per line).
 
-  # Output:
-  # Claim: nuclear energy is safer than fossil fuels
-  # K=16  R=3  T=16
-  # 
-  # Per-template means (sorted by logit):
-  #   hash       n   mean_p   mean_logit
-  #   a3f2d9e1c4   3   0.681    0.782
-  #   b7e5a2f8d6   3   0.703    0.892
-  #   ...
-  # IQR(logit) = 0.423  → stability = 0.703
-  # p_RPL = 0.723   CI95 = [0.672, 0.769]   width = 0.097   is_stable = True
+Output:
+- Aggregate metrics: median CI width, median stability, mean compliance, median PQS, and cohort winner.
+- Per‑claim deltas (B−A) for CI width, stability, PQS; excluded claims listed with parity reasons.
 
-  🔍 Advanced Diagnostics
+## 14) Understanding PQS and gates
 
-  # Show which templates contribute most to CI width
-  uv run heretix-rpl inspect --run runs/nuclear_auto.json --show-ci-signal
+- PQS (0–100): composite quality score summarizing precision, stability, and integrity.
+  - PQS = 100 × [0.4 × Stability + 0.4 × (1 − min(CI_width, 0.5)/0.5) + 0.2 × Compliance].
+  - 80–100: excellent; 65–79: good; 50–64: marginal; <50: weak.
+- Gates (shown with PASS/FAIL):
+  - Compliance ≥ 0.98 (strict JSON, no URLs/citations)
+  - Stability ≥ 0.25 (templates broadly agree)
+  - CI width ≤ 0.30 (≤0.20 ideal)
 
-  # CI signal (by |delta_logit| from trimmed center):
-  #   hash       pidx  mean_p   delta_logit  paraphrase
-  #   c9f3a7b2e1   12   0.823    +0.523      Is it accurate that nuclear energy...
-  #   a3f2d9e1c4    3   0.681    -0.412      Does evidence support that nuclear...
+Use gates to accept/reject; use PQS to choose among passes.
 
-  # Show within-template replicate consistency
-  uv run heretix-rpl inspect --run runs/nuclear_auto.json --show-replicates
+## 15) Troubleshooting
 
-  # Within-template replicate spread:
-  #   hash       pidx  stdev_logit  range_p   replicates_p
-  #   d4e8c9a3f2    7      0.142     0.063    [0.712, 0.745, 0.775]
+- Missing API key: set `OPENAI_API_KEY` in your shell or `.env`.
+- Prompt too long: reduce `K`/`T` or shorten the claim; the run fails fast if `max_prompt_chars` is exceeded.
+- Unstable or wide CI: inspect `counts_by_template` and `template_iqr_logit`; adjust `K` and/or `T` or exclude the flakiest templates (do not change estimator math).
+- A/B says “Missing latest execution for: A or B”: you haven’t run that prompt version for the exact claim yet (or it’s outside the time window). Run the missing version once, or widen `--since-days`.
+- A/B shows “nothing changed” in prompt diffs: version name changed but content is identical; edit system/user/paraphrases to test a real change.
 
-  📈 Monitor Analysis
-
-  # Summarize a monitor run
-  uv run heretix-rpl summarize --file runs/monitor/20250122.jsonl
-
-  # Output:
-  # Rows: 25  Models: gpt-5  Versions: rpl_g5_v2_2025-08-21
-  # Means → p: 0.567  ci_width: 0.089  stability: 0.712
-  # Counts → high(≥0.9): 3  low(≤0.1): 2  mid(0.4–0.6): 8
-  # Widest CIs:
-  #   - 0.187  quantum computers will break RSA encryption
-  #   - 0.134  AI consciousness is possible
-
-  Drift Detection (Compare Over Time)
-
-  # Run weekly monitor
-  uv run heretix-rpl monitor --bench bench/sentinels.json \
-    --out runs/monitor/week1.jsonl
-
-  # Week later, run with baseline comparison
-  uv run heretix-rpl monitor --bench bench/sentinels.json \
-    --baseline runs/monitor/week1.jsonl \
-    --out runs/monitor/week2.jsonl
-
-  # Check drift flags in output
-  cat runs/monitor/week2.jsonl | jq '{claim, drift_p, drift_stability}'
-
-  Understanding Output Files
-
-  Single/Auto Run JSON Structure:
-  {
-    "claim": "...",
-    "aggregates": {
-      "prob_true_rpl": 0.723,      // Final probability estimate
-      "ci95": [0.672, 0.769],      // 95% confidence interval
-      "ci_width": 0.097,            // Uncertainty measure
-      "stability_score": 0.703,     // Template consistency (0-1)
-      "is_stable": true             // Passed CI width threshold
-    },
-    "aggregation": {
-      "n_templates": 16,            // Unique templates used
-      "imbalance_ratio": 1.0,       // Template balance (1.0 = perfect)
-      "template_iqr_logit": 0.423   // Template spread
-    },
-    "paraphrase_results": [...]     // Raw API responses
-  }
-
-  Quick Decision Tree
-
-  Need to evaluate a claim?
-  ├── Just want a quick answer?
-  │   └── uv run heretix-rpl rpl --claim "..."
-  ├── Want robust, production-ready result?
-  │   └── uv run heretix-rpl auto --claim "..."
-  ├── Tracking multiple claims over time?
-  │   └── uv run heretix-rpl monitor --bench bench/sentinels.json
-  └── Debugging stability issues?
-      └── uv run heretix-rpl inspect --run ... --show-ci-signal --show-replicates
-
-  Pro Tips
-
-  1. Always use Auto-RPL for important evaluations - it handles edge cases automatically
-  2. Monitor sentinels weekly to detect model drift
-  3. Use inspect with --show-ci-signal when stability is low to identify problematic templates
-  4. Set HERETIX_RPL_SEED environment variable for reproducible bootstrap CIs (for debugging)
-  5. Quick mode (K=5, R=1) for development/testing only, not production
-
-  The system is designed to be robust, reproducible, and transparent - every number can be audited back to specific template-replicate pairs.
+## References
+- Configuration details: `documentation/configuration.md`
+- SQLite tips and queries: `documentation/sqlite.md`
+- Stats & estimator spec: `documentation/STATS_SPEC.md`

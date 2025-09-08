@@ -1,0 +1,31 @@
+#!/bin/bash
+# Pre-push hook for Heretix RPL
+# Runs full test suite including slow tests before push
+
+echo "🧪 Running full statistical test suite (including slow tests)..."
+
+# Check if uv is available and use it if so
+if command -v uv &> /dev/null; then
+    PYTEST="uv run pytest"
+else
+    PYTEST="python -m pytest"
+fi
+
+# Check if pytest is installed
+if ! $PYTEST --version &> /dev/null 2>&1; then
+    echo "❌ pytest not found. Install with: uv pip install -e '.[test]'"
+    exit 1
+fi
+
+# Run all tests with verbose output
+$PYTEST tests -v --tb=short
+
+# Check test result
+if [ $? -ne 0 ]; then
+    echo "❌ Tests failed! Fix all issues before pushing."
+    echo "   To run tests manually: pytest tests -v"
+    exit 1
+fi
+
+echo "✅ All tests passed! Ready to push."
+exit 0

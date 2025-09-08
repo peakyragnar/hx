@@ -4,69 +4,77 @@
 ![Auto–RPL](https://img.shields.io/badge/Auto–RPL-Enabled-blue)
 ![Prompt%20Version](https://img.shields.io/badge/PROMPT__VERSION-rpl__g5__v2__2025--08--21-purple)
 
-Heretix measures a model’s internal prior over claims and rewards durable belief movement. This repository implements the RPL estimator and an adaptive controller that escalates sampling deterministically for quality.
+Heretix measures a model’s internal prior over claims and rewards durable belief movement. This repository now contains a clean RPL harness (`heretix/`) and quarantined legacy code under `legacy/`.
 
 - Estimator (frozen): logit-space aggregation, equal-by-template weighting, 20% trimmed center (T≥5), cluster bootstrap (B=5000) with deterministic seed.
 - Prompts: `PROMPT_VERSION=rpl_g5_v2_2025-08-21` with 16 paraphrases.
 
-## Quick Start
+## Quick Start (New Harness)
 
-- Single run (legacy):
+- Setup environment (uv):
 ```
-uv run heretix-rpl --claim "tariffs don't cause inflation" --k 7 --r 3 --agg clustered
-```
-
-- Adaptive controller (Auto‑RPL):
-```
-uv run heretix-rpl auto --claim "tariffs don't cause inflation" --out runs/rpl_auto.json
-```
-- Inspect a run:
-```
-uv run heretix-rpl inspect --run runs/rpl_auto.json
-```
-- Drift monitor (sentinels):
-```
-uv run heretix-rpl monitor --bench bench/sentinels.json --out runs/monitor/DATE.jsonl
+uv sync
 ```
 
-## One‑Liner Shortcuts
+- Create a minimal run config (example):
+```
+cat > runs/rpl_example.yaml << 'EOF'
+claim: "tariffs don't cause inflation"
+model: gpt-5
+prompt_version: rpl_g5_v2
+K: 8
+R: 2
+T: 8
+B: 5000
+seed: 42
+max_prompt_chars: 1200
+max_output_tokens: 1024
+EOF
+```
 
-- Export key (once per shell):
+- Run RPL (single or multi-version):
 ```
 export OPENAI_API_KEY=sk-...
+uv run heretix run --config runs/rpl_example.yaml --out runs/new_rpl.json
 ```
 
-- Run Auto‑RPL now (defaults to gates CI≤0.20, stability≥0.70, imbalance≤1.50):
+- Smoke test (no network):
 ```
-uv run heretix-rpl auto \
-  --claim "<your claim>" \
-  --start-k 8 --start-r 2 --max-k 16 --max-r 3 \
-  --ci-width-max 0.20 --stability-min 0.70 --imbalance-max 1.50 \
-  --out runs/rpl_auto.json
+uv run heretix run --config runs/rpl_example.yaml --out runs/smoke.json --mock
 ```
 
-- Inspect stage/template behavior quickly:
+- Describe plan (no network):
 ```
-uv run heretix-rpl inspect --run runs/rpl_auto.json
-```
-
-- Weekly drift snapshot (writes dated JSONL):
-```
-uv run heretix-rpl monitor \
-  --bench bench/sentinels.json \
-  --out runs/monitor/$(date +%F).jsonl
+uv run heretix describe --config runs/rpl_example.yaml
 ```
 
-- Make CI deterministic (bootstrap only):
+- Output includes: p_RPL, CI95, stability, cache_hit_rate, rpl_compliance_rate.
+
+Legacy CLI is available under `legacy/` for reference but is not installed by default.
+
+## Single-Claim Workflow
+- Use `claim:` in your config and run with `heretix run` as above. Outputs persist to SQLite and a single JSON file for easy inspection.
+- See the detailed step‑by‑step guide in `documentation/how-to-run.md` (includes the HTML report and opening it in Chrome).
+
+## Tests
+- New harness (default): `uv run pytest -q`
+- Include legacy (optional): `uv run pytest heretix/tests legacy/tests -q`
+
+## Determinism
+- Set a bootstrap seed in the config (`seed: 42`) to fix CI draws.
+- Precedence: config `seed` > `HERETIX_RPL_SEED` env > derived deterministic value.
+- The effective `bootstrap_seed` is shown in outputs and persisted in the DB.
+
+## One‑Liner (Deterministic CI)
 ```
-HERETIX_RPL_SEED=42 uv run heretix-rpl auto --claim "<your claim>"
+HERETIX_RPL_SEED=42 uv run heretix run --config runs/rpl_example.yaml
 ```
 
 ## Docs
-- Adaptive controller: `documentation/auto_rpl.md`
-- Aggregation methodology (estimator): `documentation/aggregation.md`
-- Flow diagram and module map: `documentation/flow_diagram.md`
-- Examples: `examples/auto_tariffs_sample.json`, `examples/interpretation.md`, `examples/monitor_snapshot.jsonl`
+- New harness design: see `refactor.md` (Tooling with uv, repo structure, phases)
+- Estimator and stats: `documentation/aggregation.md`, `documentation/STATS_SPEC.md`
+- Smoke tests: `documentation/smoke_tests.md`
+- Legacy docs remain in `documentation/` and are referenced by the archived code under `legacy/`.
 
 ## Determinism & Provenance
 - Same inputs → same decisions and CIs.
