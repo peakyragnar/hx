@@ -47,6 +47,18 @@ def _ensure_db(path: Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
         conn.execute("ALTER TABLE runs ADD COLUMN prompt_char_len_max INTEGER")
     except Exception:
         pass
+    # PQS and gate columns for runs
+    for sql in [
+        "ALTER TABLE runs ADD COLUMN pqs INTEGER",
+        "ALTER TABLE runs ADD COLUMN gate_compliance_ok INTEGER",
+        "ALTER TABLE runs ADD COLUMN gate_stability_ok INTEGER",
+        "ALTER TABLE runs ADD COLUMN gate_precision_ok INTEGER",
+        "ALTER TABLE runs ADD COLUMN pqs_version TEXT",
+    ]:
+        try:
+            conn.execute(sql)
+        except Exception:
+            pass
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS samples (
@@ -102,6 +114,18 @@ def _ensure_db(path: Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
         )
         """
     )
+    # PQS and gate columns for executions
+    for sql in [
+        "ALTER TABLE executions ADD COLUMN pqs INTEGER",
+        "ALTER TABLE executions ADD COLUMN gate_compliance_ok INTEGER",
+        "ALTER TABLE executions ADD COLUMN gate_stability_ok INTEGER",
+        "ALTER TABLE executions ADD COLUMN gate_precision_ok INTEGER",
+        "ALTER TABLE executions ADD COLUMN pqs_version TEXT",
+    ]:
+        try:
+            conn.execute(sql)
+        except Exception:
+            pass
     # Mapping of which cached samples were used by an execution
     conn.execute(
         """

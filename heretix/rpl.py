@@ -227,6 +227,15 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
     cache_hit_rate = (cache_hits / attempted) if attempted else 0.0
     rpl_compliance_rate = (valid_count / attempted) if attempted else 0.0
 
+    # Derived quality summary (PQS) and gates
+    # PQS v1: 0.4*stability + 0.4*(1 - min(width,0.5)/0.5) + 0.2*compliance, scaled to 0..100
+    width = float(hi_p - lo_p)
+    pqs_val = int(100 * (0.4 * stability + 0.4 * (1 - min(width, 0.5) / 0.5) + 0.2 * rpl_compliance_rate))
+    gate_compliance_ok = int(1 if rpl_compliance_rate >= 0.98 else 0)
+    gate_stability_ok = int(1 if stability >= 0.25 else 0)
+    gate_precision_ok = int(1 if width <= 0.30 else 0)
+    pqs_version = "v1"
+
     # run id
     digest = hashlib.sha256(f"{cfg.claim}|{cfg.model}|{prompt_version_full}|K={cfg.K}|R={cfg.R}".encode("utf-8")).hexdigest()[:12]
     run_id = f"heretix-rpl-{digest}"
@@ -285,6 +294,11 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             "counts_by_template_json": json.dumps(counts),
             "artifact_json_path": None,
             "prompt_char_len_max": prompt_char_len_max,
+            "pqs": pqs_val,
+            "gate_compliance_ok": gate_compliance_ok,
+            "gate_stability_ok": gate_stability_ok,
+            "gate_precision_ok": gate_precision_ok,
+            "pqs_version": pqs_version,
         },
     )
 
@@ -318,6 +332,11 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             "counts_by_template_json": json.dumps(counts),
             "artifact_json_path": None,
             "prompt_char_len_max": prompt_char_len_max,
+            "pqs": pqs_val,
+            "gate_compliance_ok": gate_compliance_ok,
+            "gate_stability_ok": gate_stability_ok,
+            "gate_precision_ok": gate_precision_ok,
+            "pqs_version": pqs_version,
         },
     )
     # Map execution to the exact cached samples used (valid only)
