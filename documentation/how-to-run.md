@@ -101,6 +101,13 @@ HERETIX_RPL_SEED=42 uv run heretix run --config runs/rpl_example.yaml
 HERETIX_RPL_NO_CACHE=1 uv run heretix run --config runs/rpl_example.yaml
 ```
 
+DB path override (optional):
+- To keep test data out of your main DB, set a different path via env:
+```
+export HERETIX_DB_PATH=/tmp/heretix_test.sqlite
+```
+The test suite uses an isolated DB automatically via this env var.
+
 ## 11) Prompt versions and identity (read this once)
 
 Prompts are identified by the `version:` string inside the YAML (not the filename). That value is stored in the DB and used in cache keys.

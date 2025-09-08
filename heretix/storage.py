@@ -3,15 +3,28 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
+import os
 from typing import Any, Dict, List, Optional, Tuple
 
 
 DEFAULT_DB_PATH = Path("runs/heretix.sqlite")
 
 
-def _ensure_db(path: Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(path))
+def _db_path_from_env(override: Path | None = None) -> Path:
+    """Resolve the SQLite DB path with optional env override.
+
+    Precedence: explicit override > HERETIX_DB_PATH env > DEFAULT_DB_PATH.
+    """
+    if override is not None:
+        return override
+    p = os.getenv("HERETIX_DB_PATH")
+    return Path(p) if p else DEFAULT_DB_PATH
+
+
+def _ensure_db(path: Path | None = None) -> sqlite3.Connection:
+    path_resolved = _db_path_from_env(path)
+    path_resolved.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(path_resolved))
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS runs (
@@ -176,7 +189,7 @@ def insert_samples(conn: sqlite3.Connection, rows: List[Dict[str, Any]]) -> None
     conn.commit()
 
 
-def get_cached_sample(cache_key: str, db_path: Path = DEFAULT_DB_PATH) -> Optional[Dict[str, Any]]:
+def get_cached_sample(cache_key: str, db_path: Path | None = None) -> Optional[Dict[str, Any]]:
     conn = _ensure_db(db_path)
     cur = conn.execute("SELECT * FROM samples WHERE cache_key=?", (cache_key,))
     row = cur.fetchone()
