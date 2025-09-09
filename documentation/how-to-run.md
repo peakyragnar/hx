@@ -188,3 +188,4 @@ Use gates to accept/reject; use PQS to choose among passes.
 - Configuration details: `documentation/configuration.md`
 - SQLite tips and queries: `documentation/sqlite.md`
 - Stats & estimator spec: `documentation/STATS_SPEC.md`
+- Output review process: `documentation/output-review.md`
