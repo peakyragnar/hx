@@ -9,7 +9,8 @@ from heretix.config import RunConfig
 from heretix.rpl import run_single_version
 
 
-DB_PATH = Path("runs/heretix.sqlite")
+# Tests use the mock provider; mock runs are routed to this DB
+DB_PATH = Path("runs/heretix_mock.sqlite")
 PROMPT_PATH = Path(__file__).resolve().parents[1] / "prompts" / "rpl_g5_v2.yaml"
 
 
@@ -51,4 +52,3 @@ def test_prompt_len_enforcement_raises(tmp_path: Path):
     )
     with pytest.raises(ValueError):
         run_single_version(cfg, prompt_file=str(PROMPT_PATH), mock=True)
-

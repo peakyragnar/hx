@@ -8,7 +8,8 @@ from heretix.config import RunConfig
 from heretix.rpl import run_single_version
 
 
-DB_PATH = Path("runs/heretix.sqlite")
+# Tests use the mock provider; mock runs are routed to this DB
+DB_PATH = Path("runs/heretix_mock.sqlite")
 
 
 def test_db_persistence_and_counts(tmp_path: Path):

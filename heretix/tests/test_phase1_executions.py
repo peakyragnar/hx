@@ -8,7 +8,8 @@ from heretix.config import RunConfig
 from heretix.rpl import run_single_version
 
 
-DB_PATH = Path("runs/heretix.sqlite")
+# Tests use the mock provider; mock runs are routed to this DB
+DB_PATH = Path("runs/heretix_mock.sqlite")
 
 
 def test_execution_row_and_mapping_created(tmp_path: Path):
@@ -44,4 +45,3 @@ def test_execution_row_and_mapping_created(tmp_path: Path):
     (n_map,) = conn.execute("SELECT COUNT(*) FROM execution_samples WHERE execution_id=?", (exec_id,)).fetchone()
     assert n_map == total_used
     conn.close()
-
