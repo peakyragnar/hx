@@ -90,6 +90,10 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             f"Prompt length {prompt_char_len_max} exceeds max_prompt_chars={cfg.max_prompt_chars}. Reduce claim length or template text."
         )
 
+    # Decide provider mode and target DB path once per run
+    provider_mode = "MOCK" if (mock or os.getenv("HERETIX_MOCK")) else "LIVE"
+    db_path = Path("runs/heretix_mock.sqlite") if provider_mode == "MOCK" else Path("runs/heretix.sqlite")
+
     # sampling loop
     runs: List[Dict[str, Any]] = []
     by_tpl: Dict[str, List[float]] = {}
@@ -118,7 +122,6 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             attempted += 1
             # Make replicate index unique per template across all slots
             replicate_idx_global = int(occ_idx * cfg.R + r)
-            provider_mode = "MOCK" if (mock or os.getenv("HERETIX_MOCK")) else "LIVE"
             ckey = make_cache_key(
                 claim=cfg.claim,
                 model=cfg.model,
@@ -131,7 +134,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
 
             row = None
             if not cfg.no_cache:
-                row = get_cached_sample(ckey)
+                row = get_cached_sample(ckey, db_path=db_path)
                 if row:
                     cache_hits += 1
 
@@ -241,7 +244,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
     run_id = f"heretix-rpl-{digest}"
 
     # persist
-    conn = _ensure_db()
+    conn = _ensure_db(db_path)
     # Persist prompt text for provenance (once per version)
     try:
         import json as _json
