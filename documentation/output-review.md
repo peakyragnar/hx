@@ -83,8 +83,10 @@ B) Stability is low
 
 C) Compliance dips below 0.98
 1. Per‑run report → "Integrity" block: confirm how many attempts were valid vs attempted.
-2. Read the lowest‑performing paraphrases’ text (prompt YAML or the prompts table in the DB): look for wording that invites sourcing ("according to", "cite") or long outputs that risk JSON breakage.
-3. Tighten wording or drop that paraphrase. Re‑run to confirm Compliance is back ≥ 0.98.
+2. Understand behavior: the harness never lets bad outputs skew p_RPL — non‑JSON/URL samples are marked invalid and excluded. Compliance drops because attempted includes them while valid does not.
+3. Check "Per‑Template Stats": if invalids cluster in a few templates, valid counts for those will be lower, and imbalance_ratio may rise above the planned level. If invalids are uniform, imbalance may not move.
+4. Read the lowest‑performing paraphrases’ text (prompt YAML or the prompts table): look for wording that invites sourcing ("according to", "cite") or long outputs that risk JSON breakage.
+5. Tighten wording or drop that paraphrase. Re‑run to confirm Compliance ≥ 0.98 and imbalance returns to the planned level (given your K/T).
 
 D) Prompt length exceeds cap
 1. Per‑run report shows `prompt_char_len_max`.
