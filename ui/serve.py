@@ -113,10 +113,10 @@ class Handler(BaseHTTPRequestHandler):
               .muted {{ color:#7aa37a; margin-top:8px; }}
               .hero {{ width:420px; height:420px; margin:20px auto; position:relative; background:url('{bg}') center/cover no-repeat; border-radius:8px; box-shadow:0 0 28px rgba(0,255,65,0.15) inset; }}
               /* Adjustable pill position to align with the image's pill */
-              .hero {{ --pill-left: 50%; --pill-top: 44%; }}
+              .hero {{ --pill-left: 50%; --pill-top: 48%; }}
               /* Dark soft mask to diminish the background pill so only the animated one is perceived */
               .mask {{ position:absolute; left:var(--pill-left); top:var(--pill-top); width:120px; height:120px; transform: translate(-50%,-50%); pointer-events:none; background: radial-gradient(circle at center, rgba(10,10,10,0.85) 0%, rgba(10,10,10,0.65) 45%, rgba(10,10,10,0.25) 70%, rgba(10,10,10,0.0) 100%); border-radius:50%; filter: blur(1px); }}
-              .pill {{ position:absolute; left:var(--pill-left); top:var(--pill-top); width:48px; height:18px; transform: translate(-50%,-50%); background:#ff2b2b; border-radius:999px; box-shadow:0 0 18px rgba(255,0,0,0.45); border:1px solid #ff6b6b; animation: spin 1.6s linear infinite; }}
+              .pill {{ position:absolute; left:var(--pill-left); top:var(--pill-top); width:54px; height:20px; transform: translate(-50%,-50%); background:#ff2b2b; border-radius:999px; box-shadow:0 0 18px rgba(255,0,0,0.45); border:1px solid #ff6b6b; animation: spin 1.6s linear infinite; }}
               @keyframes spin {{ from {{ transform: translate(-50%,-50%) rotate(0deg); }} to {{ transform: translate(-50%,-50%) rotate(360deg); }} }}
             </style>
             <h1 class='big'>Running analysis…</h1>
