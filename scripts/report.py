@@ -63,9 +63,9 @@ def gen_report(db_path: Path, out_path: Path, run_id: Optional[str]) -> None:
 
     run_id = exec_row["run_id"]
 
-    # Fetch corresponding runs row (for counts and config/sampler JSON)
+    # Fetch corresponding runs row (for counts, config/sampler JSON, and template IQR)
     cur.execute(
-        "SELECT artifact_json_path, counts_by_template_json, config_json, sampler_json "
+        "SELECT artifact_json_path, counts_by_template_json, config_json, sampler_json, template_iqr_logit "
         "FROM runs WHERE run_id=? ORDER BY created_at DESC LIMIT 1",
         (run_id,),
     )
@@ -133,13 +133,37 @@ def gen_report(db_path: Path, out_path: Path, run_id: Optional[str]) -> None:
     except Exception:
         tpl_indices = []
 
-    # Per-paraphrase stats from samples
+    # Per-paraphrase aggregate counts
+    # Compute attempted (n), valid count, and mean prob over valid-only for clarity
     cur.execute(
-        "SELECT paraphrase_idx, COUNT(*) AS n, SUM(json_valid) AS valid, AVG(prob_true) AS mean_prob "
+        "SELECT paraphrase_idx, COUNT(*) AS n, SUM(json_valid) AS valid, "
+        "AVG(CASE WHEN json_valid=1 THEN prob_true END) AS mean_prob_valid "
         "FROM samples WHERE run_id=? GROUP BY paraphrase_idx ORDER BY paraphrase_idx",
         (run_id,),
     )
     per_tpl = query_all(cur)
+
+    # Per-paraphrase raw rows for valid-only bootstrap (probabilities)
+    cur.execute(
+        "SELECT paraphrase_idx, prompt_sha256, prob_true FROM samples "
+        "WHERE run_id=? AND json_valid=1 ORDER BY paraphrase_idx",
+        (run_id,),
+    )
+    rows_valid = query_all(cur)
+    per_tpl_probs: Dict[int, List[float]] = {}
+    per_tpl_hash: Dict[int, str] = {}
+    for rr in rows_valid:
+        try:
+            idx = int(rr.get("paraphrase_idx"))
+        except Exception:
+            continue
+        pv = rr.get("prob_true")
+        if pv is None:
+            continue
+        per_tpl_probs.setdefault(idx, []).append(float(pv))
+        # record any hash seen (should be stable per template)
+        if idx not in per_tpl_hash and rr.get("prompt_sha256"):
+            per_tpl_hash[idx] = str(rr.get("prompt_sha256"))
 
     # Integrity counts across samples
     cur.execute(
@@ -177,6 +201,12 @@ def gen_report(db_path: Path, out_path: Path, run_id: Optional[str]) -> None:
     compl = float(exec_row["rpl_compliance_rate"] or 0.0)
     cache = float(exec_row["cache_hit_rate"] or 0.0)
     band = "ok" if width <= 0.20 else ("warn" if width <= 0.35 else "bad")
+    imb = float(exec_row.get("imbalance_ratio") or 0.0)
+    tpl_iqr = 0.0
+    try:
+        tpl_iqr = float(run_row.get("template_iqr_logit") or 0.0)
+    except Exception:
+        tpl_iqr = 0.0
     # Gates
     gate_compliance_ok = compl >= 0.98
     gate_stability_ok = stability >= 0.25
@@ -217,22 +247,101 @@ def gen_report(db_path: Path, out_path: Path, run_id: Optional[str]) -> None:
     </div>
     """
 
-    # Per-template table
+    # Per-template table (augmented with run-level metrics for quick reference)
     rows_tpl = []
     for r in per_tpl:
         idx = int(r["paraphrase_idx"]) if r["paraphrase_idx"] is not None else -1
         n = int(r["n"] or 0)
         valid = int(r["valid"] or 0)
-        mean_prob = float(r["mean_prob"]) if r["mean_prob"] is not None else float("nan")
+        mean_prob = float(r.get("mean_prob_valid")) if r.get("mean_prob_valid") is not None else float("nan")
         mean_disp = "" if mean_prob != mean_prob else f"{mean_prob:.3f}"
         rows_tpl.append(
-            f"<tr><td>{idx}</td><td>{n}</td><td>{valid}</td><td>{mean_disp}</td></tr>"
+            "<tr>"
+            f"<td>{idx}</td>"
+            f"<td>{n}</td>"
+            f"<td>{valid}</td>"
+            f"<td>{mean_disp}</td>"
+            f"<td>{width:.3f}</td>"
+            f"<td>{stability:.3f}</td>"
+            f"<td>{imb:.2f}</td>"
+            f"<td>{tpl_iqr:.3f}</td>"
+            f"<td>{pqs}</td>"
+            "</tr>"
         )
-    empty_tpl_html = '<tr><td colspan="4" class="muted">no samples</td></tr>'
+    empty_tpl_html = '<tr><td colspan="9" class="muted">no samples</td></tr>'
     table_tpl = (
         "<h2>Per-Template Stats (by paraphrase_idx)</h2>"
-        "<table><thead><tr><th>paraphrase_idx</th><th>n</th><th>valid</th><th>mean prob_true</th></tr></thead>"
+        "<table><thead><tr>"
+        "<th>paraphrase_idx</th><th>n</th><th>valid</th><th>mean prob_true (valid-only)</th>"
+        "<th>CI width (run)</th><th>Stability (run)</th><th>Imbalance (run)</th><th>Template IQR logit (run)</th><th>PQS (run)</th>"
+        "</tr></thead>"
         f"<tbody>{(''.join(rows_tpl)) or empty_tpl_html}</tbody></table>"
+    )
+
+    # Per-template estimates using valid-only bootstrap of mean logit
+    def bootstrap_ci_mean(vals: List[float], B: int, seed: int) -> Optional[tuple]:
+        if not vals or len(vals) < 2:
+            return None
+        import random
+        rnd = random.Random(seed)
+        n = len(vals)
+        means: List[float] = []
+        for _ in range(B):
+            sample = [vals[rnd.randrange(0, n)] for _ in range(n)]
+            means.append(sum(sample) / n)
+        means.sort()
+        lo = means[int(0.025 * (B - 1))]
+        hi = means[int(0.975 * (B - 1))]
+        return (lo, hi)
+
+    rows_tpl_est = []
+    for r in per_tpl:
+        idx = int(r["paraphrase_idx"]) if r["paraphrase_idx"] is not None else -1
+        attempted = int(r["n"] or 0)
+        valid = int(r["valid"] or 0)
+        compl_tpl = (valid / attempted) if attempted > 0 else 0.0
+        probs = per_tpl_probs.get(idx, [])
+        # Preview of paraphrase text (resolved with claim), truncated
+        try:
+            raw_para = paraphrases[idx] if 0 <= idx < len(paraphrases) else ""
+        except Exception:
+            raw_para = ""
+        para_resolved = (raw_para or "").replace("{CLAIM}", claim_text)
+        preview = (para_resolved[:96] + ("…" if len(para_resolved) > 96 else "")).replace("\n", " ")
+        mean_p_disp = ""
+        ci_disp = "-"
+        width_disp = "-"
+        if probs:
+            p_mean = sum(probs) / len(probs)
+            mean_p_disp = f"{p_mean:.3f}"
+            seed_local = int(hashlib.sha256(f"{run_id}:{idx}:per_tpl".encode()).hexdigest(), 16) % (2**31)
+            ci = bootstrap_ci_mean(probs, B=1000, seed=seed_local)
+            if ci:
+                lo_p, hi_p = ci[0], ci[1]
+                ci_disp = f"[{lo_p:.3f}, {hi_p:.3f}]"
+                width_disp = f"{(hi_p - lo_p):.3f}"
+        rows_tpl_est.append(
+            "<tr>"
+            f"<td>{idx}</td>"
+            f"<td>{html.escape(preview)}</td>"
+            f"<td><code>{html.escape(per_tpl_hash.get(idx,'') or '')}</code></td>"
+            f"<td>{attempted}</td>"
+            f"<td>{valid}</td>"
+            f"<td>{compl_tpl:.2f}</td>"
+            f"<td>{mean_p_disp}</td>"
+            f"<td>{ci_disp}</td>"
+            f"<td>{width_disp}</td>"
+            "</tr>"
+        )
+    empty_est_html = '<tr><td colspan="9" class="muted">no valid samples</td></tr>'
+    table_tpl_est = (
+        "<h2>Per-Template Stats (per paraphrase, valid-only)</h2>"
+        "<div class=\"muted\">Mean p and CI are computed from valid samples for each paraphrase only (requires ≥2 valid samples for CI).</div>"
+        "<table><thead><tr>"
+        "<th>paraphrase_idx</th><th>paraphrase (preview)</th><th>prompt_sha256</th><th>attempted</th><th>valid</th><th>compliance</th>"
+        "<th>mean p</th><th>CI95</th><th>width</th>"
+        "</tr></thead>"
+        f"<tbody>{(''.join(rows_tpl_est)) or empty_est_html}</tbody></table>"
     )
 
     # Counts by template hash (from aggregation diag)
@@ -273,6 +382,7 @@ def gen_report(db_path: Path, out_path: Path, run_id: Optional[str]) -> None:
         "<p class=\"muted\">No sampler indices recorded.</p>" if not used_templates else "".join(used_templates)
     )
 
+    # Assemble HTML (place per-paraphrase estimates before the simple counts table)
     html_doc = f"""
     <!doctype html>
     <meta charset="utf-8" />
@@ -289,6 +399,7 @@ def gen_report(db_path: Path, out_path: Path, run_id: Optional[str]) -> None:
     <h2>Used Templates (resolved with claim)</h2>
     <div class="muted">Showing templates selected for this run (tpl_indices from sampler).</div>
     {used_templates_section}
+    {table_tpl_est}
     {table_tpl}
     {table_hash}
     <p class="muted">Artifact JSON: {html.escape(str((run_row or {}).get('artifact_json_path') or ''))}</p>

@@ -68,7 +68,11 @@ def score_claim(
 
     # Parse JSON from response object
     if hasattr(resp, "output_text") and resp.output_text:
-        obj = json.loads(resp.output_text)
+        try:
+            obj = json.loads(resp.output_text)
+        except Exception:
+            # Treat non-JSON as invalid output; aggregation will exclude it
+            obj = {}
     else:
         # Fallback: walk items to find text
         text = None
@@ -85,8 +89,13 @@ def score_claim(
         except Exception:
             pass
         if not text:
-            raise ValueError("Failed to extract text from response")
-        obj = json.loads(text)
+            # No extractable text; treat as invalid sample
+            obj = {}
+        else:
+            try:
+                obj = json.loads(text)
+            except Exception:
+                obj = {}
 
     provider_model_id = getattr(resp, "model", model)
     response_id = getattr(resp, "id", None) or getattr(resp, "response_id", None)

@@ -1,0 +1,34 @@
+version: rpl_g5_v4_2025-09-10
+system: |
+  You are the Raw Prior Lens. Estimate P(true) using internal knowledge only.
+  No retrieval, URLs, or citations. Output strict JSON only (see schema).
+
+  Rules:
+  - If underspecified, assume minimal scope and list assumptions.
+  - Report a literal empirical probability; treat "causes" as causal.
+  - If signal is weak, center near 0.50 and say why.
+  - Use concise, falsifiable bullets; no links.
+  - Include 2–4 contrary considerations.
+  - Set prob_true with two decimals; never 0 or 1 unless entailed.
+user_template: |
+  Claim: "{CLAIM}"
+
+  Return the JSON only.
+paraphrases:
+  # Keep most v3 stems; unify the few outliers to a neutral, concise form
+  - "Internal only: P(true) for: {CLAIM}"
+  - "Without retrieval, estimate P(true) for: {CLAIM}"
+  - "Without external data, P(true) for: {CLAIM}"
+  - "From internal knowledge, P(true) for: {CLAIM}"
+  - "No web access: chance this is true: {CLAIM}"
+  - "Prior only: estimate P(true) for: {CLAIM}"
+  - "Internal prior: what probability for: {CLAIM}"
+  - "Using your prior only, P(true) for: {CLAIM}"
+  - "No citations/links: P(true) for: {CLAIM}"
+  - "Internal knowledge only: P(true) for: {CLAIM}"
+  - "Prior‑only: chance the claim is true: {CLAIM}"
+  - "Without looking it up, P(true): {CLAIM}"
+  - "Using internal knowledge only, estimate P(true) for: {CLAIM}"
+  - "Estimate P(true) using internal knowledge only: {CLAIM}"
+  - "Using internal knowledge only, estimate P(true) for: {CLAIM}"
+  - "Without retrieval, estimate P(true) for: {CLAIM}"

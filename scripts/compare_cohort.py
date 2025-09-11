@@ -75,26 +75,27 @@ def main() -> None:
         base_params_b.append(args.model)
     b_rows = q(conn, "SELECT * FROM executions WHERE " + " AND ".join(where_b), tuple(base_params_b))
 
-    # Index latest per (claim)
-    latest_a: Dict[str, Dict[str, Any]] = {}
-    for r in a_rows:
-        c = r["claim"]
-        if not c:
-            continue
-        if c not in latest_a or r["created_at"] > latest_a[c]["created_at"]:
-            latest_a[c] = r
+    # Group rows by claim and parity key (model,K,R,T,B) and keep latest per key
+    def by_claim_and_parity(rows: List[Dict[str, Any]]) -> Dict[str, Dict[tuple, Dict[str, Any]]]:
+        out: Dict[str, Dict[tuple, Dict[str, Any]]] = {}
+        for r in rows:
+            c = r.get("claim")
+            if not c:
+                continue
+            key = (r.get("model"), r.get("K"), r.get("R"), r.get("T"), r.get("B"))
+            if c not in out:
+                out[c] = {}
+            prev = out[c].get(key)
+            if (prev is None) or (r["created_at"] > prev["created_at"]):
+                out[c][key] = r
+        return out
 
-    latest_b: Dict[str, Dict[str, Any]] = {}
-    for r in b_rows:
-        c = r["claim"]
-        if not c:
-            continue
-        if c not in latest_b or r["created_at"] > latest_b[c]["created_at"]:
-            latest_b[c] = r
+    a_by = by_claim_and_parity(a_rows)
+    b_by = by_claim_and_parity(b_rows)
 
     # Cohort selection
     restrict_claims = load_claims(args.claims_file)
-    claims_all = set(latest_a.keys()) & set(latest_b.keys())
+    claims_all = set(a_by.keys()) & set(b_by.keys())
     if restrict_claims:
         claims_all &= set(restrict_claims)
     claims = sorted(list(claims_all))
@@ -102,16 +103,23 @@ def main() -> None:
     rows: List[Dict[str, Any]] = []
     excluded: List[Tuple[str, str]] = []
     for c in claims:
-        ra = latest_a[c]
-        rb = latest_b[c]
-        # Parity: model, K, R, T, B
-        for k in ["model", "K", "R", "T", "B"]:
-            if ra[k] != rb[k]:
-                excluded.append((c, f"parity {k}: {ra[k]} vs {rb[k]}"))
-                ra = None  # mark skip
-                break
-        if not ra:
+        keys_a = set(a_by[c].keys())
+        keys_b = set(b_by[c].keys())
+        common = keys_a & keys_b
+        if not common:
+            # Build helpful reason from latest heads
+            la = max(a_by[c].values(), key=lambda r: r["created_at"]) if a_by[c] else None
+            lb = max(b_by[c].values(), key=lambda r: r["created_at"]) if b_by[c] else None
+            def fmt(r: Optional[Dict[str, Any]]) -> str:
+                return "none" if not r else f"{r.get('model')},K={r.get('K')},R={r.get('R')},T={r.get('T')},B={r.get('B')}"
+            excluded.append((c, f"no parity match; latest A=({fmt(la)}), latest B=({fmt(lb)})"))
             continue
+        # Choose the parity key with the freshest pair (maximize min timestamps)
+        def pair_score(k: tuple) -> int:
+            return min(a_by[c][k]["created_at"], b_by[c][k]["created_at"])  # prefer pairs that are recent on both sides
+        best_key = max(common, key=pair_score)
+        ra = a_by[c][best_key]
+        rb = b_by[c][best_key]
         wa = float(ra["ci_width"]); wb = float(rb["ci_width"]) 
         sa = float(ra["stability_score"]); sb = float(rb["stability_score"]) 
         ca = float(ra["rpl_compliance_rate"]); cb = float(rb["rpl_compliance_rate"]) 
