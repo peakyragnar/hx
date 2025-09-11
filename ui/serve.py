@@ -110,8 +110,12 @@ class Handler(BaseHTTPRequestHandler):
           body {{ background:#0a0a0a; color:#cfe9cf; font-family:'Courier New', monospace; text-align:center; padding:48px; }}
           .big {{ color:#00ff41; font-size:28px; text-shadow:0 0 18px rgba(0,255,65,0.35); }}
           .muted {{ color:#7aa37a; margin-top:8px; }}
+          .orbit {{ width:140px; height:140px; margin:32px auto; position:relative; border-radius:50%; animation: spin 2s linear infinite; }}
+          .pill {{ width:46px; height:18px; background:#ff2b2b; border-radius:999px; position:absolute; top:50%; left:50%; transform: translate(56px, -9px); box-shadow: 0 0 18px rgba(255,0,0,0.45); border:1px solid #ff6b6b; }}
+          @keyframes spin {{ from {{ transform: rotate(0deg); }} to {{ transform: rotate(360deg); }} }}
         </style>
         <h1 class='big'>Running analysis…</h1>
+        <div class='orbit'><div class='pill' title='red pill'></div></div>
         <div class='muted'>This may take up to a minute.</div>
         <div class='muted'>Job ID: {job_id}</div>
         """.encode("utf-8")
