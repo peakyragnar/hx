@@ -27,14 +27,33 @@
 </head>
 <body>
   <div class="wrap">
-    <h1 class="title">HERETIX</h1>
-    <div class="sub">How likely is the following true? <span class="hint">Internal knowledge only (no retrieval).</span></div>
+    <h1 class="title" style="text-align:left">HERETIX</h1>
+    <div class="sub"><strong>How likely is the following true?</strong></div>
 
     <form class="card" method="post" action="/run">
       <label for="claim">Claim</label>
       <textarea id="claim" name="claim" rows="6" maxlength="600" placeholder="e.g., Tariffs don't cause inflation" required></textarea>
 
-      <!-- no additional controls; UI uses defaults from configuration -->
+      <div class="row" style="margin-top:10px;">
+        <div class="col">
+          <label for="model">Model</label>
+          <select id="model" name="ui_model">
+            <option value="gpt-5" selected>GPT‑5</option>
+            <option value="claude-4.1">Claude 4.1</option>
+            <option value="grok-4">Grok 4</option>
+            <option value="deepseek-r1">DeepSeek R1</option>
+          </select>
+        </div>
+        <div class="col">
+          <label for="mode">Mode</label>
+          <select id="mode" name="ui_mode">
+            <option value="prior" selected>Internal Knowledge Only (no retrieval)</option>
+            <option value="internal-retrieval">Internal Retrieval</option>
+            <option value="user-data">User Data</option>
+          </select>
+        </div>
+      </div>
+
 
       <button type="submit" class="cta">ANALYZE CLAIM</button>
     </form>
