@@ -1,4 +1,4 @@
-claim: "Tariffs dont cause inflation"
+claim: "for hundreds of years, Europe executed its criminal underclass mercilessly. About 1% of each generation was executed, and another ~1% was killed at the scene of the crime immediately after committing the offense"
 model: gpt-5
 prompt_version: rpl_g5_v4
 K: 12
@@ -6,5 +6,5 @@ R: 2
 T: 8
 B: 5000
 seed: 42
-max_prompt_chars: 1200
+max_prompt_chars: 1500
 max_output_tokens: 1024

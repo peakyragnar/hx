@@ -38,8 +38,8 @@ class Handler(BaseHTTPRequestHandler):
         claim = (form.get("claim") or "").strip()
         if not claim:
             self._bad("Missing claim"); return
-        if len(claim) > 600:
-            self._bad("Claim too long (max 600 chars)"); return
+        if len(claim) > 280:
+            self._bad("Claim too long (max 280 characters, like a standard tweet)"); return
 
         # Gather settings (from config file; front-end does not set knobs)
         try:
