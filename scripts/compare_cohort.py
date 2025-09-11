@@ -153,13 +153,38 @@ def main() -> None:
         "pqs_med_b": med([r["pqs_b"] for r in rows]),
     }
 
-    # Winner on cohort: narrower median CI width, then higher median PQS
-    if agg["width_med_a"] != agg["width_med_b"]:
-        cohort_winner = "A" if agg["width_med_a"] < agg["width_med_b"] else "B"
-    elif agg["pqs_med_a"] != agg["pqs_med_b"]:
-        cohort_winner = "A" if agg["pqs_med_a"] > agg["pqs_med_b"] else "B"
+    # Winner on cohort:
+    # 1) Narrower median CI width, with tie threshold: if |Δwidth| < 0.003 treat as tie on width
+    # 2) Higher median PQS
+    # 3) Higher median Stability
+    THRESH = 0.003
+    wa = agg["width_med_a"]; wb = agg["width_med_b"]
+    sa = agg["stab_med_a"]; sb = agg["stab_med_b"]
+    pa = agg["pqs_med_a"]; pb = agg["pqs_med_b"]
+
+    def is_finite(x: float) -> bool:
+        return isinstance(x, (int, float)) and (x == x)
+
+    if is_finite(wa) and is_finite(wb):
+        d = float(wb) - float(wa)
+        if abs(d) >= THRESH:
+            cohort_winner = "A" if wa < wb else "B"
+        else:
+            # Width tie → use PQS, then Stability
+            if is_finite(pa) and is_finite(pb) and pa != pb:
+                cohort_winner = "A" if pa > pb else "B"
+            elif is_finite(sa) and is_finite(sb) and sa != sb:
+                cohort_winner = "A" if sa > sb else "B"
+            else:
+                cohort_winner = "tie"
     else:
-        cohort_winner = "tie"
+        # Fallback if widths are NaN: compare PQS then Stability
+        if is_finite(pa) and is_finite(pb) and pa != pb:
+            cohort_winner = "A" if pa > pb else "B"
+        elif is_finite(sa) and is_finite(sb) and sa != sb:
+            cohort_winner = "A" if sa > sb else "B"
+        else:
+            cohort_winner = "tie"
 
     # HTML
     css = """
