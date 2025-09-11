@@ -28,13 +28,6 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):  # quieter
         print("[ui]", fmt % args)
 
-    def do_GET(self):  # noqa: N802
-        if self.path in ("/", "/index.html"):
-            body = (ROOT / "index.html").read_bytes()
-            self._ok(body, "text/html")
-            return
-        self._not_found()
-
     def do_POST(self):  # noqa: N802
         if self.path != "/run":
             self._not_found(); return
@@ -236,6 +229,19 @@ class Handler(BaseHTTPRequestHandler):
         if self.path in ("/", "/index.html"):
             body = (ROOT / "index.html").read_bytes()
             self._ok(body, "text/html")
+            return
+        if self.path.startswith("/assets/"):
+            # serve static assets under ui/assets
+            local = ROOT / (self.path.lstrip("/"))  # ui/assets/...
+            if not local.exists() or not local.is_file():
+                self._not_found(); return
+            ext = local.suffix.lower()
+            ctype = "application/octet-stream"
+            if ext in (".png", ".apng"): ctype = "image/png"
+            elif ext in (".jpg", ".jpeg"): ctype = "image/jpeg"
+            elif ext == ".svg": ctype = "image/svg+xml"
+            elif ext == ".gif": ctype = "image/gif"
+            self._ok(local.read_bytes(), ctype)
             return
         if self.path.startswith("/wait"):
             # parse ?job=
