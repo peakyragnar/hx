@@ -101,62 +101,89 @@ class Handler(BaseHTTPRequestHandler):
         (TMP_DIR / f"job_{job_id}.json").write_text(json.dumps(job), encoding="utf-8")
 
         # Return a running page with meta refresh to /wait
-        running_html = f"""
-        <!doctype html>
-        <meta charset='utf-8' />
-        <meta http-equiv='refresh' content='1;url=/wait?job={job_id}'>
-        <title>HERETIX · Running…</title>
-        <style>
-          body {{ background:#0a0a0a; color:#cfe9cf; font-family:'Courier New', monospace; text-align:center; padding:48px; }}
-          .big {{ color:#00ff41; font-size:28px; text-shadow:0 0 18px rgba(0,255,65,0.35); }}
-          .muted {{ color:#7aa37a; margin-top:8px; }}
-          .scene {{ width:360px; margin:28px auto; }}
-          .pill {{ transform-origin: 180px 86px; animation: levitate 1.8s ease-in-out infinite; }}
-          @keyframes levitate {{ 0% {{ transform: translateY(0) rotate(0deg); }} 50% {{ transform: translateY(-8px) rotate(180deg); }} 100% {{ transform: translateY(0) rotate(360deg); }} }}
-        </style>
-        <h1 class='big'>Running analysis…</h1>
-        <div class='scene'>
-          <svg width='360' height='220' viewBox='0 0 360 220' xmlns='http://www.w3.org/2000/svg' role='img' aria-label='matrix silhouette with levitating red pill'>
-            <defs>
-              <linearGradient id='g' x1='0' y1='0' x2='0' y2='1'>
-                <stop offset='0%' stop-color='#0a0a0a'/>
-                <stop offset='100%' stop-color='#0e1a0e'/>
-              </linearGradient>
-              <filter id='glow-green' x='-50%' y='-50%' width='200%' height='200%'>
-                <feGaussianBlur stdDeviation='2' result='b'/>
-                <feColorMatrix in='b' type='matrix' values='0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 0.8 0'/>
-              </filter>
-              <filter id='glow-red' x='-50%' y='-50%' width='200%' height='200%'>
-                <feGaussianBlur stdDeviation='1.6' result='r'/>
-                <feColorMatrix in='r' type='matrix' values='1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.9 0'/>
-              </filter>
-            </defs>
-            <rect x='0' y='0' width='360' height='220' fill='url(#g)'/>
-            <!-- seated figure (stylized) -->
-            <g fill='#0f120f' stroke='#00ff41' stroke-opacity='0.35' stroke-width='1.2' filter='url(#glow-green)'>
-              <circle cx='180' cy='58' r='18'/>
-              <rect x='162' y='75' width='36' height='40' rx='6'/>
-              <path d='M150 118 C165 112, 195 112, 210 118 L206 134 C192 132, 168 132, 154 134 Z'/>
-              <path d='M150 118 L138 100 L146 96 L158 112 Z'/> <!-- left forearm/hand up -->
-              <path d='M210 118 L222 132 L214 136 L202 122 Z'/> <!-- right arm -->
-              <path d='M168 134 L168 172 L160 172 L160 134 Z'/> <!-- left leg -->
-              <path d='M192 134 L192 172 L200 172 L200 134 Z'/> <!-- right leg -->
-            </g>
-            <!-- sunglasses -->
-            <g fill='#00ff41' opacity='0.9'>
-              <rect x='170' y='54' width='10' height='4' rx='1'/>
-              <rect x='180' y='54' width='10' height='4' rx='1'/>
-              <rect x='179' y='55' width='2' height='2'/>
-            </g>
-            <!-- levitating red pill above left hand -->
-            <g class='pill'>
-              <ellipse cx='146' cy='86' rx='18' ry='7' fill='#ff2b2b' filter='url(#glow-red)' stroke='#ff6b6b' stroke-width='0.8'/>
-              <rect x='134' y='83.4' width='24' height='5' rx='2.5' fill='rgba(255,255,255,0.12)'/>
-            </g>
-          </svg>
-        </div>
-        <div class='muted'>This may take up to a minute.</div>
-        """.encode("utf-8")
+        # Prefer user-provided image at ui/assets/running_bg.(png|jpg|jpeg); otherwise fallback SVG scene
+        bg = None
+        for name in ("running_bg.png", "running_bg.jpg", "running_bg.jpeg"):
+            p = ROOT / "assets" / name
+            if p.exists():
+                bg = "/assets/" + name
+                break
+        if bg:
+            running_html = f"""
+            <!doctype html>
+            <meta charset='utf-8' />
+            <meta http-equiv='refresh' content='1;url=/wait?job={job_id}'>
+            <title>HERETIX · Running…</title>
+            <style>
+              body {{ background:#0a0a0a; color:#cfe9cf; font-family:'Courier New', monospace; text-align:center; padding:48px; }}
+              .big {{ color:#00ff41; font-size:28px; text-shadow:0 0 18px rgba(0,255,65,0.35); }}
+              .muted {{ color:#7aa37a; margin-top:8px; }}
+              .hero {{ width:420px; height:420px; margin:20px auto; position:relative; background:url('{bg}') center/cover no-repeat; border-radius:8px; box-shadow:0 0 28px rgba(0,255,65,0.15) inset; }}
+              .pill {{ position:absolute; left:50%; top:44%; width:48px; height:18px; transform: translate(-50%,-50%); background:#ff2b2b; border-radius:999px; box-shadow:0 0 18px rgba(255,0,0,0.45); border:1px solid #ff6b6b; animation: spin 1.6s linear infinite; }}
+              .shine {{ position:absolute; left:50%; top:44%; width:48px; height:18px; transform: translate(-50%,-50%); border-radius:999px; background: radial-gradient(ellipse at center, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.0) 65%); filter: blur(0.6px); }}
+              @keyframes spin {{ from {{ transform: translate(-50%,-50%) rotate(0deg); }} to {{ transform: translate(-50%,-50%) rotate(360deg); }} }}
+            </style>
+            <h1 class='big'>Running analysis…</h1>
+            <div class='hero'>
+              <div class='pill' aria-label='red pill'></div>
+              <div class='shine'></div>
+            </div>
+            <div class='muted'>This may take up to a minute.</div>
+            """.encode("utf-8")
+        else:
+            running_html = f"""
+            <!doctype html>
+            <meta charset='utf-8' />
+            <meta http-equiv='refresh' content='1;url=/wait?job={job_id}'>
+            <title>HERETIX · Running…</title>
+            <style>
+              body {{ background:#0a0a0a; color:#cfe9cf; font-family:'Courier New', monospace; text-align:center; padding:48px; }}
+              .big {{ color:#00ff41; font-size:28px; text-shadow:0 0 18px rgba(0,255,65,0.35); }}
+              .muted {{ color:#7aa37a; margin-top:8px; }}
+              .scene {{ width:360px; margin:28px auto; }}
+              .pill {{ transform-origin: 180px 86px; animation: levitate 1.8s ease-in-out infinite; }}
+              @keyframes levitate {{ 0% {{ transform: translateY(0) rotate(0deg); }} 50% {{ transform: translateY(-8px) rotate(180deg); }} 100% {{ transform: translateY(0) rotate(360deg); }} }}
+            </style>
+            <h1 class='big'>Running analysis…</h1>
+            <div class='scene'>
+              <svg width='360' height='220' viewBox='0 0 360 220' xmlns='http://www.w3.org/2000/svg' role='img' aria-label='matrix silhouette with levitating red pill'>
+                <defs>
+                  <linearGradient id='g' x1='0' y1='0' x2='0' y2='1'>
+                    <stop offset='0%' stop-color='#0a0a0a'/>
+                    <stop offset='100%' stop-color='#0e1a0e'/>
+                  </linearGradient>
+                  <filter id='glow-green' x='-50%' y='-50%' width='200%' height='200%'>
+                    <feGaussianBlur stdDeviation='2' result='b'/>
+                    <feColorMatrix in='b' type='matrix' values='0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 0.8 0'/>
+                  </filter>
+                  <filter id='glow-red' x='-50%' y='-50%' width='200%' height='200%'>
+                    <feGaussianBlur stdDeviation='1.6' result='r'/>
+                    <feColorMatrix in='r' type='matrix' values='1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.9 0'/>
+                  </filter>
+                </defs>
+                <rect x='0' y='0' width='360' height='220' fill='url(#g)'/>
+                <g fill='#0f120f' stroke='#00ff41' stroke-opacity='0.35' stroke-width='1.2' filter='url(#glow-green)'>
+                  <circle cx='180' cy='58' r='18'/>
+                  <rect x='162' y='75' width='36' height='40' rx='6'/>
+                  <path d='M150 118 C165 112, 195 112, 210 118 L206 134 C192 132, 168 132, 154 134 Z'/>
+                  <path d='M150 118 L138 100 L146 96 L158 112 Z'/>
+                  <path d='M210 118 L222 132 L214 136 L202 122 Z'/>
+                  <path d='M168 134 L168 172 L160 172 L160 134 Z'/>
+                  <path d='M192 134 L192 172 L200 172 L200 134 Z'/>
+                </g>
+                <g fill='#00ff41' opacity='0.9'>
+                  <rect x='170' y='54' width='10' height='4' rx='1'/>
+                  <rect x='180' y='54' width='10' height='4' rx='1'/>
+                  <rect x='179' y='55' width='2' height='2'/>
+                </g>
+                <g class='pill'>
+                  <ellipse cx='146' cy='86' rx='18' ry='7' fill='#ff2b2b' filter='url(#glow-red)' stroke='#ff6b6b' stroke-width='0.8'/>
+                  <rect x='134' y='83.4' width='24' height='5' rx='2.5' fill='rgba(255,255,255,0.12)'/>
+                </g>
+              </svg>
+            </div>
+            <div class='muted'>This may take up to a minute.</div>
+            """.encode("utf-8")
         self._ok(running_html, "text/html")
         return
 
