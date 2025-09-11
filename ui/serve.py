@@ -55,7 +55,7 @@ class Handler(BaseHTTPRequestHandler):
             self._err(f"Failed to read {CFG_PATH_DEFAULT}: {e}"); return
 
         model = str(cfg_base.get("model") or "gpt-5")
-        prompt_version = PROMPT_VERSION_DEFAULT
+        prompt_version = str(cfg_base.get("prompt_version") or PROMPT_VERSION_DEFAULT)
         use_mock = "mock" in form
 
         # Pull defaults from config; fall back sensibly
