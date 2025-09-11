@@ -8,20 +8,13 @@ import urllib.parse
 import subprocess
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+import yaml
 
 
 ROOT = Path(__file__).parent
 TMP_DIR = Path("runs/ui_tmp")
-
-DEFAULTS = {
-    "model": "gpt-5",
-    "prompt_version": "rpl_g5_v4",
-    "K": 16,
-    "R": 2,
-    "T": 8,
-    "B": 5000,
-    "max_output_tokens": 1024,
-}
+CFG_PATH_DEFAULT = Path("runs/rpl_example.yaml")
+PROMPT_VERSION_DEFAULT = "rpl_g5_v4"
 
 
 def _render(path: Path, mapping: dict[str, str]) -> bytes:
@@ -55,26 +48,28 @@ class Handler(BaseHTTPRequestHandler):
         if len(claim) > 600:
             self._bad("Claim too long (max 600 chars)"); return
 
-        # Gather settings
-        model = (form.get("model") or DEFAULTS["model"]).strip()
-        prompt_version = (form.get("prompt_version") or DEFAULTS["prompt_version"]).strip()
+        # Gather settings (from config file; front-end does not set knobs)
+        try:
+            cfg_base = yaml.safe_load(CFG_PATH_DEFAULT.read_text(encoding="utf-8")) if CFG_PATH_DEFAULT.exists() else {}
+        except Exception as e:
+            self._err(f"Failed to read {CFG_PATH_DEFAULT}: {e}"); return
+
+        model = str(cfg_base.get("model") or "gpt-5")
+        prompt_version = PROMPT_VERSION_DEFAULT
         use_mock = "mock" in form
 
-        def to_int(name: str, default: int, lo: int, hi: int) -> int:
-            val = form.get(name)
-            if not val:
-                return default
+        # Pull defaults from config; fall back sensibly
+        def get_int(name: str, default: int) -> int:
             try:
-                x = int(val)
-                return max(lo, min(hi, x))
+                return int(cfg_base.get(name) if cfg_base.get(name) is not None else default)
             except Exception:
                 return default
 
-        K = to_int("K", DEFAULTS["K"], 1, 64)
-        R = to_int("R", DEFAULTS["R"], 1, 8)
-        T = to_int("T", DEFAULTS["T"], 1, 32)
-        B = to_int("B", DEFAULTS["B"], 100, 10000)
-        max_out = to_int("max_output_tokens", DEFAULTS["max_output_tokens"], 64, 4096)
+        K = get_int("K", 16)
+        R = get_int("R", 2)
+        T = get_int("T", 8)
+        B = get_int("B", 5000)
+        max_out = get_int("max_output_tokens", 1024)
 
         # Prepare temp files
         TMP_DIR.mkdir(parents=True, exist_ok=True)
@@ -82,7 +77,8 @@ class Handler(BaseHTTPRequestHandler):
         cfg_path = TMP_DIR / f"cfg_{ts}.json"
         out_path = TMP_DIR / f"out_{ts}.json"
 
-        cfg = {
+        cfg = dict(cfg_base or {})
+        cfg.update({
             "claim": claim,
             "model": model,
             "prompt_version": prompt_version,
@@ -91,7 +87,7 @@ class Handler(BaseHTTPRequestHandler):
             "T": T,
             "B": B,
             "max_output_tokens": max_out,
-        }
+        })
         cfg_path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
 
         env = os.environ.copy()
@@ -197,4 +193,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
