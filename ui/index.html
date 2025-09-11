@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HERETIX · Screen 1</title>
+  <style>
+    :root { --bg:#0a0a0a; --fg:#cfe9cf; --green:#00ff41; --muted:#7aa37a; }
+    *{ box-sizing:border-box; }
+    html,body{ margin:0; padding:0; background:var(--bg); color:var(--fg); font-family:'Courier New', monospace; }
+    .topbar{ position:fixed; top:0; left:0; right:0; height:56px; display:flex; align-items:center; padding:0 16px; z-index:10; }
+    .brand{ color:var(--green); font-weight:800; font-size:28px; letter-spacing:4px; text-shadow:0 0 16px rgba(0,255,65,0.3); }
+    .wrap{ max-width:800px; margin:80px auto 40px; padding:0 16px; }
+    .question{ font-size:32px; font-weight:800; color:var(--fg); text-shadow:0 0 14px rgba(0,255,65,0.18); margin:0 0 14px; }
+    .sub{ margin:6px 0 18px; color:var(--muted); }
+    .card{ border:1px solid rgba(0,255,65,0.25); border-radius:8px; padding:16px; background:rgba(255,255,255,0.02); }
+    label{ display:block; margin:10px 0 6px; }
+    textarea, input[type="text"], input[type="number"], select{ width:100%; background:#0f0f0f; color:var(--fg); border:1px solid rgba(0,255,65,0.35); border-radius:6px; padding:10px; }
+    .row{ display:flex; gap:12px; }
+    .row .col{ flex:1; }
+    details{ margin-top:12px; }
+    summary{ cursor:pointer; color:var(--green); }
+    .hint{ font-size:12px; color:var(--muted); }
+    .cta{ margin-top:16px; padding:12px 18px; background:var(--green); color:#001b08; border:0; border-radius:6px; font-weight:700; cursor:pointer; }
+    .inline{ display:flex; align-items:center; gap:8px; }
+  </style>
+  <!-- Screen 1 -->
+</head>
+<body>
+  <div class="topbar"><div class="brand">HERETIX</div></div>
+  <div class="wrap">
+    <div class="question">How likely is the following true?</div>
+
+    <form class="card" method="post" action="/run">
+      <label for="claim">Claim <span class="hint">(max 280 characters)</span></label>
+      <textarea id="claim" name="claim" rows="6" maxlength="280" placeholder="e.g., Tariffs don't cause inflation" required></textarea>
+
+      <div class="row" style="margin-top:10px;">
+        <div class="col">
+          <label for="model">Model</label>
+          <select id="model" name="ui_model">
+            <option value="gpt-5" selected>GPT‑5</option>
+            <option value="claude-4.1" disabled>Claude 4.1 (coming soon)</option>
+            <option value="grok-4" disabled>Grok 4 (coming soon)</option>
+            <option value="deepseek-r1" disabled>DeepSeek R1 (coming soon)</option>
+          </select>
+        </div>
+        <div class="col">
+          <label for="mode">Mode</label>
+          <select id="mode" name="ui_mode">
+            <option value="prior" selected>Internal Knowledge Only (no retrieval)</option>
+            <option value="internet-search" disabled>Internet Search (coming soon)</option>
+            <option value="user-data" disabled>User Data (coming soon)</option>
+          </select>
+        </div>
+      </div>
+
+
+      <button type="submit" class="cta">ANALYZE CLAIM</button>
+    </form>
+  </div>
+</body>
+</html>
