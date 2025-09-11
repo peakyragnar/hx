@@ -27,7 +27,6 @@
 </head>
 <body>
   <div class="wrap">
-    <div class="screen">SCREEN 1</div>
     <h1 class="title">HERETIX</h1>
     <div class="sub">How likely is the following true? <span class="hint">Internal knowledge only (no retrieval).</span></div>
 
@@ -35,14 +34,7 @@
       <label for="claim">Claim</label>
       <textarea id="claim" name="claim" rows="6" maxlength="600" placeholder="e.g., Tariffs don't cause inflation" required></textarea>
 
-      <div class="row">
-        <div class="col">
-          <label>Mock</label>
-          <div class="inline"><input type="checkbox" id="mock" name="mock" /><span class="hint">no network</span></div>
-        </div>
-      </div>
-
-      <div class="hint">Uses defaults from runs/rpl_example.yaml and prompt rpl_g5_v4.</div>
+      <!-- no additional controls; UI uses defaults from configuration -->
 
       <button type="submit" class="cta">ANALYZE CLAIM</button>
     </form>

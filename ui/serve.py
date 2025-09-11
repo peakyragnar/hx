@@ -56,7 +56,6 @@ class Handler(BaseHTTPRequestHandler):
 
         model = str(cfg_base.get("model") or "gpt-5")
         prompt_version = str(cfg_base.get("prompt_version") or PROMPT_VERSION_DEFAULT)
-        use_mock = "mock" in form
 
         # Pull defaults from config; fall back sensibly
         def get_int(name: str, default: int) -> int:
@@ -95,7 +94,6 @@ class Handler(BaseHTTPRequestHandler):
         job = {
             "cfg_path": str(cfg_path),
             "out_path": str(out_path),
-            "mock": bool(use_mock),
             "claim": claim,
             "model": model,
             "prompt_version": prompt_version,
@@ -122,7 +120,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_WAIT_AND_RENDER(self, job: dict) -> None:
         # Execute CLI and render results
-        cfg_path = Path(job["cfg_path"]) ; out_path = Path(job["out_path"]) ; use_mock = bool(job.get("mock"))
+        cfg_path = Path(job["cfg_path"]) ; out_path = Path(job["out_path"]) 
         claim = str(job.get("claim") or "")
         model = str(job.get("model") or "gpt-5")
         prompt_version = str(job.get("prompt_version") or "rpl_g5_v4")
@@ -132,8 +130,6 @@ class Handler(BaseHTTPRequestHandler):
         env.setdefault("HERETIX_RPL_SEED", "42")
 
         cmd = ["uv","run","heretix","run","--config",str(cfg_path),"--out",str(out_path)]
-        if use_mock:
-            cmd.append("--mock")
         try:
             start = time.time()
             cp = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=900, check=True)
