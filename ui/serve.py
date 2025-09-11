@@ -63,6 +63,23 @@ class Handler(BaseHTTPRequestHandler):
         B = get_int("B", 5000)
         max_out = get_int("max_output_tokens", 1024)
 
+        # UI selections (front-end only; for display on results page)
+        ui_model_val = (form.get("ui_model") or "gpt-5").strip()
+        ui_mode_val = (form.get("ui_mode") or "prior").strip()
+        model_labels = {
+            "gpt-5": "GPT‑5",
+            "claude-4.1": "Claude 4.1",
+            "grok-4": "Grok 4",
+            "deepseek-r1": "DeepSeek R1",
+        }
+        mode_labels = {
+            "prior": "Internal Knowledge Only (no retrieval)",
+            "internet-search": "Internet Search",
+            "user-data": "User Data",
+        }
+        ui_model_label = model_labels.get(ui_model_val, ui_model_val)
+        ui_mode_label = mode_labels.get(ui_mode_val, ui_mode_val)
+
         # Prepare temp files & job record
         TMP_DIR.mkdir(parents=True, exist_ok=True)
         ts = int(time.time() * 1000)
@@ -90,6 +107,8 @@ class Handler(BaseHTTPRequestHandler):
             "claim": claim,
             "model": model,
             "prompt_version": prompt_version,
+            "ui_model": ui_model_label,
+            "ui_mode": ui_mode_label,
         }
         (TMP_DIR / f"job_{job_id}.json").write_text(json.dumps(job), encoding="utf-8")
 
@@ -189,6 +208,8 @@ class Handler(BaseHTTPRequestHandler):
         claim = str(job.get("claim") or "")
         model = str(job.get("model") or "gpt-5")
         prompt_version = str(job.get("prompt_version") or "rpl_g5_v4")
+        ui_model_label = str(job.get("ui_model") or "GPT‑5")
+        ui_mode_label = str(job.get("ui_mode") or "Internal Knowledge Only (no retrieval)")
 
         env = os.environ.copy()
         env.setdefault("HERETIX_DB_PATH", str(Path("runs/heretix_ui.sqlite")))
@@ -222,8 +243,8 @@ class Handler(BaseHTTPRequestHandler):
                 "CLAIM": claim,
                 "PERCENT": percent,
                 "VERDICT": verdict,
-                "PROMPT_VERSION": prompt_version,
-                "MODEL": model,
+                "UI_MODEL": ui_model_label,
+                "UI_MODE": ui_mode_label,
             },
         )
         self._ok(body, "text/html")
