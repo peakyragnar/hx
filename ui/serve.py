@@ -445,7 +445,8 @@ class Handler(BaseHTTPRequestHandler):
             why_head = "Why it’s uncertain"
             why_kind = "uncertain"
 
-        why_items_html = "\n".join(f"<li>{json.dumps(r)[1:-1]}</li>" for r in reasons)
+        # Escape for HTML but preserve Unicode characters (avoid JSON string escapes like \u201c)
+        why_items_html = "\n".join(f"<li>{html.escape(r, quote=True)}</li>" for r in reasons)
         note = ""
 
         body = _render(

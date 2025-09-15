@@ -7,4 +7,4 @@ T: 16
 B: 5000
 seed: 42
 max_prompt_chars: 1500
-max_output_tokens: 1024
+max_output_tokens: 1200

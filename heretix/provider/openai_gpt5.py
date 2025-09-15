@@ -8,16 +8,6 @@ from typing import Dict, Any
 from openai import OpenAI
 
 
-_client = None
-
-
-def _client_once() -> OpenAI:
-    global _client
-    if _client is None:
-        _client = OpenAI()
-    return _client
-
-
 def score_claim(
     *,
     claim: str,
@@ -45,7 +35,8 @@ def score_claim(
     prompt_sha256 = hashlib.sha256((full_instructions + "\n\n" + user_text).encode("utf-8")).hexdigest()
 
     t0 = time.time()
-    client = _client_once()
+    # Create a fresh client per call for thread-safety under concurrency
+    client = OpenAI()
     try:
         resp = client.responses.create(
             model=model,

@@ -104,5 +104,12 @@ Key mental model
 - Run_id = the recipe definition (claim|model|prompt_version|K|R).
 - Samples = the ingredient measurements (template+replicate outputs) reused for performance.
 - JSON artifact = the execution record (what you compare/learn from).
-- Aggregation uses only the samples collected/valid in that execution; caching only decides whether we call the provider or reuse — it doesn’t change
-the math.
+- Aggregation uses only the samples collected/valid in that execution; caching only decides whether we call the provider or reuse — it doesn’t change the math.
+
+CONCURRENCY (ENV VAR)
+
+- HERETIX_CONCURRENCY (int; default 0/off): parallelize provider calls with a bounded thread pool.
+  - Recommended: 6–8. Increase cautiously based on provider limits.
+  - Determinism & identity: replicate indices, prompt hashes, and cache keys are computed before dispatch; DB writes occur on the main thread.
+  - Estimator/DB schema unchanged. Same inputs and seed → same p/CI/stability.
+  - Token cap tip: for long claims, use `max_output_tokens: 768–1200` to avoid truncated JSON under parallel load.
