@@ -12,7 +12,6 @@ import yaml
 from typing import Optional, List
 import re
 import html
-import re
 
 # Provider adapters (reuse existing harness adapters)
 from heretix.provider.openai_gpt5 import score_claim as _score_claim_live
@@ -32,10 +31,10 @@ PORT_DEFAULT = 7799
 
 
 def _render(path: Path, mapping: dict[str, str]) -> bytes:
-    html = path.read_text(encoding="utf-8")
+    html_text = path.read_text(encoding="utf-8")
     for k, v in mapping.items():
-        html = html.replace("{" + k + "}", v)
-    return html.encode("utf-8")
+        html_text = html_text.replace("{" + k + "}", v)
+    return html_text.encode("utf-8")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -506,7 +505,15 @@ class Handler(BaseHTTPRequestHandler):
             q = urllib.parse.parse_qs(parsed.query)
             job_id = (q.get("job") or [""])[0]
             job_file = TMP_DIR / f"job_{job_id}.json"
-            if not job_id or not job_id.isdigit() or not job_file.exists():
+            # Strictly validate job id and resolved path
+            if not job_id or not job_id.isdigit() or not (10 <= len(job_id) <= 20):
+                self._bad("Invalid or missing job id"); return
+            try:
+                if not job_file.resolve().is_relative_to(TMP_DIR.resolve()):
+                    self._bad("Invalid or missing job id"); return
+            except Exception:
+                self._bad("Invalid or missing job id"); return
+            if not job_file.exists():
                 self._bad("Invalid or missing job id"); return
             try:
                 job = json.loads(job_file.read_text(encoding="utf-8"))
