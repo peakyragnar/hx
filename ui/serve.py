@@ -11,6 +11,8 @@ from pathlib import Path
 import yaml
 from typing import Optional, List
 import re
+import html
+import re
 
 # Provider adapters (reuse existing harness adapters)
 from heretix.provider.openai_gpt5 import score_claim as _score_claim_live
@@ -21,7 +23,12 @@ from openai import OpenAI
 ROOT = Path(__file__).parent
 TMP_DIR = Path("runs/ui_tmp")
 CFG_PATH_DEFAULT = Path("runs/rpl_example.yaml")
-PROMPT_VERSION_DEFAULT = "rpl_g5_v4"
+PROMPT_VERSION_DEFAULT = "rpl_g5_v5"  # keep in sync with examples
+
+# Tunables (avoid magic numbers)
+MAX_CLAIM_CHARS = 280
+RUN_TIMEOUT_SEC = 900
+PORT_DEFAULT = 7799
 
 
 def _render(path: Path, mapping: dict[str, str]) -> bytes:
@@ -45,8 +52,8 @@ class Handler(BaseHTTPRequestHandler):
         claim = (form.get("claim") or "").strip()
         if not claim:
             self._bad("Missing claim"); return
-        if len(claim) > 280:
-            self._bad("Claim too long (max 280 characters, like a standard tweet)"); return
+        if len(claim) > MAX_CLAIM_CHARS:
+            self._bad(f"Claim too long (max {MAX_CLAIM_CHARS} characters)"); return
 
         # Gather settings (from config file; front-end does not set knobs)
         try:
@@ -104,6 +111,12 @@ class Handler(BaseHTTPRequestHandler):
             "B": B,
             "max_output_tokens": max_out,
         })
+        # Ensure paths are within TMP_DIR (defense in depth)
+        try:
+            if not cfg_path.resolve().is_relative_to(TMP_DIR.resolve()) or not out_path.resolve().is_relative_to(TMP_DIR.resolve()):
+                self._err("Invalid file paths"); return
+        except Exception:
+            self._err("Invalid file paths"); return
         cfg_path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
 
         # Record job for deferred execution
@@ -209,7 +222,7 @@ class Handler(BaseHTTPRequestHandler):
         self._ok(running_html, "text/html")
         return
 
-    def do_WAIT_AND_RENDER(self, job: dict) -> None:
+    def do_WAIT_AND_RENDER(self, job: dict, job_file: Optional[Path] = None) -> None:
         # Execute CLI and render results
         cfg_path = Path(job["cfg_path"]) ; out_path = Path(job["out_path"]) 
         claim = str(job.get("claim") or "")
@@ -225,7 +238,7 @@ class Handler(BaseHTTPRequestHandler):
         cmd = ["uv","run","heretix","run","--config",str(cfg_path),"--out",str(out_path)]
         try:
             start = time.time()
-            cp = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=900, check=True)
+            cp = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=RUN_TIMEOUT_SEC, check=True)
             print(f"[ui] OK in {time.time()-start:.1f}s · out={len(cp.stdout)}B err={len(cp.stderr)}B")
         except subprocess.CalledProcessError as e:
             msg = (e.stderr or e.stdout or str(e))[:2000]
@@ -234,6 +247,9 @@ class Handler(BaseHTTPRequestHandler):
             self._err("Run timed out"); return
 
         try:
+            # Sanity limit to prevent huge/malformed file issues
+            if out_path.stat().st_size > 2_000_000:
+                self._err("Output too large"); return
             doc = json.loads(out_path.read_text(encoding="utf-8"))
             run = (doc.get("runs") or [{}])[0]
             ag = run.get("aggregates") or {}
@@ -436,11 +452,11 @@ class Handler(BaseHTTPRequestHandler):
         body = _render(
             ROOT / "results.html",
             {
-                "CLAIM": claim,
+                "CLAIM": html.escape(claim, quote=True),
                 "PERCENT": percent,
-                "VERDICT": verdict,
-                "UI_MODEL": ui_model_label,
-                "UI_MODE": ui_mode_label,
+                "VERDICT": html.escape(verdict, quote=True),
+                "UI_MODEL": html.escape(ui_model_label, quote=True),
+                "UI_MODE": html.escape(ui_mode_label, quote=True),
                 "WHY_HEAD": why_head,
                 "WHY_ITEMS": why_items_html,
                 "WHY_KIND": why_kind,
@@ -449,14 +465,31 @@ class Handler(BaseHTTPRequestHandler):
         )
         self._ok(body, "text/html")
 
+        # Best-effort cleanup of temp files
+        try:
+            cfg_path.unlink(missing_ok=True)
+            out_path.unlink(missing_ok=True)
+            if job_file:
+                Path(job_file).unlink(missing_ok=True)
+        except Exception:
+            pass
+
     def do_GET(self):  # noqa: N802
         if self.path in ("/", "/index.html"):
             body = (ROOT / "index.html").read_bytes()
             self._ok(body, "text/html")
             return
         if self.path.startswith("/assets/"):
-            # serve static assets under ui/assets
-            local = ROOT / (self.path.lstrip("/"))  # ui/assets/...
+            # serve static assets under ui/assets with strict path validation
+            asset_root = (ROOT / "assets").resolve()
+            rel = self.path[len("/assets/"):]
+            # normalize and prevent traversal
+            local = (asset_root / Path(rel)).resolve()
+            try:
+                if not local.is_relative_to(asset_root):
+                    self._not_found(); return
+            except Exception:
+                self._not_found(); return
             if not local.exists() or not local.is_file():
                 self._not_found(); return
             ext = local.suffix.lower()
@@ -473,13 +506,13 @@ class Handler(BaseHTTPRequestHandler):
             q = urllib.parse.parse_qs(parsed.query)
             job_id = (q.get("job") or [""])[0]
             job_file = TMP_DIR / f"job_{job_id}.json"
-            if not job_id or not job_file.exists():
+            if not job_id or not job_id.isdigit() or not job_file.exists():
                 self._bad("Invalid or missing job id"); return
             try:
                 job = json.loads(job_file.read_text(encoding="utf-8"))
             except Exception as e:
                 self._err(f"Bad job file: {e}"); return
-            return self.do_WAIT_AND_RENDER(job)
+            return self.do_WAIT_AND_RENDER(job, job_file)
         self._not_found()
 
     # helpers
@@ -513,7 +546,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main() -> None:
     host = os.getenv("UI_HOST", "127.0.0.1")
-    port = int(os.getenv("UI_PORT", "8000"))
+    port = int(os.getenv("UI_PORT", str(PORT_DEFAULT)))
     httpd = HTTPServer((host, port), Handler)
     has_key = bool(os.getenv("OPENAI_API_KEY"))
     is_mock = bool(os.getenv("HERETIX_MOCK"))
