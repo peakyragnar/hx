@@ -231,19 +231,27 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
     # Dispatch misses with optional concurrency
     conc_env = os.getenv("HERETIX_CONCURRENCY")
     max_workers: Optional[int] = None
-    try:
-        if conc_env:
+    if conc_env:
+        try:
             mw = int(conc_env)
-            if mw > 0:
+            # Validate bounds to protect system/provider; 1..32 is a sane default window
+            if 1 <= mw <= 32:
                 max_workers = mw
-    except Exception:
-        max_workers = None
+            else:
+                print(f"[rpl] WARN: HERETIX_CONCURRENCY out of bounds ({mw}); expected 1..32. Running sequentially.")
+        except (ValueError, TypeError):
+            print(f"[rpl] WARN: HERETIX_CONCURRENCY not an integer ('{conc_env}'); running sequentially.")
 
     if misses:
         if max_workers and max_workers > 1:
-            with _fut.ThreadPoolExecutor(max_workers=max_workers) as ex:
-                for row in ex.map(_call_and_build, misses):
-                    rows_ready.append(row)
+            try:
+                with _fut.ThreadPoolExecutor(max_workers=max_workers) as ex:
+                    for row in ex.map(_call_and_build, misses):
+                        rows_ready.append(row)
+            except Exception as e:
+                print(f"[rpl] WARN: concurrency setup failed ({e}); falling back to sequential.")
+                for w in misses:
+                    rows_ready.append(_call_and_build(w))
         else:
             for w in misses:
                 rows_ready.append(_call_and_build(w))
@@ -253,10 +261,12 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
         # Build a map from cache_key to work item for quick lookup
         wmap = {w.cache_key: w for w in work_items}
         repaired: List[Dict[str, Any]] = []
+        invalid_before = 0
         for row in rows_ready:
             if row.get("json_valid"):
                 repaired.append(row)
                 continue
+            invalid_before += 1
             w = wmap.get(str(row.get("cache_key")))
             if w is None:
                 repaired.append(row)
@@ -268,6 +278,8 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             except Exception:
                 repaired.append(row)
         rows_ready = repaired
+        invalid_after = sum(1 for r in rows_ready if not r.get("json_valid"))
+        print(f"[rpl] Concurrency: workers={max_workers} misses={len(misses)} invalid_before={invalid_before} invalid_after={invalid_after}")
 
     # Build aggregation inputs and runs list from all rows
     for row in rows_ready:
