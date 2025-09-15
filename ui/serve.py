@@ -1,0 +1,570 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import os
+import time
+import urllib.parse
+import subprocess
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+import yaml
+from typing import Optional, List
+import re
+import html
+
+# Provider adapters (reuse existing harness adapters)
+from heretix.provider.openai_gpt5 import score_claim as _score_claim_live
+from heretix.provider.mock import score_claim_mock as _score_claim_mock
+from openai import OpenAI
+
+
+ROOT = Path(__file__).parent
+TMP_DIR = Path("runs/ui_tmp")
+CFG_PATH_DEFAULT = Path("runs/rpl_example.yaml")
+PROMPT_VERSION_DEFAULT = "rpl_g5_v5"  # keep in sync with examples
+
+# Tunables (avoid magic numbers)
+MAX_CLAIM_CHARS = 280
+RUN_TIMEOUT_SEC = 900
+PORT_DEFAULT = 7799
+
+
+def _render(path: Path, mapping: dict[str, str]) -> bytes:
+    html_text = path.read_text(encoding="utf-8")
+    for k, v in mapping.items():
+        html_text = html_text.replace("{" + k + "}", v)
+    return html_text.encode("utf-8")
+
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, fmt, *args):  # quieter
+        print("[ui]", fmt % args)
+
+    def do_POST(self):  # noqa: N802
+        if self.path != "/run":
+            self._not_found(); return
+        length = int(self.headers.get("Content-Length") or 0)
+        data = self.rfile.read(length).decode("utf-8")
+        form = {k: v[0] for k, v in urllib.parse.parse_qs(data).items()}
+
+        claim = (form.get("claim") or "").strip()
+        if not claim:
+            self._bad("Missing claim"); return
+        if len(claim) > MAX_CLAIM_CHARS:
+            self._bad(f"Claim too long (max {MAX_CLAIM_CHARS} characters)"); return
+
+        # Gather settings (from config file; front-end does not set knobs)
+        try:
+            cfg_base = yaml.safe_load(CFG_PATH_DEFAULT.read_text(encoding="utf-8")) if CFG_PATH_DEFAULT.exists() else {}
+        except Exception as e:
+            self._err(f"Failed to read {CFG_PATH_DEFAULT}: {e}"); return
+
+        model = str(cfg_base.get("model") or "gpt-5")
+        prompt_version = str(cfg_base.get("prompt_version") or PROMPT_VERSION_DEFAULT)
+
+        # Pull defaults from config; fall back sensibly
+        def get_int(name: str, default: int) -> int:
+            try:
+                return int(cfg_base.get(name) if cfg_base.get(name) is not None else default)
+            except Exception:
+                return default
+
+        K = get_int("K", 16)
+        R = get_int("R", 2)
+        T = get_int("T", 8)
+        B = get_int("B", 5000)
+        max_out = get_int("max_output_tokens", 1024)
+
+        # UI selections (front-end only; for display on results page)
+        ui_model_val = (form.get("ui_model") or "gpt-5").strip()
+        ui_mode_val = (form.get("ui_mode") or "prior").strip()
+        model_labels = {
+            "gpt-5": "GPT‑5",
+            "claude-4.1": "Claude 4.1",
+            "grok-4": "Grok 4",
+            "deepseek-r1": "DeepSeek R1",
+        }
+        mode_labels = {
+            "prior": "Internal Knowledge Only (no retrieval)",
+            "internet-search": "Internet Search",
+            "user-data": "User Data",
+        }
+        ui_model_label = model_labels.get(ui_model_val, ui_model_val)
+        ui_mode_label = mode_labels.get(ui_mode_val, ui_mode_val)
+
+        # Prepare temp files & job record
+        TMP_DIR.mkdir(parents=True, exist_ok=True)
+        ts = int(time.time() * 1000)
+        cfg_path = TMP_DIR / f"cfg_{ts}.json"
+        out_path = TMP_DIR / f"out_{ts}.json"
+
+        cfg = dict(cfg_base or {})
+        cfg.update({
+            "claim": claim,
+            "model": model,
+            "prompt_version": prompt_version,
+            "K": K,
+            "R": R,
+            "T": T,
+            "B": B,
+            "max_output_tokens": max_out,
+        })
+        # Ensure paths are within TMP_DIR (defense in depth)
+        try:
+            if not cfg_path.resolve().is_relative_to(TMP_DIR.resolve()) or not out_path.resolve().is_relative_to(TMP_DIR.resolve()):
+                self._err("Invalid file paths"); return
+        except Exception:
+            self._err("Invalid file paths"); return
+        cfg_path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+
+        # Record job for deferred execution
+        job_id = f"{ts}"
+        job = {
+            "cfg_path": str(cfg_path),
+            "out_path": str(out_path),
+            "claim": claim,
+            "model": model,
+            "prompt_version": prompt_version,
+            "ui_model": ui_model_label,
+            "ui_mode": ui_mode_label,
+        }
+        (TMP_DIR / f"job_{job_id}.json").write_text(json.dumps(job), encoding="utf-8")
+
+        # Return a running page with meta refresh to /wait
+        # Prefer user-provided image at ui/assets/running_bg.(png|jpg|jpeg); otherwise fallback SVG scene
+        bg = None
+        for name in ("running_bg.png", "running_bg.jpg", "running_bg.jpeg"):
+            p = ROOT / "assets" / name
+            if p.exists():
+                bg = "/assets/" + name
+                break
+        if bg:
+            running_html = f"""
+            <!doctype html>
+            <meta charset='utf-8' />
+            <meta http-equiv='refresh' content='1;url=/wait?job={job_id}'>
+            <title>HERETIX · Running…</title>
+            <style>
+              body {{ background:#0a0a0a; color:#cfe9cf; font-family:'Courier New', monospace; text-align:center; padding:48px; }}
+              .big {{ color:#00ff41; font-size:28px; text-shadow:0 0 18px rgba(0,255,65,0.35); }}
+              .muted {{ color:#7aa37a; margin-top:8px; }}
+              .hero {{ width:420px; height:420px; margin:20px auto; position:relative; background:url('{bg}') center/cover no-repeat; border-radius:8px; box-shadow:0 0 28px rgba(0,255,65,0.15) inset; }}
+              /* Adjustable pill position to align with the image's pill */
+              .hero {{ --pill-left: 50%; --pill-top: 48%; }}
+              /* Dark soft mask to diminish the background pill so only the animated one is perceived */
+              .mask {{ position:absolute; left:var(--pill-left); top:var(--pill-top); width:120px; height:120px; transform: translate(-50%,-50%); pointer-events:none; background: radial-gradient(circle at center, rgba(10,10,10,0.85) 0%, rgba(10,10,10,0.65) 45%, rgba(10,10,10,0.25) 70%, rgba(10,10,10,0.0) 100%); border-radius:50%; filter: blur(1px); }}
+              .pill {{ position:absolute; left:var(--pill-left); top:var(--pill-top); width:54px; height:20px; transform: translate(-50%,-50%); background:#ff2b2b; border-radius:999px; box-shadow:0 0 18px rgba(255,0,0,0.45); border:1px solid #ff6b6b; animation: spin 1.6s linear infinite; }}
+              @keyframes spin {{ from {{ transform: translate(-50%,-50%) rotate(0deg); }} to {{ transform: translate(-50%,-50%) rotate(360deg); }} }}
+            </style>
+            <h1 class='big'>Running analysis…</h1>
+            <div class='hero'>
+              <div class='mask'></div>
+              <div class='pill' aria-label='red pill'></div>
+            </div>
+            <div class='muted'>This may take up to a minute.</div>
+            """.encode("utf-8")
+        else:
+            running_html = f"""
+            <!doctype html>
+            <meta charset='utf-8' />
+            <meta http-equiv='refresh' content='1;url=/wait?job={job_id}'>
+            <title>HERETIX · Running…</title>
+            <style>
+              body {{ background:#0a0a0a; color:#cfe9cf; font-family:'Courier New', monospace; text-align:center; padding:48px; }}
+              .big {{ color:#00ff41; font-size:28px; text-shadow:0 0 18px rgba(0,255,65,0.35); }}
+              .muted {{ color:#7aa37a; margin-top:8px; }}
+              .scene {{ width:360px; margin:28px auto; }}
+              .pill {{ transform-origin: 180px 86px; animation: levitate 1.8s ease-in-out infinite; }}
+              @keyframes levitate {{ 0% {{ transform: translateY(0) rotate(0deg); }} 50% {{ transform: translateY(-8px) rotate(180deg); }} 100% {{ transform: translateY(0) rotate(360deg); }} }}
+            </style>
+            <h1 class='big'>Running analysis…</h1>
+            <div class='scene'>
+              <svg width='360' height='220' viewBox='0 0 360 220' xmlns='http://www.w3.org/2000/svg' role='img' aria-label='matrix silhouette with levitating red pill'>
+                <defs>
+                  <linearGradient id='g' x1='0' y1='0' x2='0' y2='1'>
+                    <stop offset='0%' stop-color='#0a0a0a'/>
+                    <stop offset='100%' stop-color='#0e1a0e'/>
+                  </linearGradient>
+                  <filter id='glow-green' x='-50%' y='-50%' width='200%' height='200%'>
+                    <feGaussianBlur stdDeviation='2' result='b'/>
+                    <feColorMatrix in='b' type='matrix' values='0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 0.8 0'/>
+                  </filter>
+                  <filter id='glow-red' x='-50%' y='-50%' width='200%' height='200%'>
+                    <feGaussianBlur stdDeviation='1.6' result='r'/>
+                    <feColorMatrix in='r' type='matrix' values='1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.9 0'/>
+                  </filter>
+                </defs>
+                <rect x='0' y='0' width='360' height='220' fill='url(#g)'/>
+                <g fill='#0f120f' stroke='#00ff41' stroke-opacity='0.35' stroke-width='1.2' filter='url(#glow-green)'>
+                  <circle cx='180' cy='58' r='18'/>
+                  <rect x='162' y='75' width='36' height='40' rx='6'/>
+                  <path d='M150 118 C165 112, 195 112, 210 118 L206 134 C192 132, 168 132, 154 134 Z'/>
+                  <path d='M150 118 L138 100 L146 96 L158 112 Z'/>
+                  <path d='M210 118 L222 132 L214 136 L202 122 Z'/>
+                  <path d='M168 134 L168 172 L160 172 L160 134 Z'/>
+                  <path d='M192 134 L192 172 L200 172 L200 134 Z'/>
+                </g>
+                <g fill='#00ff41' opacity='0.9'>
+                  <rect x='170' y='54' width='10' height='4' rx='1'/>
+                  <rect x='180' y='54' width='10' height='4' rx='1'/>
+                  <rect x='179' y='55' width='2' height='2'/>
+                </g>
+                <g class='pill'>
+                  <ellipse cx='146' cy='86' rx='18' ry='7' fill='#ff2b2b' filter='url(#glow-red)' stroke='#ff6b6b' stroke-width='0.8'/>
+                  <rect x='134' y='83.4' width='24' height='5' rx='2.5' fill='rgba(255,255,255,0.12)'/>
+                </g>
+              </svg>
+            </div>
+            <div class='muted'>This may take up to a minute.</div>
+            """.encode("utf-8")
+        self._ok(running_html, "text/html")
+        return
+
+    def do_WAIT_AND_RENDER(self, job: dict, job_file: Optional[Path] = None) -> None:
+        # Execute CLI and render results
+        cfg_path = Path(job["cfg_path"]) ; out_path = Path(job["out_path"]) 
+        claim = str(job.get("claim") or "")
+        model = str(job.get("model") or "gpt-5")
+        prompt_version = str(job.get("prompt_version") or "rpl_g5_v4")
+        ui_model_label = str(job.get("ui_model") or "GPT‑5")
+        ui_mode_label = str(job.get("ui_mode") or "Internal Knowledge Only (no retrieval)")
+
+        env = os.environ.copy()
+        env.setdefault("HERETIX_DB_PATH", str(Path("runs/heretix_ui.sqlite")))
+        env.setdefault("HERETIX_RPL_SEED", "42")
+
+        cmd = ["uv","run","heretix","run","--config",str(cfg_path),"--out",str(out_path)]
+        try:
+            start = time.time()
+            cp = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=RUN_TIMEOUT_SEC, check=True)
+            print(f"[ui] OK in {time.time()-start:.1f}s · out={len(cp.stdout)}B err={len(cp.stderr)}B")
+        except subprocess.CalledProcessError as e:
+            msg = (e.stderr or e.stdout or str(e))[:2000]
+            self._err(f"Run failed\n\n{msg}"); return
+        except subprocess.TimeoutExpired:
+            self._err("Run timed out"); return
+
+        try:
+            # Sanity limit to prevent huge/malformed file issues
+            if out_path.stat().st_size > 2_000_000:
+                self._err("Output too large"); return
+            doc = json.loads(out_path.read_text(encoding="utf-8"))
+            run = (doc.get("runs") or [{}])[0]
+            ag = run.get("aggregates") or {}
+            p = float(ag.get("prob_true_rpl"))
+            width = float(ag.get("ci_width") or 0.0)
+            stability = float(ag.get("stability_score") or 0.0)
+            compliance = float(ag.get("rpl_compliance_rate") or 0.0)
+        except Exception as e:
+            self._err(f"Failed to parse output JSON: {e}"); return
+
+        percent = f"{p*100:.1f}" if p == p else "?"
+        verdict = "TRUE" if (p == p and p >= 0.5) else ("FALSE" if p == p else "?")
+
+        # Generate a brief model explanation via one provider call (same prompt version)
+        def _load_prompt(prompts_file: Optional[str], version: str) -> tuple[str, str, List[str]]:
+            try:
+                if prompts_file:
+                    path = Path(prompts_file)
+                else:
+                    path = Path(__file__).resolve().parents[1] / "heretix" / "prompts" / f"{version}.yaml"
+                docp = yaml.safe_load(path.read_text(encoding="utf-8"))
+                system_text = str(docp.get("system") or "")
+                user_template = str(docp.get("user_template") or "")
+                paraphrases = [str(x) for x in (docp.get("paraphrases") or [])]
+                return system_text, user_template, paraphrases
+            except Exception:
+                return "", "Claim: \"{CLAIM}\"\n\nReturn the JSON only.", ["Without retrieval, estimate P(true) for: {CLAIM}"]
+
+        def _explain_live_with_json(claim_text: str, verdict_label: str, tok_cap: int) -> list[str]:
+            try:
+                client = OpenAI()
+                instructions = (
+                    "Explain the truth assessment of a short claim for a general audience.\n"
+                    "Rules:\n"
+                    "- Do not mention models, prompts, probabilities, or process.\n"
+                    "- No links or citations.\n"
+                    "- Write 2–4 short sentences (≤25 words each) focusing on: definitions of key terms, typical context/scope, and notable exceptions.\n"
+                    "Output strict JSON: {\n  \"reasons\": [string, ...]\n}"
+                )
+                user_text = (
+                    f"Claim: \"{claim_text}\"\n"
+                    f"Verdict: {verdict_label}\n"
+                    "Return only the JSON."
+                )
+                resp = client.responses.create(
+                    model=model,
+                    instructions=instructions,
+                    input=[{"role": "user", "content": [{"type": "input_text", "text": user_text}]}],
+                    max_output_tokens=min(max(tok_cap, 120), 512),
+                    reasoning={"effort": "minimal"},
+                )
+                text = getattr(resp, "output_text", None)
+                if not text:
+                    # Fallback: walk structured output
+                    text = None
+                    for o in getattr(resp, "output", []) or []:
+                        if getattr(o, "type", None) == "message":
+                            for part in getattr(o, "content", []) or []:
+                                if getattr(part, "type", None) == "output_text":
+                                    text = getattr(part, "text", None)
+                                    break
+                        if text:
+                            break
+                if not text:
+                    return []
+                try:
+                    obj = json.loads(text)
+                    reasons = obj.get("reasons") or []
+                    if not isinstance(reasons, list):
+                        reasons = []
+                except Exception:
+                    # Heuristic extraction: bullets or sentences
+                    reasons = []
+                    # bullet-style
+                    for line in text.splitlines():
+                        ls = line.strip().lstrip("-*•0123456789. ").strip()
+                        if len(ls.split()) >= 3:
+                            reasons.append(ls)
+                    if not reasons:
+                        # sentence split
+                        parts = re.split(r"(?<=[\.!?])\s+", text)
+                        for s in parts:
+                            ss = s.strip()
+                            if 8 <= len(ss.split()) <= 28:
+                                reasons.append(ss)
+                # Sanitize and cap
+                out: list[str] = []
+                for s in reasons:
+                    if isinstance(s, str):
+                        ss = s.strip()
+                        if ss:
+                            out.append(ss if ss.endswith(".") else ss + ".")
+                    if len(out) >= 4:
+                        break
+                print(f"[ui] live-explainer ok · reasons={len(out)}")
+                return out[:4]
+            except Exception as e:
+                print(f"[ui] live-explainer error: {e}")
+                return []
+
+        def _generate_explanation() -> list[str]:
+            # Prefer config prompts_file if set
+            try:
+                cfg_obj = json.loads(cfg_path.read_text(encoding="utf-8"))
+            except Exception:
+                cfg_obj = {}
+            prompts_file = cfg_obj.get("prompts_file")
+            max_out = int(cfg_obj.get("max_output_tokens") or 512)
+
+            sys_text, user_tmpl, phrs = _load_prompt(prompts_file, prompt_version)
+            paraphrase = phrs[0] if phrs else "Without retrieval, estimate P(true) for: {CLAIM}"
+
+            use_mock = bool(os.getenv("HERETIX_MOCK")) or (os.getenv("OPENAI_API_KEY") is None)
+            try:
+                # First attempt: dedicated live explainer (JSON reasons), only in live mode
+                reasons: list[str] = []
+                if not use_mock:
+                    verdict_label = (
+                        "likely true" if p >= 0.60 else ("likely false" if p <= 0.40 else "uncertain")
+                    )
+                    reasons = _explain_live_with_json(claim, verdict_label, max_out)
+                if reasons:
+                    print("[ui] explanation mode: live-explainer")
+                    return reasons
+                if use_mock:
+                    reasons = []  # avoid mock placeholder text
+                else:
+                    out = _score_claim_live(
+                        claim=claim,
+                        system_text=sys_text,
+                        user_template=user_tmpl,
+                        paraphrase_text=paraphrase,
+                        model=model,
+                        max_output_tokens=max_out,
+                    )
+                    raw = out.get("raw") or {}
+                    bullets = raw.get("reasoning_bullets") or []
+                    if not isinstance(bullets, list) or not bullets:
+                        bullets = raw.get("contrary_considerations") or []
+                    # Choose 2–3 short reasons, remove processing/meta terms
+                    ban = ("mock", "retrieval", "citation", "link", "json", "schema", "format", "paraphrase", "prior")
+                    reasons = []
+                    for x in bullets:
+                        if not isinstance(x, str):
+                            continue
+                        r = x.strip().rstrip(".;")
+                        r_low = r.lower()
+                        if any(b in r_low for b in ban):
+                            continue
+                        reasons.append(r)
+                        if len(reasons) >= 3:
+                            break
+            except Exception as e:
+                print(f"[ui] explanation bullets path error: {e}")
+                reasons = []
+
+            # If no reasons from live call, try assumptions/ambiguity_flags
+            if not reasons and not use_mock and raw:
+                alt: list[str] = []
+                for x in (raw.get("assumptions") or []):
+                    if isinstance(x, str) and x.strip():
+                        alt.append(x.strip().rstrip(".;"))
+                        if len(alt) >= 3:
+                            break
+                for x in (raw.get("ambiguity_flags") or []):
+                    if len(alt) >= 3:
+                        break
+                    if isinstance(x, str) and x.strip():
+                        alt.append(x.strip().rstrip(".;"))
+                reasons = alt[:3]
+                if reasons:
+                    print("[ui] explanation mode: run-fields")
+
+            # Final fallback: simple, claim-facing lines
+            if not reasons:
+                if p >= 0.60:
+                    reasons = ["The claim aligns with common definitions and typical examples."]
+                elif p <= 0.40:
+                    reasons = ["The claim conflicts with common definitions and typical examples."]
+                else:
+                    reasons = ["It depends on definitions or missing context."]
+                print("[ui] explanation final-fallback used")
+            return reasons
+
+        reasons = _generate_explanation()
+        # Build display pieces
+        if p >= 0.60:
+            why_head = "Why it’s likely true"
+            why_kind = "true"
+        elif p <= 0.40:
+            why_head = "Why it’s likely false"
+            why_kind = "false"
+        else:
+            why_head = "Why it’s uncertain"
+            why_kind = "uncertain"
+
+        why_items_html = "\n".join(f"<li>{json.dumps(r)[1:-1]}</li>" for r in reasons)
+        note = ""
+
+        body = _render(
+            ROOT / "results.html",
+            {
+                "CLAIM": html.escape(claim, quote=True),
+                "PERCENT": percent,
+                "VERDICT": html.escape(verdict, quote=True),
+                "UI_MODEL": html.escape(ui_model_label, quote=True),
+                "UI_MODE": html.escape(ui_mode_label, quote=True),
+                "WHY_HEAD": why_head,
+                "WHY_ITEMS": why_items_html,
+                "WHY_KIND": why_kind,
+                "NOTE": note,
+            },
+        )
+        self._ok(body, "text/html")
+
+        # Best-effort cleanup of temp files
+        try:
+            cfg_path.unlink(missing_ok=True)
+            out_path.unlink(missing_ok=True)
+            if job_file:
+                Path(job_file).unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    def do_GET(self):  # noqa: N802
+        if self.path in ("/", "/index.html"):
+            body = (ROOT / "index.html").read_bytes()
+            self._ok(body, "text/html")
+            return
+        if self.path.startswith("/assets/"):
+            # serve static assets under ui/assets with strict path validation
+            asset_root = (ROOT / "assets").resolve()
+            rel = self.path[len("/assets/"):]
+            # normalize and prevent traversal
+            local = (asset_root / Path(rel)).resolve()
+            try:
+                if not local.is_relative_to(asset_root):
+                    self._not_found(); return
+            except Exception:
+                self._not_found(); return
+            if not local.exists() or not local.is_file():
+                self._not_found(); return
+            ext = local.suffix.lower()
+            ctype = "application/octet-stream"
+            if ext in (".png", ".apng"): ctype = "image/png"
+            elif ext in (".jpg", ".jpeg"): ctype = "image/jpeg"
+            elif ext == ".svg": ctype = "image/svg+xml"
+            elif ext == ".gif": ctype = "image/gif"
+            self._ok(local.read_bytes(), ctype)
+            return
+        if self.path.startswith("/wait"):
+            # parse ?job=
+            parsed = urllib.parse.urlparse(self.path)
+            q = urllib.parse.parse_qs(parsed.query)
+            job_id = (q.get("job") or [""])[0]
+            job_file = TMP_DIR / f"job_{job_id}.json"
+            # Strictly validate job id and resolved path
+            if not job_id or not job_id.isdigit() or not (10 <= len(job_id) <= 20):
+                self._bad("Invalid or missing job id"); return
+            try:
+                if not job_file.resolve().is_relative_to(TMP_DIR.resolve()):
+                    self._bad("Invalid or missing job id"); return
+            except Exception:
+                self._bad("Invalid or missing job id"); return
+            if not job_file.exists():
+                self._bad("Invalid or missing job id"); return
+            try:
+                job = json.loads(job_file.read_text(encoding="utf-8"))
+            except Exception as e:
+                self._err(f"Bad job file: {e}"); return
+            return self.do_WAIT_AND_RENDER(job, job_file)
+        self._not_found()
+
+    # helpers
+    def _ok(self, body: bytes, ctype: str) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", f"{ctype}; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _bad(self, msg: str) -> None:
+        body = f"<pre style='color:#eee;background:#222;padding:16px'>400 Bad Request\n\n{msg}</pre>".encode("utf-8")
+        self.send_response(400)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _err(self, msg: str) -> None:
+        body = f"<pre style='color:#eee;background:#222;padding:16px'>500 Server Error\n\n{msg}</pre>".encode("utf-8")
+        self.send_response(500)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _not_found(self) -> None:
+        self.send_response(404)
+        self.end_headers()
+
+
+def main() -> None:
+    host = os.getenv("UI_HOST", "127.0.0.1")
+    port = int(os.getenv("UI_PORT", str(PORT_DEFAULT)))
+    httpd = HTTPServer((host, port), Handler)
+    has_key = bool(os.getenv("OPENAI_API_KEY"))
+    is_mock = bool(os.getenv("HERETIX_MOCK"))
+    print(f"Heretix UI running at http://{host}:{port} · OPENAI_API_KEY={'yes' if has_key else 'no'} · MOCK={'on' if is_mock else 'off'}")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        httpd.server_close()
+
+
+if __name__ == "__main__":
+    main()
