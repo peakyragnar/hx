@@ -32,6 +32,13 @@
 - Define a uniform adapter interface now; add Anthropic/DeepSeek stubs in Phase 3.
 - When adding new models later, either lock stochastic knobs (e.g., temperature=0 if supported) or define a minimal normalization policy so runs remain comparable.
 
+## Execution Concurrency (Implemented, Env‑Gated)
+
+- Parallelize provider calls with a bounded stdlib thread pool gated by `HERETIX_CONCURRENCY` (default off).
+- Deterministic work list computed before dispatch (prompt hashes, replicate indices, cache keys).
+- DB writes and aggregation occur on the main thread to avoid locking and keep identities stable.
+- Safe defaults and reversibility: unset the env var to return to sequential behavior.
+
 ## Apply The Algorithm
 - Question: keep only factors that affect p_RPL, CI, stability.
 - Delete: redundant CLIs, legacy aggregators, scattered defaults.

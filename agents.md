@@ -37,6 +37,7 @@ Dev Environment
   - OPENAI_API_KEY: required for live runs (dotenv supported)
   - HERETIX_RPL_SEED: optional deterministic bootstrap seed (CI reproducibility)
   - HERETIX_RPL_NO_CACHE=1: bypass cached samples
+  - HERETIX_CONCURRENCY: optional bounded thread pool for provider calls (e.g., 6–8). Default off.
 - Secrets: keep .env local; never commit secrets
 
 Cloud Dev Environments
@@ -135,6 +136,10 @@ Invariants & Guardrails (Frozen)
 Common Tasks (Recipes)
 - Run a mock RPL for fast iteration:
   - uv run heretix run --config runs/rpl_example.yaml --mock --out runs/smoke.json
+- Faster live run (optional concurrency, CLI):
+  - HERETIX_CONCURRENCY=8 uv run heretix run --config runs/rpl_example.yaml --out runs/faster.json
+- Faster live run (UI):
+  - HERETIX_CONCURRENCY=8 UI_PORT=7799 uv run python ui/serve.py
 - Increase sample size or rebalance paraphrases:
   - Edit K/R/T in the config; the sampler balances counts across selected templates
 - Investigate wide CI or low stability:
@@ -170,5 +175,6 @@ References
 - Stats & estimator spec: documentation/STATS_SPEC.md
 - Refactor plan: refactor.md
 - README quick start: README.md
+ - Faster runs and guidance: faster-processing.md
 
 Truth north: Pay for movement and durability, expose priors and amplifiers, and make every number auditably boring. This repository uses uv; do not switch tooling without explicit approval.

@@ -52,6 +52,18 @@ uv run heretix describe --config runs/rpl_example.yaml
 
 Legacy CLI is available under `legacy/` for reference but is not installed by default.
 
+## Faster Runs (Optional Concurrency)
+
+- CLI (opt‑in):
+  - `HERETIX_CONCURRENCY=8 uv run heretix run --config runs/rpl_example.yaml --out runs/faster.json`
+- UI (opt‑in):
+  - `HERETIX_CONCURRENCY=8 UI_PORT=7799 uv run python ui/serve.py` then open `http://127.0.0.1:7799`
+- Notes:
+  - Concurrency parallelizes provider calls only; estimator/DB/identities unchanged.
+  - For long claims, prefer `max_output_tokens: 768–1200` to avoid truncated JSON under parallel load.
+  - Start with 6–8 workers; reduce if your provider rate‑limits.
+  - See `faster-processing.md` for details.
+
 ## Single-Claim Workflow
 - Use `claim:` in your config and run with `heretix run` as above. Outputs persist to SQLite and a single JSON file for easy inspection.
 - See the detailed step‑by‑step guide in `documentation/how-to-run.md` (includes the HTML report and opening it in Chrome).

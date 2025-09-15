@@ -66,6 +66,23 @@ sqlite3 runs/heretix.sqlite "SELECT run_id, datetime(created_at,'unixepoch','loc
 ```
 More DB tips are in `documentation/sqlite.md`.
 
+## 8) Optional: Concurrency (faster runs)
+
+Run provider calls in parallel. Estimator/math/DB remain unchanged.
+
+- CLI:
+```
+HERETIX_CONCURRENCY=6 uv run heretix run --config runs/rpl_example.yaml --out runs/faster.json
+```
+- UI:
+```
+HERETIX_CONCURRENCY=6 UI_PORT=7799 uv run python ui/serve.py
+```
+- Guidance:
+  - Start with 6–8 workers; reduce if you see provider throttling.
+  - For long claims, set `max_output_tokens: 768–1200` in your config to avoid truncated JSON under load.
+  - Cache keys are unchanged; re‑runs benefit from cache regardless of concurrency.
+
 ## 8) Generate an HTML report
 Create a static HTML report for the latest execution:
 ```
