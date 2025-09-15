@@ -248,6 +248,27 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             for w in misses:
                 rows_ready.append(_call_and_build(w))
 
+    # If concurrency was used and many rows are invalid, try a sequential repair pass
+    if max_workers and max_workers > 1:
+        # Build a map from cache_key to work item for quick lookup
+        wmap = {w.cache_key: w for w in work_items}
+        repaired: List[Dict[str, Any]] = []
+        for row in rows_ready:
+            if row.get("json_valid"):
+                repaired.append(row)
+                continue
+            w = wmap.get(str(row.get("cache_key")))
+            if w is None:
+                repaired.append(row)
+                continue
+            # Sequential retry (one more attempt)
+            try:
+                repaired_row = _call_and_build(w)
+                repaired.append(repaired_row)
+            except Exception:
+                repaired.append(row)
+        rows_ready = repaired
+
     # Build aggregation inputs and runs list from all rows
     for row in rows_ready:
         if row.get("json_valid"):
