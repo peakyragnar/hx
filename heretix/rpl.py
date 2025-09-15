@@ -157,8 +157,17 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
 
     # Define a worker to call provider and build a sample row
     def _call_and_build(w: _Work) -> Dict[str, Any]:
-        if provider_mode == "MOCK":
-            out = score_claim_mock(
+        def _once() -> Dict[str, Any]:
+            if provider_mode == "MOCK":
+                return score_claim_mock(
+                    claim=cfg.claim,
+                    system_text=system_text,
+                    user_template=user_template,
+                    paraphrase_text=w.paraphrase_text,
+                    model=cfg.model,
+                    max_output_tokens=cfg.max_output_tokens,
+                )
+            return score_claim(
                 claim=cfg.claim,
                 system_text=system_text,
                 user_template=user_template,
@@ -166,18 +175,37 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
                 model=cfg.model,
                 max_output_tokens=cfg.max_output_tokens,
             )
-        else:
-            out = score_claim(
-                claim=cfg.claim,
-                system_text=system_text,
-                user_template=user_template,
-                paraphrase_text=w.paraphrase_text,
-                model=cfg.model,
-                max_output_tokens=cfg.max_output_tokens,
-            )
+
+        out = _once()
         raw = out.get("raw", {})
         meta = out.get("meta", {})
         timing = out.get("timing", {})
+
+        # Minimal retry: if live and no numeric prob_true or URL leakage, try once more
+        def _is_valid_raw(obj: Dict[str, Any]) -> bool:
+            try:
+                if not isinstance(obj, dict):
+                    return False
+                if not ("prob_true" in obj and isinstance(obj["prob_true"], (int, float))):
+                    return False
+                if _has_citation_or_url(json.dumps(obj)):
+                    return False
+                return True
+            except Exception:
+                return False
+
+        if provider_mode != "MOCK" and not _is_valid_raw(raw):
+            # small jitter based on cache key to reduce burst
+            try:
+                sleep_ms = (int(w.cache_key[:6], 16) % 50) / 1000.0
+                time.sleep(0.05 + sleep_ms)
+            except Exception:
+                time.sleep(0.05)
+            out = _once()
+            raw = out.get("raw", {})
+            meta = out.get("meta", {})
+            timing = out.get("timing", {})
+
         prob = float(raw.get("prob_true")) if "prob_true" in raw else float("nan")
         lgt = _logit(prob) if prob == prob else float("nan")
         json_valid = int(1 if ("prob_true" in raw and isinstance(raw["prob_true"], (int, float))) else 0)
