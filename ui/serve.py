@@ -9,6 +9,13 @@ import subprocess
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 import yaml
+from typing import Optional, List
+import re
+
+# Provider adapters (reuse existing harness adapters)
+from heretix.provider.openai_gpt5 import score_claim as _score_claim_live
+from heretix.provider.mock import score_claim_mock as _score_claim_mock
+from openai import OpenAI
 
 
 ROOT = Path(__file__).parent
@@ -231,11 +238,200 @@ class Handler(BaseHTTPRequestHandler):
             run = (doc.get("runs") or [{}])[0]
             ag = run.get("aggregates") or {}
             p = float(ag.get("prob_true_rpl"))
+            width = float(ag.get("ci_width") or 0.0)
+            stability = float(ag.get("stability_score") or 0.0)
+            compliance = float(ag.get("rpl_compliance_rate") or 0.0)
         except Exception as e:
             self._err(f"Failed to parse output JSON: {e}"); return
 
         percent = f"{p*100:.1f}" if p == p else "?"
         verdict = "TRUE" if (p == p and p >= 0.5) else ("FALSE" if p == p else "?")
+
+        # Generate a brief model explanation via one provider call (same prompt version)
+        def _load_prompt(prompts_file: Optional[str], version: str) -> tuple[str, str, List[str]]:
+            try:
+                if prompts_file:
+                    path = Path(prompts_file)
+                else:
+                    path = Path(__file__).resolve().parents[1] / "heretix" / "prompts" / f"{version}.yaml"
+                docp = yaml.safe_load(path.read_text(encoding="utf-8"))
+                system_text = str(docp.get("system") or "")
+                user_template = str(docp.get("user_template") or "")
+                paraphrases = [str(x) for x in (docp.get("paraphrases") or [])]
+                return system_text, user_template, paraphrases
+            except Exception:
+                return "", "Claim: \"{CLAIM}\"\n\nReturn the JSON only.", ["Without retrieval, estimate P(true) for: {CLAIM}"]
+
+        def _explain_live_with_json(claim_text: str, verdict_label: str, tok_cap: int) -> list[str]:
+            try:
+                client = OpenAI()
+                instructions = (
+                    "Explain the truth assessment of a short claim for a general audience.\n"
+                    "Rules:\n"
+                    "- Do not mention models, prompts, probabilities, or process.\n"
+                    "- No links or citations.\n"
+                    "- Write 2–4 short sentences (≤25 words each) focusing on: definitions of key terms, typical context/scope, and notable exceptions.\n"
+                    "Output strict JSON: {\n  \"reasons\": [string, ...]\n}"
+                )
+                user_text = (
+                    f"Claim: \"{claim_text}\"\n"
+                    f"Verdict: {verdict_label}\n"
+                    "Return only the JSON."
+                )
+                resp = client.responses.create(
+                    model=model,
+                    instructions=instructions,
+                    input=[{"role": "user", "content": [{"type": "input_text", "text": user_text}]}],
+                    max_output_tokens=min(max(tok_cap, 120), 512),
+                    reasoning={"effort": "minimal"},
+                )
+                text = getattr(resp, "output_text", None)
+                if not text:
+                    # Fallback: walk structured output
+                    text = None
+                    for o in getattr(resp, "output", []) or []:
+                        if getattr(o, "type", None) == "message":
+                            for part in getattr(o, "content", []) or []:
+                                if getattr(part, "type", None) == "output_text":
+                                    text = getattr(part, "text", None)
+                                    break
+                        if text:
+                            break
+                if not text:
+                    return []
+                try:
+                    obj = json.loads(text)
+                    reasons = obj.get("reasons") or []
+                    if not isinstance(reasons, list):
+                        reasons = []
+                except Exception:
+                    # Heuristic extraction: bullets or sentences
+                    reasons = []
+                    # bullet-style
+                    for line in text.splitlines():
+                        ls = line.strip().lstrip("-*•0123456789. ").strip()
+                        if len(ls.split()) >= 3:
+                            reasons.append(ls)
+                    if not reasons:
+                        # sentence split
+                        parts = re.split(r"(?<=[\.!?])\s+", text)
+                        for s in parts:
+                            ss = s.strip()
+                            if 8 <= len(ss.split()) <= 28:
+                                reasons.append(ss)
+                # Sanitize and cap
+                out: list[str] = []
+                for s in reasons:
+                    if isinstance(s, str):
+                        ss = s.strip()
+                        if ss:
+                            out.append(ss if ss.endswith(".") else ss + ".")
+                    if len(out) >= 4:
+                        break
+                print(f"[ui] live-explainer ok · reasons={len(out)}")
+                return out[:4]
+            except Exception as e:
+                print(f"[ui] live-explainer error: {e}")
+                return []
+
+        def _generate_explanation() -> list[str]:
+            # Prefer config prompts_file if set
+            try:
+                cfg_obj = json.loads(cfg_path.read_text(encoding="utf-8"))
+            except Exception:
+                cfg_obj = {}
+            prompts_file = cfg_obj.get("prompts_file")
+            max_out = int(cfg_obj.get("max_output_tokens") or 512)
+
+            sys_text, user_tmpl, phrs = _load_prompt(prompts_file, prompt_version)
+            paraphrase = phrs[0] if phrs else "Without retrieval, estimate P(true) for: {CLAIM}"
+
+            use_mock = bool(os.getenv("HERETIX_MOCK")) or (os.getenv("OPENAI_API_KEY") is None)
+            try:
+                # First attempt: dedicated live explainer (JSON reasons), only in live mode
+                reasons: list[str] = []
+                if not use_mock:
+                    verdict_label = (
+                        "likely true" if p >= 0.60 else ("likely false" if p <= 0.40 else "uncertain")
+                    )
+                    reasons = _explain_live_with_json(claim, verdict_label, max_out)
+                if reasons:
+                    print("[ui] explanation mode: live-explainer")
+                    return reasons
+                if use_mock:
+                    reasons = []  # avoid mock placeholder text
+                else:
+                    out = _score_claim_live(
+                        claim=claim,
+                        system_text=sys_text,
+                        user_template=user_tmpl,
+                        paraphrase_text=paraphrase,
+                        model=model,
+                        max_output_tokens=max_out,
+                    )
+                    raw = out.get("raw") or {}
+                    bullets = raw.get("reasoning_bullets") or []
+                    if not isinstance(bullets, list) or not bullets:
+                        bullets = raw.get("contrary_considerations") or []
+                    # Choose 2–3 short reasons, remove processing/meta terms
+                    ban = ("mock", "retrieval", "citation", "link", "json", "schema", "format", "paraphrase", "prior")
+                    reasons = []
+                    for x in bullets:
+                        if not isinstance(x, str):
+                            continue
+                        r = x.strip().rstrip(".;")
+                        r_low = r.lower()
+                        if any(b in r_low for b in ban):
+                            continue
+                        reasons.append(r)
+                        if len(reasons) >= 3:
+                            break
+            except Exception as e:
+                print(f"[ui] explanation bullets path error: {e}")
+                reasons = []
+
+            # If no reasons from live call, try assumptions/ambiguity_flags
+            if not reasons and not use_mock and raw:
+                alt: list[str] = []
+                for x in (raw.get("assumptions") or []):
+                    if isinstance(x, str) and x.strip():
+                        alt.append(x.strip().rstrip(".;"))
+                        if len(alt) >= 3:
+                            break
+                for x in (raw.get("ambiguity_flags") or []):
+                    if len(alt) >= 3:
+                        break
+                    if isinstance(x, str) and x.strip():
+                        alt.append(x.strip().rstrip(".;"))
+                reasons = alt[:3]
+                if reasons:
+                    print("[ui] explanation mode: run-fields")
+
+            # Final fallback: simple, claim-facing lines
+            if not reasons:
+                if p >= 0.60:
+                    reasons = ["The claim aligns with common definitions and typical examples."]
+                elif p <= 0.40:
+                    reasons = ["The claim conflicts with common definitions and typical examples."]
+                else:
+                    reasons = ["It depends on definitions or missing context."]
+                print("[ui] explanation final-fallback used")
+            return reasons
+
+        reasons = _generate_explanation()
+        # Build display pieces
+        if p >= 0.60:
+            why_head = "Why it’s likely true"
+            why_kind = "true"
+        elif p <= 0.40:
+            why_head = "Why it’s likely false"
+            why_kind = "false"
+        else:
+            why_head = "Why it’s uncertain"
+            why_kind = "uncertain"
+
+        why_items_html = "\n".join(f"<li>{json.dumps(r)[1:-1]}</li>" for r in reasons)
+        note = ""
 
         body = _render(
             ROOT / "results.html",
@@ -245,6 +441,10 @@ class Handler(BaseHTTPRequestHandler):
                 "VERDICT": verdict,
                 "UI_MODEL": ui_model_label,
                 "UI_MODE": ui_mode_label,
+                "WHY_HEAD": why_head,
+                "WHY_ITEMS": why_items_html,
+                "WHY_KIND": why_kind,
+                "NOTE": note,
             },
         )
         self._ok(body, "text/html")
@@ -315,7 +515,9 @@ def main() -> None:
     host = os.getenv("UI_HOST", "127.0.0.1")
     port = int(os.getenv("UI_PORT", "8000"))
     httpd = HTTPServer((host, port), Handler)
-    print(f"Heretix UI running at http://{host}:{port}")
+    has_key = bool(os.getenv("OPENAI_API_KEY"))
+    is_mock = bool(os.getenv("HERETIX_MOCK"))
+    print(f"Heretix UI running at http://{host}:{port} · OPENAI_API_KEY={'yes' if has_key else 'no'} · MOCK={'on' if is_mock else 'off'}")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

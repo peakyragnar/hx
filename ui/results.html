@@ -15,6 +15,14 @@
     .metrics{ margin-top:10px; color:var(--muted); }
     .meta{ margin-top:16px; font-size:24px; font-weight:800; color:var(--fg); }
     .clear{ clear:both; }
+    .whybox{ margin:18px auto 0; max-width:820px; text-align:left; border:1px solid rgba(255,255,255,0.15); border-radius:10px; padding:16px 18px; background:rgba(255,255,255,0.03); box-shadow:0 0 24px rgba(255,255,255,0.06) inset; }
+    .whybox.true{ border-color: rgba(0,255,65,0.55); box-shadow: 0 0 22px rgba(0,255,65,0.22) inset; }
+    .whybox.false{ border-color: rgba(255,80,80,0.55); box-shadow: 0 0 22px rgba(255,80,80,0.20) inset; }
+    .whybox.uncertain{ border-color: rgba(255,193,7,0.55); box-shadow: 0 0 22px rgba(255,193,7,0.20) inset; }
+    .whyhead{ font-size:18px; font-weight:800; margin-bottom:8px; color:var(--fg); }
+    .whylist{ margin:0; padding-left:18px; }
+    .whylist li{ margin:4px 0; }
+    .note{ margin-top:6px; color:var(--muted); font-size:12px; opacity:0.9; }
   </style>
 </head>
 <body>
@@ -25,6 +33,13 @@
     <div class="hero">{PERCENT}%</div>
     <div class="verdict">{VERDICT}</div>
     <div class="meta">Model: {UI_MODEL} · Mode: {UI_MODE}</div>
+    <div class="whybox {WHY_KIND}">
+      <div class="whyhead">{WHY_HEAD}</div>
+      <ul class="whylist">
+        {WHY_ITEMS}
+      </ul>
+      <div class="note">{NOTE}</div>
+    </div>
   </div>
 </body>
 </html>
