@@ -5,11 +5,12 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Optional
 
 import numpy as np
 import yaml
 import uuid
+import concurrent.futures as _fut
 
 from .config import RunConfig
 from .sampler import rotation_offset, balanced_indices_with_rotation, planned_counts
@@ -103,97 +104,132 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
     attempted = 0
     valid_count = 0
 
-    # Track how many slots we've assigned per template (by prompt hash) to make replicate_idx unique per occurrence
-    occ_by_hash: Dict[str, int] = {}
+    # Precompute deterministic work list (one entry per attempt)
+    class _Work:
+        __slots__ = (
+            "pidx", "paraphrase_text", "prompt_sha256", "replicate_idx_global", "cache_key",
+        )
 
-    for k_slot, local_tpl_idx in enumerate(seq):
+        def __init__(self, pidx: int, paraphrase_text: str, prompt_sha256: str, rep_idx: int, cache_key: str) -> None:
+            self.pidx = pidx
+            self.paraphrase_text = paraphrase_text
+            self.prompt_sha256 = prompt_sha256
+            self.replicate_idx_global = rep_idx
+            self.cache_key = cache_key
+
+    work_items: List[_Work] = []
+    occ_by_hash: Dict[str, int] = {}
+    for local_tpl_idx in seq:
         pidx = tpl_indices[local_tpl_idx]
         paraphrase_text = paraphrases[pidx]
-
-        # Compose prompt once per slot to compute stable prompt_sha256 for this template
         paraphrased = paraphrase_text.replace("{CLAIM}", cfg.claim)
         user_text = f"{paraphrased}\n\n" + user_template.replace("{CLAIM}", cfg.claim)
         prompt_sha256 = hashlib.sha256((full_instructions + "\n\n" + user_text).encode("utf-8")).hexdigest()
-
         occ_idx = occ_by_hash.get(prompt_sha256, 0)
         occ_by_hash[prompt_sha256] = occ_idx + 1
-
         for r in range(cfg.R):
-            attempted += 1
-            # Make replicate index unique per template across all slots
-            replicate_idx_global = int(occ_idx * cfg.R + r)
+            rep_idx = int(occ_idx * cfg.R + r)
             ckey = make_cache_key(
                 claim=cfg.claim,
                 model=cfg.model,
                 prompt_version=prompt_version_full,
                 prompt_sha256=prompt_sha256,
-                replicate_idx=replicate_idx_global,
+                replicate_idx=rep_idx,
                 max_output_tokens=cfg.max_output_tokens,
                 provider_mode=provider_mode,
             )
+            work_items.append(_Work(pidx, paraphrase_text, prompt_sha256, rep_idx, ckey))
 
-            row = None
-            if not cfg.no_cache:
-                row = get_cached_sample(ckey, db_path=db_path)
-                if row:
-                    cache_hits += 1
+    # First, satisfy from cache (main thread) and collect misses
+    rows_ready: List[Dict[str, Any]] = []
+    misses: List[_Work] = []
+    for w in work_items:
+        attempted += 1
+        row = None
+        if not cfg.no_cache:
+            row = get_cached_sample(w.cache_key, db_path=db_path)
+            if row:
+                cache_hits += 1
+        if row is None:
+            misses.append(w)
+        else:
+            rows_ready.append(row)
 
-            if row is None:
-                if provider_mode == "MOCK":
-                    out = score_claim_mock(
-                        claim=cfg.claim,
-                        system_text=system_text,
-                        user_template=user_template,
-                        paraphrase_text=paraphrase_text,
-                        model=cfg.model,
-                        max_output_tokens=cfg.max_output_tokens,
-                    )
-                else:
-                    out = score_claim(
-                        claim=cfg.claim,
-                        system_text=system_text,
-                        user_template=user_template,
-                        paraphrase_text=paraphrase_text,
-                        model=cfg.model,
-                        max_output_tokens=cfg.max_output_tokens,
-                    )
-                raw = out.get("raw", {})
-                meta = out.get("meta", {})
-                timing = out.get("timing", {})
-                prob = float(raw.get("prob_true")) if "prob_true" in raw else float("nan")
-                lgt = _logit(prob) if prob == prob else float("nan")
-                json_valid = int(1 if ("prob_true" in raw and isinstance(raw["prob_true"], (int, float))) else 0)
-                # RPL compliance: penalize citations/urls
-                # Basic heuristic: if any reasoning or contrary string contains URL-like text
-                txt_concat = json.dumps(raw)
-                compliant = (json_valid == 1) and (not _has_citation_or_url(txt_concat))
-                valid = int(1 if compliant else 0)
-                row = {
-                    "run_id": "",  # to be filled
-                    "cache_key": ckey,
-                    "prompt_sha256": meta.get("prompt_sha256"),
-                    "paraphrase_idx": int(pidx),
-                    "replicate_idx": int(replicate_idx_global),
-                    "prob_true": prob if prob == prob else None,
-                    "logit": lgt if lgt == lgt else None,
-                    "provider_model_id": meta.get("provider_model_id"),
-                    "response_id": meta.get("response_id"),
-                    "created_at": int(time.time()),
-                    "tokens_out": None,
-                    "latency_ms": int(timing.get("latency_ms") or 0),
-                    "json_valid": valid,
-                }
+    # Define a worker to call provider and build a sample row
+    def _call_and_build(w: _Work) -> Dict[str, Any]:
+        if provider_mode == "MOCK":
+            out = score_claim_mock(
+                claim=cfg.claim,
+                system_text=system_text,
+                user_template=user_template,
+                paraphrase_text=w.paraphrase_text,
+                model=cfg.model,
+                max_output_tokens=cfg.max_output_tokens,
+            )
+        else:
+            out = score_claim(
+                claim=cfg.claim,
+                system_text=system_text,
+                user_template=user_template,
+                paraphrase_text=w.paraphrase_text,
+                model=cfg.model,
+                max_output_tokens=cfg.max_output_tokens,
+            )
+        raw = out.get("raw", {})
+        meta = out.get("meta", {})
+        timing = out.get("timing", {})
+        prob = float(raw.get("prob_true")) if "prob_true" in raw else float("nan")
+        lgt = _logit(prob) if prob == prob else float("nan")
+        json_valid = int(1 if ("prob_true" in raw and isinstance(raw["prob_true"], (int, float))) else 0)
+        txt_concat = json.dumps(raw)
+        compliant = (json_valid == 1) and (not _has_citation_or_url(txt_concat))
+        valid = int(1 if compliant else 0)
+        return {
+            "run_id": "",
+            "cache_key": w.cache_key,
+            "prompt_sha256": meta.get("prompt_sha256"),
+            "paraphrase_idx": int(w.pidx),
+            "replicate_idx": int(w.replicate_idx_global),
+            "prob_true": prob if prob == prob else None,
+            "logit": lgt if lgt == lgt else None,
+            "provider_model_id": meta.get("provider_model_id"),
+            "response_id": meta.get("response_id"),
+            "created_at": int(time.time()),
+            "tokens_out": None,
+            "latency_ms": int(timing.get("latency_ms") or 0),
+            "json_valid": valid,
+        }
 
-            # Only count valid/compliant samples
-            if row.get("json_valid"):
-                valid_count += 1
-                l = float(row.get("logit")) if row.get("logit") is not None else _logit(float(row.get("prob_true")))
-                h = str(row.get("prompt_sha256"))
-                all_logits.append(l)
-                tpl_hashes.append(h)
-                by_tpl.setdefault(h, []).append(l)
-            # persist sample rows after we have run_id (later)
-            runs.append({"row": row, "tpl_hash": row.get("prompt_sha256")})
+    # Dispatch misses with optional concurrency
+    conc_env = os.getenv("HERETIX_CONCURRENCY")
+    max_workers: Optional[int] = None
+    try:
+        if conc_env:
+            mw = int(conc_env)
+            if mw > 0:
+                max_workers = mw
+    except Exception:
+        max_workers = None
+
+    if misses:
+        if max_workers and max_workers > 1:
+            with _fut.ThreadPoolExecutor(max_workers=max_workers) as ex:
+                for row in ex.map(_call_and_build, misses):
+                    rows_ready.append(row)
+        else:
+            for w in misses:
+                rows_ready.append(_call_and_build(w))
+
+    # Build aggregation inputs and runs list from all rows
+    for row in rows_ready:
+        if row.get("json_valid"):
+            valid_count += 1
+            l = float(row.get("logit")) if row.get("logit") is not None else _logit(float(row.get("prob_true")))
+            h = str(row.get("prompt_sha256"))
+            all_logits.append(l)
+            tpl_hashes.append(h)
+            by_tpl.setdefault(h, []).append(l)
+        runs.append({"row": row, "tpl_hash": row.get("prompt_sha256")})
 
     if valid_count < 3:
         raise ValueError(f"Too few valid samples: {valid_count} < 3")
