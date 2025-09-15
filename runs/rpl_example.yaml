@@ -1,6 +1,6 @@
 claim: "for hundreds of years, Europe executed its criminal underclass mercilessly. About 1% of each generation was executed, and another ~1% was killed at the scene of the crime immediately after committing the offense"
 model: gpt-5
-prompt_version: rpl_g5_v4
+prompt_version: rpl_g5_v5
 K: 16
 R: 2
 T: 16

@@ -23,7 +23,7 @@ uv.lock
 .python-version
 
 # Output files
-runs/
+runs/*
 !runs/rpl_example.yaml
 *.json
 
