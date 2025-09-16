@@ -60,7 +60,7 @@
 ### Supporting Surfaces
 - **Examples Gallery**
   - Curated list of recent claims with verdicts to help new users understand outputs before submitting.
-  - Implemented as `/examples.html`, pulling the latest runs from the local SQLite database.
+  - Implemented as `/examples.html`, showing three reference claims so visitors know what to expect.
 - **Learn Page (optional expansion)**
   - Longer-form explanation, product philosophy, data privacy, methodology blurb.
   - Link from footer and from FAQ accordion "See more".

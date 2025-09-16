@@ -6,9 +6,9 @@
   <title>Heretix · Examples</title>
   <style>
     :root {
-      --bg: #040704;
-      --fg: #e5ffe5;
-      --muted: #8ca18c;
+      --bg: #040604;
+      --fg: #e9ffe9;
+      --muted: #8da38d;
       --bright: #00ff41;
       --panel: rgba(255,255,255,0.02);
       --border: rgba(0,255,65,0.22);
@@ -16,22 +16,21 @@
     * { box-sizing:border-box; }
     html,body { margin:0; padding:0; background:var(--bg); color:var(--fg); font-family:"Inter","Helvetica Neue",Arial,sans-serif; }
     a { color:var(--bright); text-decoration:none; }
-    header { position:sticky; top:0; backdrop-filter:blur(12px); background:rgba(4,7,4,0.9); border-bottom:1px solid rgba(0,255,65,0.12); z-index:20; }
+    header { position:sticky; top:0; backdrop-filter:blur(12px); background:rgba(4,6,4,0.9); border-bottom:1px solid rgba(0,255,65,0.12); z-index:20; }
     .nav { max-width:1100px; margin:0 auto; padding:14px 20px; display:flex; justify-content:space-between; align-items:center; }
     .brand { font-family:"Space Mono", monospace; font-size:20px; letter-spacing:4px; color:var(--bright); }
     nav ul { list-style:none; margin:0; padding:0; display:flex; gap:18px; font-size:14px; }
     nav a { color:var(--muted); }
     nav a:hover { color:var(--bright); }
 
-    main { max-width:1100px; margin:0 auto; padding:48px 20px 90px; }
+    main { max-width:1100px; margin:0 auto; padding:48px 20px 90px; display:flex; flex-direction:column; gap:60px; }
     h1 { font-size:clamp(34px,5vw,52px); margin:12px 0; text-shadow:0 0 26px rgba(0,255,65,0.25); }
-    p.lead { margin:0 0 28px; color:var(--muted); font-size:18px; line-height:1.6; max-width:760px; }
+    p.lead { margin:0 0 18px; color:var(--muted); font-size:18px; max-width:760px; line-height:1.6; }
 
-    .examples { display:flex; flex-direction:column; gap:42px; }
-    .example { background:radial-gradient(circle at top, rgba(0,255,65,0.18), rgba(0,0,0,0.7)); border:1px solid var(--border); border-radius:24px; padding:32px; box-shadow:0 0 46px rgba(0,255,65,0.22); }
+    .example { background:radial-gradient(circle at top, rgba(0,255,65,0.18), rgba(0,0,0,0.7)); border:1px solid var(--border); border-radius:26px; padding:36px; box-shadow:0 0 50px rgba(0,255,65,0.22); }
     .hero { display:flex; flex-direction:column; gap:10px; }
     .badge { align-self:flex-start; padding:6px 12px; border-radius:999px; font-size:12px; letter-spacing:1px; text-transform:uppercase; background:rgba(0,0,0,0.35); border:1px solid rgba(0,255,65,0.4); color:rgba(0,255,65,0.8); }
-    .percent { font-size:clamp(64px,11vw,108px); font-weight:700; color:var(--bright); text-shadow:0 0 35px rgba(0,255,65,0.35); }
+    .percent { font-size:clamp(64px,11vw,108px); font-weight:700; color:var(--bright); text-shadow:0 0 36px rgba(0,255,65,0.35); }
     .verdict { font-size:18px; letter-spacing:4px; text-transform:uppercase; color:rgba(0,255,65,0.9); }
     .claim { font-size:20px; font-weight:600; margin-top:12px; }
     .summary { font-size:18px; color:var(--muted); }
@@ -40,13 +39,9 @@
     .panel { border:1px solid var(--border); border-radius:18px; padding:20px 22px; background:var(--panel); box-shadow:0 0 26px rgba(0,255,65,0.12); }
     .panel h3 { margin:0 0 12px; font-size:18px; }
     .panel ul { margin:0; padding-left:20px; color:var(--muted); line-height:1.6; }
-    .panel p { margin:0 0 12px; color:var(--muted); line-height:1.6; }
-    .metrics { display:flex; flex-wrap:wrap; gap:10px 18px; font-size:13px; color:rgba(229,255,229,0.75); }
-    .metrics span { display:inline-flex; align-items:center; gap:6px; }
+    .panel p { margin:0; color:var(--muted); line-height:1.6; }
 
-    .empty { display:{EMPTY_DISPLAY}; margin-top:48px; text-align:center; color:var(--muted); }
-
-    footer { margin-top:80px; padding:24px 0; text-align:center; color:var(--muted); font-size:13px; border-top:1px solid rgba(0,255,65,0.1); }
+    footer { margin-top:20px; padding:24px 0; text-align:center; color:var(--muted); font-size:13px; border-top:1px solid rgba(0,255,65,0.1); }
     footer a { color:var(--muted); margin:0 12px; }
     footer a:hover { color:var(--bright); }
 
@@ -69,12 +64,82 @@
   </header>
 
   <main>
-    <h1>Examples</h1>
-    <p class="lead">Browse recent Raw Prior runs stored locally. Each card shows the prior probability, a plain-language verdict, and why GPT‑5’s training anchors the claim that way.</p>
-    <div class="examples">
-      {EXAMPLES}
+    <div>
+      <h1>What to expect</h1>
+      <p class="lead">Here are three sample Raw Prior runs so you can see how Heretix presents results. Each card mirrors the output page: the training prior, verdict, top reasons, and a quick reminder of how to read it.</p>
     </div>
-    <div class="empty">No runs yet. Ask a claim and results will appear here.</div>
+
+    <article class="example">
+      <div class="hero">
+        <div class="badge">GPT-5 · Internal knowledge only</div>
+        <div class="percent">67.8%</div>
+        <div class="verdict">Likely true</div>
+        <div class="claim">“Do tariffs cause inflation?”</div>
+        <div class="summary">GPT-5 leans true and gives this claim about 67.8% chance of being correct.</div>
+      </div>
+      <div class="detail-grid">
+        <div class="panel">
+          <h3>Why it’s likely true</h3>
+          <ul>
+            <li>Tariffs raise the cost of imports, which can feed through to consumer prices—especially when applied to widely used inputs.</li>
+            <li>Cost-push effects are strongest when supply is tight and firms pass higher costs to buyers.</li>
+            <li>Offsets such as currency appreciation or weak demand can blunt the impact, but those cases are less common.</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3>How to read this</h3>
+          <p>This is GPT-5’s training prior using the Raw Prior Lens—no web search, no outside evidence. Use it to understand where the model already leans before you add new facts or arguments.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="example">
+      <div class="hero">
+        <div class="badge">GPT-5 · Internal knowledge only</div>
+        <div class="percent">66.6%</div>
+        <div class="verdict">Likely true</div>
+        <div class="claim">“Do solar panels pay for themselves?”</div>
+        <div class="summary">GPT-5 leans true and gives this claim about 66.6% chance of being correct.</div>
+      </div>
+      <div class="detail-grid">
+        <div class="panel">
+          <h3>Why it’s likely true</h3>
+          <ul>
+            <li>“Pay for themselves” means cumulative energy savings exceed the system’s net cost over time.</li>
+            <li>Typical payback ranges from 6–12 years depending on incentives, sunlight, electricity rates, and system price.</li>
+            <li>Best context is strong sun exposure, high utility rates, and available tax credits; very low electricity prices or frequent roof repairs can extend payback.</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3>How to read this</h3>
+          <p>This is GPT-5’s training prior using the Raw Prior Lens—no web search, no outside evidence. Use it to understand where the model already leans before you add new facts or arguments.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="example">
+      <div class="hero">
+        <div class="badge">GPT-5 · Internal knowledge only</div>
+        <div class="percent">5.9%</div>
+        <div class="verdict">Likely false</div>
+        <div class="claim">“Will interest rates stay low forever?”</div>
+        <div class="summary">GPT-5 leans false and estimates just 5.9% probability that the claim is true.</div>
+      </div>
+      <div class="detail-grid">
+        <div class="panel">
+          <h3>Why it’s likely false</h3>
+          <ul>
+            <li>Interest rates are the cost of borrowing, typically cycling with inflation, growth, and central bank policy.</li>
+            <li>Very low rates can persist during weak growth or deflation, but those periods rarely last indefinitely.</li>
+            <li>Shocks like inflation spikes, fiscal shifts, or productivity surges commonly push rates higher after low-rate eras.</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3>How to read this</h3>
+          <p>This is GPT-5’s training prior using the Raw Prior Lens—no web search, no outside evidence. Use it to understand where the model already leans before you add new facts or arguments.</p>
+        </div>
+      </div>
+    </article>
   </main>
 
   <footer>
