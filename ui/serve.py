@@ -279,24 +279,30 @@ class Handler(BaseHTTPRequestHandler):
         except subprocess.CalledProcessError as e:
             msg = (e.stderr or e.stdout or str(e))[:2000]
             logging.error("UI run failed: %s", msg)
-            self._err(msg, headline="The run failed"); return
+            self._err("The run failed. Please try again.", headline="The run failed"); return
         except subprocess.TimeoutExpired:
             logging.error("UI run timed out after %ss", timeout)
-            self._err(f"The run exceeded the {timeout}s limit.", headline="This took too long"); return
+            self._err("The run exceeded our time limit.", headline="This took too long"); return
 
         try:
             # Sanity limit to prevent huge/malformed file issues
             if out_path.stat().st_size > 2_000_000:
-                self._err("Output too large"); return
+                self._err("The output was larger than expected."); return
             doc = json.loads(out_path.read_text(encoding="utf-8"))
-            run = (doc.get("runs") or [{}])[0]
-            ag = run.get("aggregates") or {}
-            p = float(ag.get("prob_true_rpl"))
-            width = float(ag.get("ci_width") or 0.0)
-            stability = float(ag.get("stability_score") or 0.0)
-            compliance = float(ag.get("rpl_compliance_rate") or 0.0)
+            runs_section = doc.get("runs")
+            if not isinstance(runs_section, list) or not runs_section:
+                raise ValueError("missing runs section")
+            run = runs_section[0] or {}
+            aggregates = run.get("aggregates")
+            if not isinstance(aggregates, dict):
+                raise ValueError("missing aggregates")
+            p = float(aggregates.get("prob_true_rpl"))
+            width = float(aggregates.get("ci_width") or 0.0)
+            stability = float(aggregates.get("stability_score") or 0.0)
+            compliance = float(aggregates.get("rpl_compliance_rate") or 0.0)
         except Exception as e:
-            self._err(f"Failed to parse output JSON: {e}"); return
+            logging.error("UI parse error: %s", e)
+            self._err("We couldn’t read the run output."); return
 
         percent = f"{p*100:.1f}" if p == p else "?"
         if p == p:
@@ -632,10 +638,10 @@ class Handler(BaseHTTPRequestHandler):
             template = (ROOT / "error.html").read_text(encoding="utf-8")
             body = template.replace("{HEADLINE}", html.escape(headline, quote=True)) \
                            .replace("{MESSAGE}", "We couldn’t finish this check. Please try again in a moment.") \
-                           .replace("{DETAILS}", html.escape(msg, quote=True)) \
+                           .replace("{DETAILS}", "If the problem persists, please retry later.") \
                            .encode("utf-8")
         except Exception:
-            fallback = f"<pre style='color:#eee;background:#222;padding:16px'>500 Server Error\n\n{msg}</pre>"
+            fallback = "<pre style='color:#eee;background:#222;padding:16px'>500 Server Error</pre>"
             body = fallback.encode("utf-8")
         self.send_response(500)
         self.send_header("Content-Type", "text/html; charset=utf-8")
