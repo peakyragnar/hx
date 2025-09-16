@@ -31,6 +31,33 @@ MAX_CLAIM_CHARS = 280
 RUN_TIMEOUT_SEC = 900
 PORT_DEFAULT = 7799
 
+MODEL_LABELS = {
+    "gpt-5": "GPT-5",
+}
+
+EXAMPLE_REASON_OVERRIDES = {
+    "Will interest rates stay low forever?": [
+        "Interest rates are the cost of borrowing and typically cycle with inflation, growth, and central bank policy.",
+        "Long stretches of very low rates usually rely on weak growth or deflation, which rarely persist indefinitely.",
+        "Shocks like inflation spikes or fiscal shifts commonly push rates higher after low-rate eras."
+    ],
+    "Do solar panels pay for themselves?": [
+        "Payback arrives when cumulative energy savings exceed installation cost, often within 6–12 years depending on incentives and sunlight.",
+        "High utility rates, solid sun exposure, and available tax credits all accelerate the breakeven point.",
+        "Exceptions include shaded sites, very low electricity prices, or financing that stretches payback beyond panel lifespan."
+    ],
+    "Do tariffs cause inflation?": [
+        "Tariffs raise import costs, which can pass through to consumer prices, especially when applied to widely used goods.",
+        "Cost-push effects are strongest when supply is tight and firms can pass higher costs to customers.",
+        "Offsets like currency appreciation or weak demand can blunt the effect, but those cases are less common."
+    ],
+}
+
+HOW_TO_READ_COPY = (
+    "This is GPT-5’s training prior using the Raw Prior Lens—no web search, no outside evidence. "
+    "Use it to understand where the model already leans before you add new facts or arguments."
+)
+
 
 def _render(path: Path, mapping: dict[str, str]) -> bytes:
     html_text = path.read_text(encoding="utf-8")
@@ -642,7 +669,10 @@ class Handler(BaseHTTPRequestHandler):
 
         cards: list[str] = []
         for row in rows:
-            claim = html.escape(str(row["claim"] or ""), quote=True)
+            claim_raw = str(row["claim"] or "")
+            claim_html = html.escape(claim_raw, quote=True)
+            model = str(row["model"] or "gpt-5")
+            model_label = MODEL_LABELS.get(model, model.upper())
             p = row["prob_true_rpl"]
             ci = row["ci_width"]
             stability = row["stability_score"]
@@ -653,13 +683,17 @@ class Handler(BaseHTTPRequestHandler):
                 percent_val = f"{p*100:.1f}"
                 if p >= 0.60:
                     verdict = "Likely true"
+                    verdict_word = "leans true"
                 elif p <= 0.40:
                     verdict = "Likely false"
+                    verdict_word = "leans false"
                 else:
                     verdict = "Uncertain"
+                    verdict_word = "is unsure"
             else:
                 percent_val = "—"
                 verdict = "Unavailable"
+                verdict_word = "has no stable view"
 
             ci_text = "—" if ci is None or ci != ci else f"{ci:.3f}"
             stability_text = "—" if stability is None or stability != stability else f"{stability:.2f}"
@@ -670,18 +704,46 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 created_text = "—"
 
+            summary = (
+                f"{model_label} {verdict_word} and estimates {percent_val + '%' if percent_val != '—' else 'an unknown'} chance"
+                " the claim is true."
+            )
+
+            reasons = EXAMPLE_REASON_OVERRIDES.get(claim_raw)
+            if not reasons:
+                reasons = [
+                    f"Training prior {verdict_word} with probability {percent_val + '%' if percent_val != '—' else '—'}.",
+                    f"Confidence interval width is {ci_text}, suggesting {'tight agreement' if ci_text != '—' and float(ci_text) <= 0.1 else 'more spread'}.",
+                    f"Template stability scored {stability_text} with policy compliance {compliance_text}.",
+                ]
+            reasons_html = "".join(f"<li>{html.escape(r, quote=True)}</li>" for r in reasons)
+
             cards.append(
-                "<div class=\"card\">"
-                f"<div class=\"pct\">{percent_val + '%' if percent_val != '—' else '—'}</div>"
+                "<article class=\"example\">"
+                "<div class=\"hero\">"
+                f"<div class=\"badge\">{model_label} · Internal knowledge only</div>"
+                f"<div class=\"percent\">{percent_val if percent_val != '—' else '—'}%</div>"
                 f"<div class=\"verdict\">{verdict.upper()}</div>"
-                f"<div class=\"claim\">“{claim}”</div>"
-                "<ul class=\"bullets\">"
-                f"<li>Confidence width: {ci_text}</li>"
-                f"<li>Template stability: {stability_text}</li>"
-                f"<li>Policy compliance: {compliance_text}</li>"
-                "</ul>"
-                f"<div class=\"meta\">Run: {created_text}</div>"
+                f"<div class=\"claim\">“{claim_html}”</div>"
+                f"<div class=\"summary\">{html.escape(summary, quote=True)}</div>"
                 "</div>"
+                "<div class=\"detail-grid\">"
+                "<div class=\"panel\">"
+                "<h3>Why it leans this way</h3>"
+                f"<ul>{reasons_html}</ul>"
+                "</div>"
+                "<div class=\"panel\">"
+                "<h3>How to read this</h3>"
+                f"<p>{html.escape(HOW_TO_READ_COPY, quote=True)}</p>"
+                "<div class=\"metrics\">"
+                f"<span>CI width {ci_text}</span>"
+                f"<span>Stability {stability_text}</span>"
+                f"<span>Compliance {compliance_text}</span>"
+                f"<span>Run {created_text}</span>"
+                "</div>"
+                "</div>"
+                "</div>"
+                "</article>"
             )
 
         return "\n".join(cards), "none"
