@@ -498,18 +498,6 @@ class Handler(BaseHTTPRequestHandler):
             why_head = "Why it’s uncertain"
             why_kind = "uncertain"
 
-        summary_lines = [
-            f'Claim: "{claim}"',
-            f'Verdict: {verdict} ({percent}%)',
-        ]
-        if reasons:
-            summary_lines.append('Reasons:')
-            summary_lines.extend(f'- {r}' for r in reasons)
-        else:
-            summary_lines.append('Reasons: (none)')
-        summary_lines.append(f'Model: {ui_model_label} · {ui_mode_label}')
-        summary_attr = html.escape("\n".join(summary_lines), quote=True)
-
         # Escape for HTML but preserve Unicode characters (avoid JSON string escapes like \u201c)
         why_items_html = "\n".join(f"<li>{html.escape(r, quote=True)}</li>" for r in reasons)
         body = _render(
@@ -527,7 +515,6 @@ class Handler(BaseHTTPRequestHandler):
                 "ADV_WIDTH": adv_width,
                 "ADV_STABILITY": adv_stability,
                 "ADV_COMPLIANCE": adv_compliance,
-                "SUMMARY_ATTR": summary_attr,
             },
         )
         self._ok(body, "text/html")
