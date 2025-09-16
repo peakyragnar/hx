@@ -165,7 +165,7 @@ class Handler(BaseHTTPRequestHandler):
               .muted {{ color:#8ea88e; margin-top:12px; }}
             </style>
             <div class='wrap'>
-              <h1>Checking how GPT‑5 already feels about your claim…</h1>
+              <h1>Measuring how GPT‑5’s training data anchors this claim…</h1>
               <div class='claim'>{escaped_claim}</div>
               <ol class='steps'>
                 <li class='active'>Planning the different phrasings.</li>
@@ -201,7 +201,7 @@ class Handler(BaseHTTPRequestHandler):
               .muted {{ color:#8ea88e; margin-top:12px; }}
             </style>
             <div class='wrap'>
-              <h1>Checking how GPT‑5 already feels about your claim…</h1>
+              <h1>Measuring how GPT‑5’s training data anchors this claim…</h1>
               <div class='claim'>{escaped_claim}</div>
               <ol class='steps'>
                 <li class='active'>Planning the different phrasings.</li>
