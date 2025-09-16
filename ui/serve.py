@@ -10,6 +10,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 import yaml
 from typing import Optional, List
+import logging
 import re
 import html
 
@@ -28,6 +29,8 @@ PROMPT_VERSION_DEFAULT = "rpl_g5_v5"  # keep in sync with examples
 MAX_CLAIM_CHARS = 280
 RUN_TIMEOUT_SEC = 900
 PORT_DEFAULT = 7799
+
+logging.basicConfig(level=logging.INFO)
 
 
 
@@ -266,15 +269,20 @@ class Handler(BaseHTTPRequestHandler):
         env.setdefault("HERETIX_RPL_SEED", "42")
 
         cmd = ["uv","run","heretix","run","--config",str(cfg_path),"--out",str(out_path)]
+        timeout = min(RUN_TIMEOUT_SEC, 600)
         try:
             start = time.time()
-            cp = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=RUN_TIMEOUT_SEC, check=True)
-            print(f"[ui] OK in {time.time()-start:.1f}s · out={len(cp.stdout)}B err={len(cp.stderr)}B")
+            cp = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=timeout, check=True)
+            logging.info("UI run ok in %.1fs", time.time()-start)
+            if cp.stderr:
+                logging.info("UI stderr: %s", cp.stderr[:500])
         except subprocess.CalledProcessError as e:
             msg = (e.stderr or e.stdout or str(e))[:2000]
-            self._err(f"Run failed\n\n{msg}"); return
+            logging.error("UI run failed: %s", msg)
+            self._err(msg, headline="The run failed"); return
         except subprocess.TimeoutExpired:
-            self._err("Run timed out"); return
+            logging.error("UI run timed out after %ss", timeout)
+            self._err(f"The run exceeded the {timeout}s limit.", headline="This took too long"); return
 
         try:
             # Sanity limit to prevent huge/malformed file issues
@@ -619,8 +627,16 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _err(self, msg: str) -> None:
-        body = f"<pre style='color:#eee;background:#222;padding:16px'>500 Server Error\n\n{msg}</pre>".encode("utf-8")
+    def _err(self, msg: str, headline: str = "We hit a snag") -> None:
+        try:
+            template = (ROOT / "error.html").read_text(encoding="utf-8")
+            body = template.replace("{HEADLINE}", html.escape(headline, quote=True)) \
+                           .replace("{MESSAGE}", "We couldn’t finish this check. Please try again in a moment.") \
+                           .replace("{DETAILS}", html.escape(msg, quote=True)) \
+                           .encode("utf-8")
+        except Exception:
+            fallback = f"<pre style='color:#eee;background:#222;padding:16px'>500 Server Error\n\n{msg}</pre>"
+            body = fallback.encode("utf-8")
         self.send_response(500)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
