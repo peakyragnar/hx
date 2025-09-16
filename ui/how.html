@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>How Heretix Works</title>
+  <style>
+    :root {
+      --bg: #050605;
+      --fg: #e7ffe7;
+      --muted: #8ca48c;
+      --bright: #00ff41;
+      --border: rgba(0,255,65,0.25);
+    }
+    * { box-sizing:border-box; }
+    html, body { margin:0; padding:0; background:var(--bg); color:var(--fg); font-family:"Inter","Helvetica Neue",Arial,sans-serif; }
+    a { color:var(--bright); text-decoration:none; }
+    header { position:sticky; top:0; backdrop-filter:blur(10px); background:rgba(5,6,5,0.92); border-bottom:1px solid rgba(0,255,65,0.15); z-index:20; }
+    .nav { max-width:900px; margin:0 auto; padding:14px 20px; display:flex; justify-content:space-between; align-items:center; }
+    .brand { font-family:"Space Mono", monospace; font-size:20px; letter-spacing:4px; color:var(--bright); }
+    nav ul { list-style:none; margin:0; padding:0; display:flex; gap:18px; font-size:14px; }
+    nav a { color:var(--muted); }
+    nav a:hover { color:var(--bright); }
+
+    main { max-width:900px; margin:0 auto; padding:40px 20px 80px; }
+    h1 { font-size:clamp(32px,5vw,48px); margin:20px 0; text-shadow:0 0 24px rgba(0,255,65,0.25); }
+    p { line-height:1.6; color:var(--muted); margin:12px 0; }
+    .card { margin-top:28px; padding:24px; border-radius:18px; border:1px solid var(--border); background:rgba(255,255,255,0.03); box-shadow:0 0 24px rgba(0,255,65,0.1); }
+    .card h2 { margin-top:0; font-size:22px; }
+    .steps { list-style:none; margin:0; padding:0; }
+    .steps li { margin:18px 0; padding-left:26px; position:relative; }
+    .steps li span { display:block; font-size:12px; letter-spacing:2px; text-transform:uppercase; color:rgba(0,255,65,0.8); margin-bottom:6px; }
+    .steps li::before { content:""; position:absolute; left:0; top:10px; width:8px; height:8px; border-radius:50%; background:var(--bright); box-shadow:0 0 14px rgba(0,255,65,0.4); }
+    .panel { display:grid; gap:24px; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); margin-top:32px; }
+    .panel div { border:1px solid rgba(0,255,65,0.18); border-radius:16px; padding:20px; background:rgba(0,0,0,0.45); }
+    .panel h3 { margin-top:0; font-size:18px; }
+    ul { margin:12px 0 0; padding-left:20px; color:var(--muted); }
+    footer { margin-top:60px; padding:24px 0; text-align:center; color:var(--muted); font-size:13px; border-top:1px solid rgba(0,255,65,0.1); }
+    footer a { color:var(--muted); margin:0 12px; }
+    footer a:hover { color:var(--bright); }
+
+    @media (max-width:700px){ nav ul { display:none; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="nav">
+      <a class="brand" href="/">HERETIX</a>
+      <nav>
+        <ul>
+          <li><a href="/">Home</a></li>
+          <li><a href="/?quick=1">Run a claim</a></li>
+          <li><a href="/how.html" aria-current="page">How it works</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <h1>How Heretix checks a claim</h1>
+    <p>Heretix shows you what GPT‑5 already believes—its <em>raw prior</em>—before any web search or outside evidence. Here’s what happens each time you press “Ask the model.”</p>
+
+    <div class="card">
+      <h2>Step-by-step</h2>
+      <ol class="steps">
+        <li>
+          <span>1 · Freeze the lens</span>
+          We lock the model into the Raw Prior Lens. That means internal knowledge only: no browsing, no new documents, no citations.
+        </li>
+        <li>
+          <span>2 · Ask many paraphrases</span>
+          Heretix rewrites your claim in several neutral wordings and asks GPT‑5 each one twice. This keeps wording quirks from tilting the answer.
+        </li>
+        <li>
+          <span>3 · Aggregate the belief</span>
+          We average the responses in log-odds space, trim extreme outliers, and bootstrap a confidence interval so you see both the probability and how firm it is.
+        </li>
+        <li>
+          <span>4 · Explain the lean</span>
+          Finally, we translate the result into plain English: the percentage, a verdict (“likely true/false/uncertain”), and 2–3 reasons the model leans that way.
+        </li>
+      </ol>
+    </div>
+
+    <div class="panel">
+      <div>
+        <h3>What the percentage means</h3>
+        <p>The number is GPT‑5’s probability that the claim is true. A 68% score means the model thinks it’s probably true; 11% means it thinks it’s probably false.</p>
+      </div>
+      <div>
+        <h3>Advanced details</h3>
+        <p>Open the “Advanced details” panel on any result to see:</p>
+        <ul>
+          <li><strong>Confidence width</strong> – how tight the probability interval is.</li>
+          <li><strong>Template stability</strong> – whether different phrasings agreed.</li>
+          <li><strong>Policy compliance</strong> – how often the responses followed Raw Prior rules.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Why no retrieval?</h3>
+        <p>By skipping web searches we expose the model’s trained-in consensus. Later lenses will add evidence; this one lets you inspect the baseline belief first.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Tips</h2>
+      <ul>
+        <li>Be specific about the claim so the model isn’t guessing the scope.</li>
+        <li>Use the explanation bullets to decide what to investigate next.</li>
+        <li>Re-run anytime—cache makes repeats fast, so you can compare after prompt changes.</li>
+      </ul>
+    </div>
+  </main>
+
+  <footer>
+    <span>© <span id="year"></span> Heretix</span>
+    <a href="mailto:hello@heretix.ai">Contact</a>
+    <a href="/">Back to home</a>
+  </footer>
+
+  <script>
+    var yearSpan = document.getElementById('year');
+    if (yearSpan) { yearSpan.textContent = new Date().getFullYear(); }
+  </script>
+</body>
+</html>

@@ -139,6 +139,7 @@ class Handler(BaseHTTPRequestHandler):
             if p.exists():
                 bg = "/assets/" + name
                 break
+        escaped_claim = html.escape(claim, quote=True)
         if bg:
             running_html = f"""
             <!doctype html>
@@ -146,23 +147,38 @@ class Handler(BaseHTTPRequestHandler):
             <meta http-equiv='refresh' content='1;url=/wait?job={job_id}'>
             <title>HERETIX · Running…</title>
             <style>
-              body {{ background:#0a0a0a; color:#cfe9cf; font-family:'Courier New', monospace; text-align:center; padding:48px; }}
-              .big {{ color:#00ff41; font-size:28px; text-shadow:0 0 18px rgba(0,255,65,0.35); }}
-              .muted {{ color:#7aa37a; margin-top:8px; }}
-              .hero {{ width:420px; height:420px; margin:20px auto; position:relative; background:url('{bg}') center/cover no-repeat; border-radius:8px; box-shadow:0 0 28px rgba(0,255,65,0.15) inset; }}
-              /* Adjustable pill position to align with the image's pill */
+              body {{ background:#060606; color:#d8f7d8; font-family:'Inter','Helvetica Neue',Arial,sans-serif; padding:56px 18px; }}
+              .wrap {{ max-width:640px; margin:0 auto; text-align:center; }}
+              h1 {{ font-size:26px; margin-bottom:18px; color:#00ff41; text-shadow:0 0 18px rgba(0,255,65,0.35); }}
+              .claim {{ margin-top:12px; padding:18px 22px; border-radius:14px; background:rgba(255,255,255,0.02); border:1px solid rgba(0,255,65,0.25); font-size:18px; line-height:1.5; }}
+              .steps {{ margin:26px auto 0; max-width:420px; text-align:left; list-style:none; padding:0; }}
+              .steps li {{ display:flex; gap:14px; align-items:flex-start; padding:14px 16px; margin-bottom:12px; border-radius:12px; background:rgba(0,0,0,0.35); border:1px solid rgba(0,255,65,0.18); color:#8ea88e; position:relative; overflow:hidden; }}
+              .steps li::before {{ content:''; position:absolute; left:0; top:0; bottom:0; width:4px; background:rgba(0,255,65,0.45); opacity:0; animation: pulse 3s infinite; }}
+              .steps li.active::before {{ opacity:1; }}
+              @keyframes pulse {{ 0% {{ transform:scaleY(0); }} 50% {{ transform:scaleY(1); }} 100% {{ transform:scaleY(0); }} }}
+              .hero {{ width:340px; height:340px; margin:28px auto; position:relative; background:url('{bg}') center/cover no-repeat; border-radius:12px; box-shadow:0 0 32px rgba(0,255,65,0.25) inset; }}
+              .hero::after {{ content:''; position:absolute; right:0; bottom:0; width:56px; height:56px; background: linear-gradient(135deg, rgba(6,6,6,0) 0%, rgba(6,6,6,0.1) 45%, rgba(6,6,6,0.75) 60%, rgba(6,6,6,1) 100%); border-bottom-right-radius:12px; pointer-events:none; }}
               .hero {{ --pill-left: 50%; --pill-top: 48%; }}
-              /* Dark soft mask to diminish the background pill so only the animated one is perceived */
-              .mask {{ position:absolute; left:var(--pill-left); top:var(--pill-top); width:120px; height:120px; transform: translate(-50%,-50%); pointer-events:none; background: radial-gradient(circle at center, rgba(10,10,10,0.85) 0%, rgba(10,10,10,0.65) 45%, rgba(10,10,10,0.25) 70%, rgba(10,10,10,0.0) 100%); border-radius:50%; filter: blur(1px); }}
+              .mask {{ position:absolute; left:var(--pill-left); top:var(--pill-top); width:120px; height:120px; transform: translate(-50%,-50%); pointer-events:none; background: radial-gradient(circle at center, rgba(6,6,6,0.85) 0%, rgba(6,6,6,0.65) 45%, rgba(6,6,6,0.25) 70%, rgba(6,6,6,0.0) 100%); border-radius:50%; filter: blur(1px); }}
               .pill {{ position:absolute; left:var(--pill-left); top:var(--pill-top); width:54px; height:20px; transform: translate(-50%,-50%); background:#ff2b2b; border-radius:999px; box-shadow:0 0 18px rgba(255,0,0,0.45); border:1px solid #ff6b6b; animation: spin 1.6s linear infinite; }}
               @keyframes spin {{ from {{ transform: translate(-50%,-50%) rotate(0deg); }} to {{ transform: translate(-50%,-50%) rotate(360deg); }} }}
+              .muted {{ color:#8ea88e; margin-top:12px; }}
             </style>
-            <h1 class='big'>Running analysis…</h1>
-            <div class='hero'>
-              <div class='mask'></div>
-              <div class='pill' aria-label='red pill'></div>
+            <div class='wrap'>
+              <h1>Checking how GPT‑5 already feels about your claim…</h1>
+              <div class='claim'>{escaped_claim}</div>
+              <ol class='steps'>
+                <li class='active'>Planning the different phrasings.</li>
+                <li>Asking GPT‑5 with internal knowledge only.</li>
+                <li>Summarizing why it leans that way.</li>
+              </ol>
+              <div class='hero'>
+                <div class='mask'></div>
+                <div class='pill' aria-label='red pill'></div>
+              </div>
+              <div class='muted'>This usually takes less than a minute.</div>
             </div>
-            <div class='muted'>This may take up to a minute.</div>
+            </div>
             """.encode("utf-8")
         else:
             running_html = f"""
@@ -171,15 +187,28 @@ class Handler(BaseHTTPRequestHandler):
             <meta http-equiv='refresh' content='1;url=/wait?job={job_id}'>
             <title>HERETIX · Running…</title>
             <style>
-              body {{ background:#0a0a0a; color:#cfe9cf; font-family:'Courier New', monospace; text-align:center; padding:48px; }}
-              .big {{ color:#00ff41; font-size:28px; text-shadow:0 0 18px rgba(0,255,65,0.35); }}
-              .muted {{ color:#7aa37a; margin-top:8px; }}
-              .scene {{ width:360px; margin:28px auto; }}
+              body {{ background:#060606; color:#d8f7d8; font-family:'Inter','Helvetica Neue',Arial,sans-serif; padding:56px 18px; }}
+              .wrap {{ max-width:640px; margin:0 auto; text-align:center; }}
+              h1 {{ font-size:26px; margin-bottom:18px; color:#00ff41; text-shadow:0 0 18px rgba(0,255,65,0.35); }}
+              .claim {{ margin-top:12px; padding:18px 22px; border-radius:14px; background:rgba(255,255,255,0.02); border:1px solid rgba(0,255,65,0.25); font-size:18px; line-height:1.5; }}
+              .steps {{ margin:26px auto 0; max-width:420px; text-align:left; list-style:none; padding:0; }}
+              .steps li {{ display:flex; gap:14px; align-items:flex-start; padding:14px 16px; margin-bottom:12px; border-radius:12px; background:rgba(0,0,0,0.35); border:1px solid rgba(0,255,65,0.18); color:#8ea88e; position:relative; overflow:hidden; }}
+              .steps li::before {{ content:''; position:absolute; left:0; top:0; bottom:0; width:4px; background:rgba(0,255,65,0.45); opacity:0; animation: pulse 3s infinite; }}
+              .steps li.active::before {{ opacity:1; }}
+              @keyframes pulse {{ 0% {{ transform:scaleY(0); }} 50% {{ transform:scaleY(1); }} 100% {{ transform:scaleY(0); }} }}
+              .scene {{ width:360px; margin:32px auto; }}
               .pill {{ transform-origin: 180px 86px; animation: levitate 1.8s ease-in-out infinite; }}
-              @keyframes levitate {{ 0% {{ transform: translateY(0) rotate(0deg); }} 50% {{ transform: translateY(-8px) rotate(180deg); }} 100% {{ transform: translateY(0) rotate(360deg); }} }}
+              .muted {{ color:#8ea88e; margin-top:12px; }}
             </style>
-            <h1 class='big'>Running analysis…</h1>
-            <div class='scene'>
+            <div class='wrap'>
+              <h1>Checking how GPT‑5 already feels about your claim…</h1>
+              <div class='claim'>{escaped_claim}</div>
+              <ol class='steps'>
+                <li class='active'>Planning the different phrasings.</li>
+                <li>Asking GPT‑5 with internal knowledge only.</li>
+                <li>Summarizing why it leans that way.</li>
+              </ol>
+              <div class='scene'>
               <svg width='360' height='220' viewBox='0 0 360 220' xmlns='http://www.w3.org/2000/svg' role='img' aria-label='matrix silhouette with levitating red pill'>
                 <defs>
                   <linearGradient id='g' x1='0' y1='0' x2='0' y2='1'>
@@ -217,6 +246,7 @@ class Handler(BaseHTTPRequestHandler):
               </svg>
             </div>
             <div class='muted'>This may take up to a minute.</div>
+            </div>
             """.encode("utf-8")
         self._ok(running_html, "text/html")
         return
@@ -260,7 +290,30 @@ class Handler(BaseHTTPRequestHandler):
             self._err(f"Failed to parse output JSON: {e}"); return
 
         percent = f"{p*100:.1f}" if p == p else "?"
-        verdict = "TRUE" if (p == p and p >= 0.5) else ("FALSE" if p == p else "?")
+        if p == p:
+            if p >= 0.60:
+                verdict = "LIKELY TRUE"
+            elif p <= 0.40:
+                verdict = "LIKELY FALSE"
+            else:
+                verdict = "UNCERTAIN"
+        else:
+            verdict = "UNAVAILABLE"
+
+        if p == p:
+            pct = f"{p*100:.1f}%"
+            if p >= 0.60:
+                interpretation = f"{ui_model_label} leans true and gives this claim about {pct} chance of being correct."
+            elif p <= 0.40:
+                interpretation = f"{ui_model_label} leans false and estimates just {pct} probability that the claim is true."
+            else:
+                interpretation = f"{ui_model_label} is unsure—it assigns roughly {pct} chance the claim is true."
+        else:
+            interpretation = "We couldn’t calculate the model’s prior for this claim."
+
+        adv_width = f"{width:.3f}" if width == width else "—"
+        adv_stability = f"{stability:.2f}" if stability == stability else "—"
+        adv_compliance = f"{compliance*100:.0f}%" if compliance == compliance else "—"
 
         # Generate a brief model explanation via one provider call (same prompt version)
         def _load_prompt(prompts_file: Optional[str], version: str) -> tuple[str, str, List[str]]:
@@ -447,20 +500,21 @@ class Handler(BaseHTTPRequestHandler):
 
         # Escape for HTML but preserve Unicode characters (avoid JSON string escapes like \u201c)
         why_items_html = "\n".join(f"<li>{html.escape(r, quote=True)}</li>" for r in reasons)
-        note = ""
-
         body = _render(
             ROOT / "results.html",
             {
                 "CLAIM": html.escape(claim, quote=True),
                 "PERCENT": percent,
                 "VERDICT": html.escape(verdict, quote=True),
+                "INTERPRETATION": html.escape(interpretation, quote=True),
                 "UI_MODEL": html.escape(ui_model_label, quote=True),
                 "UI_MODE": html.escape(ui_mode_label, quote=True),
                 "WHY_HEAD": why_head,
                 "WHY_ITEMS": why_items_html,
                 "WHY_KIND": why_kind,
-                "NOTE": note,
+                "ADV_WIDTH": adv_width,
+                "ADV_STABILITY": adv_stability,
+                "ADV_COMPLIANCE": adv_compliance,
             },
         )
         self._ok(body, "text/html")
@@ -475,14 +529,21 @@ class Handler(BaseHTTPRequestHandler):
             pass
 
     def do_GET(self):  # noqa: N802
-        if self.path in ("/", "/index.html"):
+        parsed = urllib.parse.urlparse(self.path)
+        path_only = parsed.path or "/"
+        if path_only in ("/", "/index.html"):
             body = (ROOT / "index.html").read_bytes()
             self._ok(body, "text/html")
             return
-        if self.path.startswith("/assets/"):
+        if path_only in ("/how", "/how.html"):
+            how_path = ROOT / "how.html"
+            if how_path.exists():
+                self._ok(how_path.read_bytes(), "text/html")
+                return
+        if path_only.startswith("/assets/"):
             # serve static assets under ui/assets with strict path validation
             asset_root = (ROOT / "assets").resolve()
-            rel = self.path[len("/assets/"):]
+            rel = path_only[len("/assets/"):]
             # normalize and prevent traversal
             local = (asset_root / Path(rel)).resolve()
             try:
@@ -500,9 +561,8 @@ class Handler(BaseHTTPRequestHandler):
             elif ext == ".gif": ctype = "image/gif"
             self._ok(local.read_bytes(), ctype)
             return
-        if self.path.startswith("/wait"):
+        if path_only.startswith("/wait"):
             # parse ?job=
-            parsed = urllib.parse.urlparse(self.path)
             q = urllib.parse.parse_qs(parsed.query)
             job_id = (q.get("job") or [""])[0]
             job_file = TMP_DIR / f"job_{job_id}.json"
