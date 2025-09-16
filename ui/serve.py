@@ -169,8 +169,8 @@ class Handler(BaseHTTPRequestHandler):
               <div class='claim'>{escaped_claim}</div>
               <ol class='steps'>
                 <li class='active'>Planning the different phrasings.</li>
-                <li>Asking GPT‑5 with internal knowledge only.</li>
-                <li>Summarizing why it leans that way.</li>
+                <li>Asking GPT-5 with internal knowledge only.</li>
+                <li>Preparing the explanation for the verdict.</li>
               </ol>
               <div class='hero'>
                 <div class='mask'></div>
