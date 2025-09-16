@@ -4,12 +4,14 @@ from __future__ import annotations
 import json
 import os
 import time
+import sqlite3
 import urllib.parse
 import subprocess
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 import yaml
 from typing import Optional, List
+from datetime import datetime
 import re
 import html
 
@@ -553,6 +555,16 @@ class Handler(BaseHTTPRequestHandler):
             if how_path.exists():
                 self._ok(how_path.read_bytes(), "text/html")
                 return
+        if path_only in ("/examples", "/examples.html"):
+            template = ROOT / "examples.html"
+            if not template.exists():
+                self._not_found(); return
+            cards_html, empty_display = self._examples_markup()
+            html_text = template.read_text(encoding="utf-8")
+            html_text = html_text.replace("{EXAMPLES}", cards_html)
+            html_text = html_text.replace("{EMPTY_DISPLAY}", empty_display)
+            self._ok(html_text.encode("utf-8"), "text/html")
+            return
         if path_only.startswith("/assets/"):
             # serve static assets under ui/assets with strict path validation
             asset_root = (ROOT / "assets").resolve()
@@ -595,6 +607,84 @@ class Handler(BaseHTTPRequestHandler):
                 self._err(f"Bad job file: {e}"); return
             return self.do_WAIT_AND_RENDER(job, job_file)
         self._not_found()
+
+    def _examples_markup(self) -> tuple[str, str]:
+        db_path = Path(os.environ.get("HERETIX_DB_PATH", "runs/heretix_ui.sqlite"))
+        if not db_path.exists():
+            return "", "block"
+        rows: list[sqlite3.Row] = []
+        conn: Optional[sqlite3.Connection] = None
+        try:
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT claim, prob_true_rpl, ci_width, stability_score, rpl_compliance_rate, created_at
+                FROM runs
+                ORDER BY created_at DESC
+                LIMIT 9
+                """
+            )
+            rows = cur.fetchall()
+        except Exception as exc:
+            print(f"[ui] examples error: {exc}")
+            rows = []
+        finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+        if not rows:
+            return "", "block"
+
+        cards: list[str] = []
+        for row in rows:
+            claim = html.escape(str(row["claim"] or ""), quote=True)
+            p = row["prob_true_rpl"]
+            ci = row["ci_width"]
+            stability = row["stability_score"]
+            compliance = row["rpl_compliance_rate"]
+            created = row["created_at"]
+
+            if p is not None and p == p:
+                percent_val = f"{p*100:.1f}"
+                if p >= 0.60:
+                    verdict = "Likely true"
+                elif p <= 0.40:
+                    verdict = "Likely false"
+                else:
+                    verdict = "Uncertain"
+            else:
+                percent_val = "—"
+                verdict = "Unavailable"
+
+            ci_text = "—" if ci is None or ci != ci else f"{ci:.3f}"
+            stability_text = "—" if stability is None or stability != stability else f"{stability:.2f}"
+            compliance_text = "—" if compliance is None or compliance != compliance else f"{compliance*100:.0f}%"
+            try:
+                created_ts = float(created)
+                created_text = datetime.fromtimestamp(created_ts).strftime("%Y-%m-%d %H:%M")
+            except Exception:
+                created_text = "—"
+
+            cards.append(
+                "<div class=\"card\">"
+                f"<div class=\"pct\">{percent_val + '%' if percent_val != '—' else '—'}</div>"
+                f"<div class=\"verdict\">{verdict.upper()}</div>"
+                f"<div class=\"claim\">“{claim}”</div>"
+                "<ul class=\"bullets\">"
+                f"<li>Confidence width: {ci_text}</li>"
+                f"<li>Template stability: {stability_text}</li>"
+                f"<li>Policy compliance: {compliance_text}</li>"
+                "</ul>"
+                f"<div class=\"meta\">Run: {created_text}</div>"
+                "</div>"
+            )
+
+        return "\n".join(cards), "none"
 
     # helpers
     def _ok(self, body: bytes, ctype: str) -> None:

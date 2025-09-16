@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Heretix · Examples</title>
+  <style>
+    :root {
+      --bg: #050705;
+      --fg: #e8ffe8;
+      --muted: #8ba38b;
+      --bright: #00ff41;
+      --border: rgba(0,255,65,0.25);
+    }
+    * { box-sizing:border-box; }
+    html,body { margin:0; padding:0; background:var(--bg); color:var(--fg); font-family:"Inter","Helvetica Neue",Arial,sans-serif; }
+    a { color:var(--bright); text-decoration:none; }
+    header { position:sticky; top:0; backdrop-filter:blur(12px); background:rgba(5,7,5,0.9); border-bottom:1px solid rgba(0,255,65,0.12); z-index:20; }
+    .nav { max-width:1100px; margin:0 auto; padding:14px 20px; display:flex; justify-content:space-between; align-items:center; }
+    .brand { font-family:"Space Mono", monospace; font-size:20px; letter-spacing:4px; color:var(--bright); }
+    nav ul { list-style:none; margin:0; padding:0; display:flex; gap:18px; font-size:14px; }
+    nav a { color:var(--muted); }
+    nav a:hover { color:var(--bright); }
+
+    main { max-width:1100px; margin:0 auto; padding:48px 20px 90px; }
+    h1 { font-size:clamp(34px,5vw,52px); margin:10px 0 12px; text-shadow:0 0 24px rgba(0,255,65,0.25); }
+    p.lead { margin:0 0 24px; color:var(--muted); font-size:18px; line-height:1.6; max-width:760px; }
+    .grid { margin-top:32px; display:grid; gap:24px; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); }
+    .card { border:1px solid var(--border); border-radius:18px; padding:24px; background:rgba(255,255,255,0.03); box-shadow:0 0 28px rgba(0,255,65,0.12); display:flex; flex-direction:column; gap:12px; }
+    .pct { font-size:40px; color:var(--bright); text-shadow:0 0 18px rgba(0,255,65,0.25); }
+    .verdict { font-size:14px; letter-spacing:3px; text-transform:uppercase; color:rgba(0,255,65,0.75); }
+    .claim { font-family:"Space Mono", monospace; font-size:16px; line-height:1.5; }
+    .bullets { margin:0; padding-left:18px; color:var(--muted); line-height:1.5; }
+    .meta { font-size:12px; color:rgba(232,255,232,0.6); }
+    .empty { margin-top:48px; text-align:center; color:var(--muted); }
+
+    footer { margin-top:80px; padding:24px 0; text-align:center; color:var(--muted); font-size:13px; border-top:1px solid rgba(0,255,65,0.1); }
+    footer a { color:var(--muted); margin:0 12px; }
+    footer a:hover { color:var(--bright); }
+
+    @media (max-width:720px){ nav ul { display:none; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="nav">
+      <a class="brand" href="/">HERETIX</a>
+      <nav>
+        <ul>
+          <li><a href="/">Home</a></li>
+          <li><a href="/?quick=1">Run a claim</a></li>
+          <li><a href="/examples.html" aria-current="page">Examples</a></li>
+          <li><a href="/how.html">How it works</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <h1>Recent claims</h1>
+    <p class="lead">These summaries come straight from the Raw Prior runs stored in your local Heretix database. They show the model’s prior, confidence, and top reasons. Run your own claim to add to this list.</p>
+    <div class="grid">
+      {EXAMPLES}
+    </div>
+    <div class="empty" style="display:{EMPTY_DISPLAY};">No runs yet. Try <a href="/?quick=1">asking a claim</a> and the results will appear here.</div>
+  </main>
+
+  <footer>
+    <span>© <span id="year"></span> Heretix</span>
+    <a href="mailto:hello@heretix.ai">Contact</a>
+    <a href="/how.html">Learn more</a>
+  </footer>
+
+  <script>
+    var yearSpan = document.getElementById('year');
+    if (yearSpan) { yearSpan.textContent = new Date().getFullYear(); }
+  </script>
+</body>
+</html>
