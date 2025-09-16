@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang='en'>
+<head>
+  <meta charset='utf-8' />
+  <meta name='viewport' content='width=device-width, initial-scale=1' />
+  <title>Heretix · Something went wrong</title>
+  <style>
+    :root { --bg:#040404; --fg:#e9ffe9; --muted:#8aa28a; --bright:#00ff41; }
+    *{box-sizing:border-box;}
+    html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font-family:'Inter','Helvetica Neue',Arial,sans-serif;}
+    main{max-width:540px;margin:90px auto;padding:0 24px;text-align:center;}
+    h1{font-size:clamp(28px,6vw,40px);margin-bottom:12px;text-shadow:0 0 16px rgba(0,255,65,0.2);}
+    p{margin:0 0 16px;color:var(--muted);line-height:1.6;}
+    a{color:var(--bright);}
+    button, .btn{display:inline-flex;align-items:center;justify-content:center;padding:12px 20px;border-radius:10px;border:0;font-size:15px;font-weight:600;margin-top:18px;background:var(--bright);color:#013310;text-decoration:none;}
+    .details{margin-top:26px;font-size:13px;color:rgba(233,255,233,0.75);word-break:break-word;}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>{HEADLINE}</h1>
+    <p>{MESSAGE}</p>
+    <a class='btn' href='/?quick=1'>Try another claim</a>
+    <div class='details'>{DETAILS}</div>
+  </main>
+</body>
+</html>

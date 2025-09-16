@@ -3,61 +3,231 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>HERETIX · Screen 1</title>
+  <title>Heretix · Understand the AI answering your questions</title>
   <style>
-    :root { --bg:#0a0a0a; --fg:#cfe9cf; --green:#00ff41; --muted:#7aa37a; }
-    *{ box-sizing:border-box; }
-    html,body{ margin:0; padding:0; background:var(--bg); color:var(--fg); font-family:'Courier New', monospace; }
-    .topbar{ position:fixed; top:0; left:0; right:0; height:56px; display:flex; align-items:center; padding:0 16px; z-index:10; }
-    .brand{ color:var(--green); font-weight:800; font-size:28px; letter-spacing:4px; text-shadow:0 0 16px rgba(0,255,65,0.3); }
-    .wrap{ max-width:800px; margin:80px auto 40px; padding:0 16px; }
-    .question{ font-size:32px; font-weight:800; color:var(--fg); text-shadow:0 0 14px rgba(0,255,65,0.18); margin:0 0 14px; }
-    .sub{ margin:6px 0 18px; color:var(--muted); }
-    .card{ border:1px solid rgba(0,255,65,0.25); border-radius:8px; padding:16px; background:rgba(255,255,255,0.02); }
-    label{ display:block; margin:10px 0 6px; }
-    textarea, input[type="text"], input[type="number"], select{ width:100%; background:#0f0f0f; color:var(--fg); border:1px solid rgba(0,255,65,0.35); border-radius:6px; padding:10px; }
-    .row{ display:flex; gap:12px; }
-    .row .col{ flex:1; }
-    details{ margin-top:12px; }
-    summary{ cursor:pointer; color:var(--green); }
-    .hint{ font-size:12px; color:var(--muted); }
-    .cta{ margin-top:16px; padding:12px 18px; background:var(--green); color:#001b08; border:0; border-radius:6px; font-weight:700; cursor:pointer; }
-    .inline{ display:flex; align-items:center; gap:8px; }
+    :root {
+      --bg: #070807;
+      --card: rgba(255,255,255,0.03);
+      --border: rgba(0,255,65,0.25);
+      --fg: #d8f7d8;
+      --muted: #8ea88e;
+      --bright: #00ff41;
+      --accent: #ff4d4d;
+      --shadow: 0 0 32px rgba(0,255,65,0.15);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin:0; padding:0; background:var(--bg); color:var(--fg); font-family:"Inter", "Helvetica Neue", Arial, sans-serif; }
+    a { color:var(--bright); text-decoration:none; }
+    header { position:sticky; top:0; backdrop-filter:blur(12px); background:rgba(7,8,7,0.9); border-bottom:1px solid rgba(0,255,65,0.15); z-index:20; }
+    .nav { max-width:1100px; margin:0 auto; padding:14px 20px; display:flex; align-items:center; justify-content:space-between; }
+    .brand { font-family:"Space Mono", monospace; font-size:22px; letter-spacing:4px; color:var(--bright); text-shadow:0 0 16px rgba(0,255,65,0.35); }
+    nav ul { list-style:none; display:flex; gap:18px; margin:0; padding:0; }
+    nav a { font-size:14px; color:var(--muted); transition:color 0.2s ease; }
+    nav a:hover { color:var(--bright); }
+
+    main { max-width:1100px; margin:0 auto; padding:40px 20px 120px; }
+    section { margin-top:80px; }
+
+    .hero { margin-top:40px; display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:40px; align-items:center; }
+    .hero h1 { font-size:clamp(32px, 4.6vw, 54px); margin:0 0 12px; text-shadow:0 0 22px rgba(0,255,65,0.25); }
+    .hero p { margin:0 0 24px; color:var(--muted); font-size:18px; line-height:1.5; }
+    .hero .form-card { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:24px; box-shadow:var(--shadow); }
+    label { display:block; font-size:14px; color:var(--muted); margin-bottom:8px; text-transform:uppercase; letter-spacing:1px; }
+    textarea { width:100%; border-radius:12px; border:1px solid rgba(0,255,65,0.35); background:#0b0d0b; color:var(--fg); padding:18px; font-size:17px; line-height:1.5; min-height:150px; resize:none; }
+    textarea::placeholder{ color:rgba(191,214,191,0.6); }
+    .form-meta { display:flex; gap:12px; flex-wrap:wrap; margin-top:16px; }
+    select { flex:1; min-width:150px; border-radius:10px; padding:12px; border:1px solid rgba(0,255,65,0.35); background:#0b0d0b; color:var(--fg); font-size:15px; }
+    .primary { margin-top:20px; width:100%; padding:16px; font-size:17px; font-weight:600; border-radius:12px; border:0; background:var(--bright); color:#041105; cursor:pointer; box-shadow:0 16px 40px rgba(0,255,65,0.15); transition:transform 0.2s ease, box-shadow 0.2s ease; }
+    .primary:hover { transform:translateY(-2px); box-shadow:0 18px 46px rgba(0,255,65,0.25); }
+    .footnote { margin-top:12px; font-size:13px; color:var(--muted); text-align:center; }
+    .footnote .full-link { display:none; }
+
+    .hero-examples { display:flex; gap:10px; flex-wrap:wrap; }
+    .example-pill { background:rgba(0,255,65,0.08); color:var(--bright); border:1px solid rgba(0,255,65,0.3); border-radius:24px; padding:8px 14px; font-size:13px; cursor:pointer; transition:background 0.2s ease; }
+    .example-pill:hover { background:rgba(0,255,65,0.16); }
+
+    .how { text-align:center; }
+    .how h2 { font-size:28px; margin:0 0 12px; }
+    .how p { color:var(--muted); max-width:640px; margin:0 auto 32px; line-height:1.6; }
+    .how-grid { display:grid; gap:22px; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); }
+    .how-card { padding:24px; border-radius:14px; border:1px solid rgba(0,255,65,0.2); background:rgba(255,255,255,0.02); box-shadow:0 0 20px rgba(0,255,65,0.08); text-align:left; }
+    .how-card span { display:block; font-size:12px; letter-spacing:2px; text-transform:uppercase; color:rgba(0,255,65,0.8); margin-bottom:10px; }
+    .how-card h3 { margin:0 0 10px; font-size:20px; }
+    .how-card p { margin:0; color:var(--muted); line-height:1.6; }
+
+    .example-section { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:40px; align-items:center; }
+    .example-card { border-radius:18px; border:1px solid rgba(0,255,65,0.35); padding:32px; background:radial-gradient(circle at top,#112311 0%, #080c08 65%); box-shadow:0 0 36px rgba(0,255,65,0.24); }
+    .example-card h3 { margin:0; font-size:52px; color:var(--bright); text-shadow:0 0 28px rgba(0,255,65,0.35); }
+    .example-card small { display:block; letter-spacing:3px; font-size:12px; color:rgba(0,255,65,0.7); margin-top:6px; text-transform:uppercase; }
+    .example-card .claim { font-family:"Space Mono", monospace; margin-top:18px; font-size:16px; line-height:1.6; }
+    .example-card ul { margin:18px 0 0; padding-left:22px; color:var(--muted); }
+
+    .faq { max-width:800px; margin:0 auto; }
+    .faq h2 { text-align:center; margin-bottom:20px; font-size:28px; }
+    details { border:1px solid rgba(0,255,65,0.25); border-radius:12px; padding:18px 20px; margin-bottom:16px; background:rgba(255,255,255,0.02); }
+    summary { cursor:pointer; font-weight:600; font-size:16px; }
+    summary::-webkit-details-marker { display:none; }
+    details[open] summary { color:var(--bright); }
+    details p { margin:12px 0 0; color:var(--muted); line-height:1.6; }
+
+    footer { margin-top:90px; padding:30px 0; border-top:1px solid rgba(0,255,65,0.1); color:var(--muted); font-size:13px; text-align:center; }
+    footer a { color:var(--muted); margin:0 12px; }
+    footer a:hover { color:var(--bright); }
+
+    @media (max-width:720px){
+      nav ul { display:none; }
+      .hero { margin-top:20px; }
+      .example-card h3 { font-size:44px; }
+    }
+  
+    body.quick main > section:not(.hero){ display:none; }
+    body.quick header nav{ display:none; }
+    body.quick .hero { margin-top:80px; }
+    body.quick .hero > div:first-child { display:none; }
+    body.quick .hero .form-card { margin:0 auto; max-width:520px; }
+    body.quick .footnote .full-link { display:inline; }
   </style>
-  <!-- Screen 1 -->
 </head>
 <body>
-  <div class="topbar"><div class="brand">HERETIX</div></div>
-  <div class="wrap">
-    <div class="question">How likely is the following true?</div>
+  <header>
+    <div class="nav">
+      <a class="brand" href="/">HERETIX</a>
+      <nav>
+        <ul>
+          <li><a href="/how.html">How it works</a></li>
+          <li><a href="/examples.html">Examples</a></li>
+          <li><a href="#faq">Learn</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
 
-    <form class="card" method="post" action="/run">
-      <label for="claim">Claim <span class="hint">(max 280 characters)</span></label>
-      <textarea id="claim" name="claim" rows="6" maxlength="280" placeholder="e.g., Tariffs don't cause inflation" required></textarea>
-
-      <div class="row" style="margin-top:10px;">
-        <div class="col">
-          <label for="model">Model</label>
-          <select id="model" name="ui_model">
-            <option value="gpt-5" selected>GPT‑5</option>
-            <option value="claude-4.1" disabled>Claude 4.1 (coming soon)</option>
-            <option value="grok-4" disabled>Grok 4 (coming soon)</option>
-            <option value="deepseek-r1" disabled>DeepSeek R1 (coming soon)</option>
-          </select>
-        </div>
-        <div class="col">
-          <label for="mode">Mode</label>
-          <select id="mode" name="ui_mode">
-            <option value="prior" selected>Internal Knowledge Only (no retrieval)</option>
-            <option value="internet-search" disabled>Internet Search (coming soon)</option>
-            <option value="user-data" disabled>User Data (coming soon)</option>
-          </select>
+  <main>
+    <section class="hero" id="top">
+      <div>
+        <h1>Understand the AI answering your questions.</h1>
+        <p>Heretix measures how GPT‑5’s training data anchors your claim—no web browsing—and explains the result in plain language.</p>
+        <div class="hero-examples">
+          <button type="button" class="example-pill" data-example="Do tariffs cause inflation?">Do tariffs cause inflation?</button>
+          <button type="button" class="example-pill" data-example="Solar panels never pay for themselves">Do solar panels pay for themselves?</button>
+          <button type="button" class="example-pill" data-example="Evidence that interest rates will never rise again">Will interest rates stay low forever?</button>
         </div>
       </div>
+      <div class="form-card">
+        <form method="post" action="/run">
+          <label for="claim">Check a claim</label>
+          <textarea id="claim" name="claim" maxlength="280" placeholder="Type the claim you want to inspect." required></textarea>
+          <div class="form-meta">
+            <select name="ui_model" aria-label="Model selection">
+              <option value="gpt-5" selected>GPT‑5</option>
+              <option value="claude-4.1" disabled>Claude 4.1 · coming soon</option>
+              <option value="grok-4" disabled>Grok 4 · coming soon</option>
+              <option value="deepseek-r1" disabled>DeepSeek R1 · coming soon</option>
+            </select>
+            <select name="ui_mode" aria-label="Mode selection">
+              <option value="prior" selected>Internal knowledge only</option>
+              <option value="internet-search" disabled>Internet search · coming soon</option>
+              <option value="user-data" disabled>User evidence · coming soon</option>
+            </select>
+          </div>
+          <button class="primary" type="submit">Ask the model</button>
+          <div class="footnote"></div>
+        </form>
+      </div>
+    </section>
 
+    <section class="how" id="how">
+      <h2>How Heretix works</h2>
+      <p>We query the model in a few carefully chosen ways, average its answers, and share the model’s own reasoning. No retrieval, no citations, just what the AI already believes.</p>
+      <div class="how-grid">
+        <div class="how-card">
+          <span>Step 1</span>
+          <h3>Ask</h3>
+          <p>You submit a claim. We freeze all runs to GPT‑5’s internal knowledge—no search engines, no external documents.</p>
+        </div>
+        <div class="how-card">
+          <span>Step 2</span>
+          <h3>Listen</h3>
+          <p>Heretix asks the claim in multiple phrasings to check the model’s prior belief and keep things consistent.</p>
+        </div>
+        <div class="how-card">
+          <span>Step 3</span>
+          <h3>Understand</h3>
+          <p>We translate the model’s judgement into a probability and a short explanation you can read in seconds.</p>
+        </div>
+      </div>
+    </section>
 
-      <button type="submit" class="cta">ANALYZE CLAIM</button>
-    </form>
-  </div>
+    <section class="example-section" id="examples">
+      <div class="example-card">
+        <small>Example outcome</small>
+        <h3>67.8%</h3>
+        <div class="claim">“Do tariffs cause inflation?”</div>
+        <ul>
+          <li>Tariffs raise costs of imported goods for businesses and consumers.</li>
+          <li>Higher import costs often pass through to prices when demand stays strong.</li>
+          <li>Exceptions happen when currency shifts or suppliers absorb the tariff shock.</li>
+        </ul>
+      </div>
+      <div>
+        <h2>See what the model already believes</h2>
+        <p>Heretix is a window into GPT‑5’s own prior. You can explore fresh claims, revisit past arguments, or sanity‑check a story before sharing it.</p>
+        <p>Want more? Browse a gallery of claims inside the app or run your own instantly—no signup required.</p>
+        <a class="example-pill" href="#top">Start a claim</a>
+      </div>
+    </section>
+
+    <section class="faq" id="faq">
+      <h2>Questions people ask</h2>
+      <details>
+        <summary>What does the percentage mean?</summary>
+        <p>It’s GPT‑5’s probability that the claim is true, using only its internal training knowledge. A low number means the model thinks the claim is likely false.</p>
+      </details>
+      <details>
+        <summary>Does Heretix browse the web with my claim?</summary>
+        <p>No. The Raw Prior Lens is strictly internal. We don’t fetch external content and we don’t store your claims beyond what’s needed to return the result.</p>
+      </details>
+      <details>
+        <summary>Is this politically biased?</summary>
+        <p>We show the model’s belief, not a judgement from us. Heretix reveals consensus the AI already absorbed, so you can inspect it—not reinforce it.</p>
+      </details>
+      <details>
+        <summary>Can I see the advanced stats?</summary>
+        <p>Yes. Every result includes an “Advanced details” panel with the confidence interval width, template stability, and policy compliance—open it whenever you want a deeper read.</p>
+      </details>
+    </section>
+  </main>
+
+  <footer>
+    <span>© <span id="year"></span> Heretix</span>
+    <a href="mailto:hello@heretix.ai">Contact</a>
+    <a href="/how.html">Learn more</a>
+  </footer>
+
+  <script>
+    (function(){
+      var isQuick = window.location.search.includes('quick=1');
+      if (isQuick) {
+        document.body.classList.add('quick');
+        var claim = document.getElementById('claim');
+        if (claim) { claim.focus(); }
+      }
+    })();
+    document.querySelectorAll('.example-pill').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var target = document.getElementById('claim');
+        if (!target) return;
+        var example = this.getAttribute('data-example');
+        if (example) {
+          target.value = example;
+          target.focus();
+        }
+      });
+    });
+    var yearSpan = document.getElementById('year');
+    if (yearSpan) {
+      yearSpan.textContent = new Date().getFullYear();
+    }
+  </script>
 </body>
 </html>

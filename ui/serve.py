@@ -10,6 +10,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 import yaml
 from typing import Optional, List
+import logging
 import re
 import html
 
@@ -28,6 +29,9 @@ PROMPT_VERSION_DEFAULT = "rpl_g5_v5"  # keep in sync with examples
 MAX_CLAIM_CHARS = 280
 RUN_TIMEOUT_SEC = 900
 PORT_DEFAULT = 7799
+
+logging.basicConfig(level=logging.INFO)
+
 
 
 def _render(path: Path, mapping: dict[str, str]) -> bytes:
@@ -139,6 +143,7 @@ class Handler(BaseHTTPRequestHandler):
             if p.exists():
                 bg = "/assets/" + name
                 break
+        escaped_claim = html.escape(claim, quote=True)
         if bg:
             running_html = f"""
             <!doctype html>
@@ -146,23 +151,38 @@ class Handler(BaseHTTPRequestHandler):
             <meta http-equiv='refresh' content='1;url=/wait?job={job_id}'>
             <title>HERETIX · Running…</title>
             <style>
-              body {{ background:#0a0a0a; color:#cfe9cf; font-family:'Courier New', monospace; text-align:center; padding:48px; }}
-              .big {{ color:#00ff41; font-size:28px; text-shadow:0 0 18px rgba(0,255,65,0.35); }}
-              .muted {{ color:#7aa37a; margin-top:8px; }}
-              .hero {{ width:420px; height:420px; margin:20px auto; position:relative; background:url('{bg}') center/cover no-repeat; border-radius:8px; box-shadow:0 0 28px rgba(0,255,65,0.15) inset; }}
-              /* Adjustable pill position to align with the image's pill */
+              body {{ background:#060606; color:#d8f7d8; font-family:'Inter','Helvetica Neue',Arial,sans-serif; padding:56px 18px; }}
+              .wrap {{ max-width:640px; margin:0 auto; text-align:center; }}
+              h1 {{ font-size:26px; margin-bottom:18px; color:#00ff41; text-shadow:0 0 18px rgba(0,255,65,0.35); }}
+              .claim {{ margin-top:12px; padding:18px 22px; border-radius:14px; background:rgba(255,255,255,0.02); border:1px solid rgba(0,255,65,0.25); font-size:18px; line-height:1.5; }}
+              .steps {{ margin:26px auto 0; max-width:420px; text-align:left; list-style:none; padding:0; }}
+              .steps li {{ display:flex; gap:14px; align-items:flex-start; padding:14px 16px; margin-bottom:12px; border-radius:12px; background:rgba(0,0,0,0.35); border:1px solid rgba(0,255,65,0.18); color:#8ea88e; position:relative; overflow:hidden; }}
+              .steps li::before {{ content:''; position:absolute; left:0; top:0; bottom:0; width:4px; background:rgba(0,255,65,0.45); opacity:0; animation: pulse 3s infinite; }}
+              .steps li.active::before {{ opacity:1; }}
+              @keyframes pulse {{ 0% {{ transform:scaleY(0); }} 50% {{ transform:scaleY(1); }} 100% {{ transform:scaleY(0); }} }}
+              .hero {{ width:340px; height:340px; margin:28px auto; position:relative; background:url('{bg}') center/cover no-repeat; border-radius:12px; box-shadow:0 0 32px rgba(0,255,65,0.25) inset; }}
+              .hero::after {{ content:''; position:absolute; right:0; bottom:0; width:56px; height:56px; background: linear-gradient(135deg, rgba(6,6,6,0) 0%, rgba(6,6,6,0.1) 45%, rgba(6,6,6,0.75) 60%, rgba(6,6,6,1) 100%); border-bottom-right-radius:12px; pointer-events:none; }}
               .hero {{ --pill-left: 50%; --pill-top: 48%; }}
-              /* Dark soft mask to diminish the background pill so only the animated one is perceived */
-              .mask {{ position:absolute; left:var(--pill-left); top:var(--pill-top); width:120px; height:120px; transform: translate(-50%,-50%); pointer-events:none; background: radial-gradient(circle at center, rgba(10,10,10,0.85) 0%, rgba(10,10,10,0.65) 45%, rgba(10,10,10,0.25) 70%, rgba(10,10,10,0.0) 100%); border-radius:50%; filter: blur(1px); }}
+              .mask {{ position:absolute; left:var(--pill-left); top:var(--pill-top); width:120px; height:120px; transform: translate(-50%,-50%); pointer-events:none; background: radial-gradient(circle at center, rgba(6,6,6,0.85) 0%, rgba(6,6,6,0.65) 45%, rgba(6,6,6,0.25) 70%, rgba(6,6,6,0.0) 100%); border-radius:50%; filter: blur(1px); }}
               .pill {{ position:absolute; left:var(--pill-left); top:var(--pill-top); width:54px; height:20px; transform: translate(-50%,-50%); background:#ff2b2b; border-radius:999px; box-shadow:0 0 18px rgba(255,0,0,0.45); border:1px solid #ff6b6b; animation: spin 1.6s linear infinite; }}
               @keyframes spin {{ from {{ transform: translate(-50%,-50%) rotate(0deg); }} to {{ transform: translate(-50%,-50%) rotate(360deg); }} }}
+              .muted {{ color:#8ea88e; margin-top:12px; }}
             </style>
-            <h1 class='big'>Running analysis…</h1>
-            <div class='hero'>
-              <div class='mask'></div>
-              <div class='pill' aria-label='red pill'></div>
+            <div class='wrap'>
+              <h1>Measuring how GPT‑5’s training data anchors this claim…</h1>
+              <div class='claim'>{escaped_claim}</div>
+              <ol class='steps'>
+                <li class='active'>Planning the different phrasings.</li>
+                <li>Asking GPT-5 with internal knowledge only.</li>
+                <li>Preparing the explanation for the verdict.</li>
+              </ol>
+              <div class='hero'>
+                <div class='mask'></div>
+                <div class='pill' aria-label='red pill'></div>
+              </div>
+              <div class='muted'>This usually takes less than a minute.</div>
             </div>
-            <div class='muted'>This may take up to a minute.</div>
+            </div>
             """.encode("utf-8")
         else:
             running_html = f"""
@@ -171,15 +191,28 @@ class Handler(BaseHTTPRequestHandler):
             <meta http-equiv='refresh' content='1;url=/wait?job={job_id}'>
             <title>HERETIX · Running…</title>
             <style>
-              body {{ background:#0a0a0a; color:#cfe9cf; font-family:'Courier New', monospace; text-align:center; padding:48px; }}
-              .big {{ color:#00ff41; font-size:28px; text-shadow:0 0 18px rgba(0,255,65,0.35); }}
-              .muted {{ color:#7aa37a; margin-top:8px; }}
-              .scene {{ width:360px; margin:28px auto; }}
+              body {{ background:#060606; color:#d8f7d8; font-family:'Inter','Helvetica Neue',Arial,sans-serif; padding:56px 18px; }}
+              .wrap {{ max-width:640px; margin:0 auto; text-align:center; }}
+              h1 {{ font-size:26px; margin-bottom:18px; color:#00ff41; text-shadow:0 0 18px rgba(0,255,65,0.35); }}
+              .claim {{ margin-top:12px; padding:18px 22px; border-radius:14px; background:rgba(255,255,255,0.02); border:1px solid rgba(0,255,65,0.25); font-size:18px; line-height:1.5; }}
+              .steps {{ margin:26px auto 0; max-width:420px; text-align:left; list-style:none; padding:0; }}
+              .steps li {{ display:flex; gap:14px; align-items:flex-start; padding:14px 16px; margin-bottom:12px; border-radius:12px; background:rgba(0,0,0,0.35); border:1px solid rgba(0,255,65,0.18); color:#8ea88e; position:relative; overflow:hidden; }}
+              .steps li::before {{ content:''; position:absolute; left:0; top:0; bottom:0; width:4px; background:rgba(0,255,65,0.45); opacity:0; animation: pulse 3s infinite; }}
+              .steps li.active::before {{ opacity:1; }}
+              @keyframes pulse {{ 0% {{ transform:scaleY(0); }} 50% {{ transform:scaleY(1); }} 100% {{ transform:scaleY(0); }} }}
+              .scene {{ width:360px; margin:32px auto; }}
               .pill {{ transform-origin: 180px 86px; animation: levitate 1.8s ease-in-out infinite; }}
-              @keyframes levitate {{ 0% {{ transform: translateY(0) rotate(0deg); }} 50% {{ transform: translateY(-8px) rotate(180deg); }} 100% {{ transform: translateY(0) rotate(360deg); }} }}
+              .muted {{ color:#8ea88e; margin-top:12px; }}
             </style>
-            <h1 class='big'>Running analysis…</h1>
-            <div class='scene'>
+            <div class='wrap'>
+              <h1>Measuring how GPT‑5’s training data anchors this claim…</h1>
+              <div class='claim'>{escaped_claim}</div>
+              <ol class='steps'>
+                <li class='active'>Planning the different phrasings.</li>
+                <li>Asking GPT‑5 with internal knowledge only.</li>
+                <li>Summarizing why it leans that way.</li>
+              </ol>
+              <div class='scene'>
               <svg width='360' height='220' viewBox='0 0 360 220' xmlns='http://www.w3.org/2000/svg' role='img' aria-label='matrix silhouette with levitating red pill'>
                 <defs>
                   <linearGradient id='g' x1='0' y1='0' x2='0' y2='1'>
@@ -217,6 +250,7 @@ class Handler(BaseHTTPRequestHandler):
               </svg>
             </div>
             <div class='muted'>This may take up to a minute.</div>
+            </div>
             """.encode("utf-8")
         self._ok(running_html, "text/html")
         return
@@ -235,32 +269,66 @@ class Handler(BaseHTTPRequestHandler):
         env.setdefault("HERETIX_RPL_SEED", "42")
 
         cmd = ["uv","run","heretix","run","--config",str(cfg_path),"--out",str(out_path)]
+        timeout = min(RUN_TIMEOUT_SEC, 600)
         try:
             start = time.time()
-            cp = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=RUN_TIMEOUT_SEC, check=True)
-            print(f"[ui] OK in {time.time()-start:.1f}s · out={len(cp.stdout)}B err={len(cp.stderr)}B")
+            cp = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=timeout, check=True)
+            logging.info("UI run ok in %.1fs", time.time()-start)
+            if cp.stderr:
+                logging.info("UI stderr: %s", cp.stderr[:500])
         except subprocess.CalledProcessError as e:
             msg = (e.stderr or e.stdout or str(e))[:2000]
-            self._err(f"Run failed\n\n{msg}"); return
+            logging.error("UI run failed: %s", msg)
+            self._err("The run failed. Please try again.", headline="The run failed"); return
         except subprocess.TimeoutExpired:
-            self._err("Run timed out"); return
+            logging.error("UI run timed out after %ss", timeout)
+            self._err("The run exceeded our time limit.", headline="This took too long"); return
 
         try:
             # Sanity limit to prevent huge/malformed file issues
             if out_path.stat().st_size > 2_000_000:
-                self._err("Output too large"); return
+                self._err("The output was larger than expected."); return
             doc = json.loads(out_path.read_text(encoding="utf-8"))
-            run = (doc.get("runs") or [{}])[0]
-            ag = run.get("aggregates") or {}
-            p = float(ag.get("prob_true_rpl"))
-            width = float(ag.get("ci_width") or 0.0)
-            stability = float(ag.get("stability_score") or 0.0)
-            compliance = float(ag.get("rpl_compliance_rate") or 0.0)
+            runs_section = doc.get("runs")
+            if not isinstance(runs_section, list) or not runs_section:
+                raise ValueError("missing runs section")
+            run = runs_section[0] or {}
+            aggregates = run.get("aggregates")
+            if not isinstance(aggregates, dict):
+                raise ValueError("missing aggregates")
+            p = float(aggregates.get("prob_true_rpl"))
+            width = float(aggregates.get("ci_width") or 0.0)
+            stability = float(aggregates.get("stability_score") or 0.0)
+            compliance = float(aggregates.get("rpl_compliance_rate") or 0.0)
         except Exception as e:
-            self._err(f"Failed to parse output JSON: {e}"); return
+            logging.error("UI parse error: %s", e)
+            self._err("We couldn’t read the run output."); return
 
         percent = f"{p*100:.1f}" if p == p else "?"
-        verdict = "TRUE" if (p == p and p >= 0.5) else ("FALSE" if p == p else "?")
+        if p == p:
+            if p >= 0.60:
+                verdict = "LIKELY TRUE"
+            elif p <= 0.40:
+                verdict = "LIKELY FALSE"
+            else:
+                verdict = "UNCERTAIN"
+        else:
+            verdict = "UNAVAILABLE"
+
+        if p == p:
+            pct = f"{p*100:.1f}%"
+            if p >= 0.60:
+                interpretation = f"{ui_model_label} leans true and gives this claim about {pct} chance of being correct."
+            elif p <= 0.40:
+                interpretation = f"{ui_model_label} leans false and estimates just {pct} probability that the claim is true."
+            else:
+                interpretation = f"{ui_model_label} is unsure—it assigns roughly {pct} chance the claim is true."
+        else:
+            interpretation = "We couldn’t calculate the model’s prior for this claim."
+
+        adv_width = f"{width:.3f}" if width == width else "—"
+        adv_stability = f"{stability:.2f}" if stability == stability else "—"
+        adv_compliance = f"{compliance*100:.0f}%" if compliance == compliance else "—"
 
         # Generate a brief model explanation via one provider call (same prompt version)
         def _load_prompt(prompts_file: Optional[str], version: str) -> tuple[str, str, List[str]]:
@@ -445,22 +513,36 @@ class Handler(BaseHTTPRequestHandler):
             why_head = "Why it’s uncertain"
             why_kind = "uncertain"
 
+        summary_lines = [
+            f'Claim: "{claim}"',
+            f'Verdict: {verdict} ({percent}%)',
+        ]
+        if reasons:
+            summary_lines.append('Reasons:')
+            summary_lines.extend(f'- {r}' for r in reasons)
+        else:
+            summary_lines.append('Reasons: (none)')
+        summary_lines.append(f'Model: {ui_model_label} · {ui_mode_label}')
+        summary_attr = html.escape("\n".join(summary_lines), quote=True)
+
         # Escape for HTML but preserve Unicode characters (avoid JSON string escapes like \u201c)
         why_items_html = "\n".join(f"<li>{html.escape(r, quote=True)}</li>" for r in reasons)
-        note = ""
-
         body = _render(
             ROOT / "results.html",
             {
                 "CLAIM": html.escape(claim, quote=True),
                 "PERCENT": percent,
                 "VERDICT": html.escape(verdict, quote=True),
+                "INTERPRETATION": html.escape(interpretation, quote=True),
                 "UI_MODEL": html.escape(ui_model_label, quote=True),
                 "UI_MODE": html.escape(ui_mode_label, quote=True),
                 "WHY_HEAD": why_head,
                 "WHY_ITEMS": why_items_html,
                 "WHY_KIND": why_kind,
-                "NOTE": note,
+                "ADV_WIDTH": adv_width,
+                "ADV_STABILITY": adv_stability,
+                "ADV_COMPLIANCE": adv_compliance,
+                "SUMMARY_ATTR": summary_attr,
             },
         )
         self._ok(body, "text/html")
@@ -475,14 +557,27 @@ class Handler(BaseHTTPRequestHandler):
             pass
 
     def do_GET(self):  # noqa: N802
-        if self.path in ("/", "/index.html"):
+        parsed = urllib.parse.urlparse(self.path)
+        path_only = parsed.path or "/"
+        if path_only in ("/", "/index.html"):
             body = (ROOT / "index.html").read_bytes()
             self._ok(body, "text/html")
             return
-        if self.path.startswith("/assets/"):
+        if path_only in ("/how", "/how.html"):
+            how_path = ROOT / "how.html"
+            if how_path.exists():
+                self._ok(how_path.read_bytes(), "text/html")
+                return
+        if path_only in ("/examples", "/examples.html"):
+            ex_path = ROOT / "examples.html"
+            if ex_path.exists():
+                self._ok(ex_path.read_bytes(), "text/html")
+                return
+            self._not_found(); return
+        if path_only.startswith("/assets/"):
             # serve static assets under ui/assets with strict path validation
             asset_root = (ROOT / "assets").resolve()
-            rel = self.path[len("/assets/"):]
+            rel = path_only[len("/assets/"):]
             # normalize and prevent traversal
             local = (asset_root / Path(rel)).resolve()
             try:
@@ -500,9 +595,8 @@ class Handler(BaseHTTPRequestHandler):
             elif ext == ".gif": ctype = "image/gif"
             self._ok(local.read_bytes(), ctype)
             return
-        if self.path.startswith("/wait"):
+        if path_only.startswith("/wait"):
             # parse ?job=
-            parsed = urllib.parse.urlparse(self.path)
             q = urllib.parse.parse_qs(parsed.query)
             job_id = (q.get("job") or [""])[0]
             job_file = TMP_DIR / f"job_{job_id}.json"
@@ -539,8 +633,16 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _err(self, msg: str) -> None:
-        body = f"<pre style='color:#eee;background:#222;padding:16px'>500 Server Error\n\n{msg}</pre>".encode("utf-8")
+    def _err(self, msg: str, headline: str = "We hit a snag") -> None:
+        try:
+            template = (ROOT / "error.html").read_text(encoding="utf-8")
+            body = template.replace("{HEADLINE}", html.escape(headline, quote=True)) \
+                           .replace("{MESSAGE}", "We couldn’t finish this check. Please try again in a moment.") \
+                           .replace("{DETAILS}", "If the problem persists, please retry later.") \
+                           .encode("utf-8")
+        except Exception:
+            fallback = "<pre style='color:#eee;background:#222;padding:16px'>500 Server Error</pre>"
+            body = fallback.encode("utf-8")
         self.send_response(500)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
