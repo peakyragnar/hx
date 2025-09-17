@@ -1,0 +1,158 @@
+from __future__ import annotations
+
+import hashlib
+import json
+from datetime import datetime, timezone
+
+from fastapi import Depends, FastAPI, HTTPException
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from heretix.config import RunConfig
+from heretix.rpl import run_single_version
+
+from .config import settings
+from .database import get_session
+from .schemas import AggregationInfo, Aggregates, RunRequest, RunResponse, SamplingInfo
+from heretix.db.models import Check
+
+app = FastAPI(title="Heretix API", version="0.1.0")
+
+
+@app.post("/api/checks/run", response_model=RunResponse)
+def run_check(payload: RunRequest, session: Session = Depends(get_session)) -> RunResponse:
+    claim = payload.claim.strip()
+    if not claim:
+        raise HTTPException(status_code=422, detail="claim must not be empty")
+
+    cfg = RunConfig(
+        claim=claim,
+        model=payload.model or settings.rpl_model,
+        prompt_version=payload.prompt_version or settings.rpl_prompt_version,
+        K=payload.K or settings.rpl_k,
+        R=payload.R or settings.rpl_r,
+        B=payload.B or settings.rpl_b,
+        max_output_tokens=payload.max_output_tokens or settings.rpl_max_output_tokens,
+        no_cache=bool(payload.no_cache) if payload.no_cache is not None else False,
+    )
+    cfg.seed = payload.seed if payload.seed is not None else cfg.seed
+
+    prompt_file = settings.prompt_file()
+
+    use_mock = payload.mock if payload.mock is not None else settings.allow_mock
+
+    try:
+        result = run_single_version(cfg, prompt_file=str(prompt_file), mock=use_mock)
+    except Exception as exc:  # pragma: no cover - let FastAPI handle responses
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    aggregation = result.get("aggregation", {})
+    aggregates = dict(result.get("aggregates", {}))
+    sampling = dict(result.get("sampling", {}))
+
+    ci95 = aggregates.get("ci95", [None, None])
+    rpl_compliance_rate = float(aggregates.get("rpl_compliance_rate", 0.0))
+    cache_hit_rate = float(aggregates.get("cache_hit_rate", 0.0))
+    ci_width = float(aggregates.get("ci_width", (ci95[1] or 0.0) - (ci95[0] or 0.0)))
+    stability_score = float(aggregates.get("stability_score", 0.0))
+
+    gate_compliance_ok = rpl_compliance_rate >= 0.98
+    gate_stability_ok = stability_score >= 0.25
+    gate_precision_ok = ci_width <= 0.30
+
+    now = datetime.now(timezone.utc)
+
+    counts_json = json.dumps(aggregation.get("counts_by_template", {}))
+    config_json = json.dumps(
+        {
+            "claim": cfg.claim,
+            "model": cfg.model,
+            "prompt_version": cfg.prompt_version,
+            "K": cfg.K,
+            "R": cfg.R,
+            "T": sampling.get("T"),
+            "B": cfg.B,
+            "seed": cfg.seed,
+            "max_output_tokens": cfg.max_output_tokens,
+            "no_cache": cfg.no_cache,
+            "prompt_file": str(prompt_file),
+        }
+    )
+
+    run_id = result.get("run_id")
+    if not run_id:
+        raise HTTPException(status_code=500, detail="run_id missing from RPL result")
+
+    claim_hash = hashlib.sha256(claim.encode("utf-8")).hexdigest()
+
+    existing = session.scalar(select(Check).where(Check.run_id == run_id))
+    if existing:
+        check = existing
+    else:
+        check = Check(run_id=run_id, env=settings.app_env)
+        session.add(check)
+
+    check.env = settings.app_env
+    check.user_id = None
+    check.claim = claim
+    check.claim_hash = claim_hash
+    check.model = result.get("model", cfg.model)
+    check.prompt_version = result.get("prompt_version", cfg.prompt_version)
+    check.k = int(cfg.K)
+    check.r = int(cfg.R)
+    check.t = sampling.get("T")
+    check.b = cfg.B
+    check.seed = cfg.seed
+    bootstrap_seed = aggregation.get("bootstrap_seed")
+    check.bootstrap_seed = int(bootstrap_seed) if bootstrap_seed is not None else None
+    check.max_output_tokens = cfg.max_output_tokens
+    check.prob_true_rpl = float(aggregates.get("prob_true_rpl"))
+    check.ci_lo = float(ci95[0]) if ci95[0] is not None else None
+    check.ci_hi = float(ci95[1]) if ci95[1] is not None else None
+    check.ci_width = ci_width
+    check.template_iqr_logit = aggregation.get("template_iqr_logit")
+    check.stability_score = stability_score
+    check.imbalance_ratio = aggregation.get("imbalance_ratio")
+    check.rpl_compliance_rate = rpl_compliance_rate
+    check.cache_hit_rate = cache_hit_rate
+    check.config_json = config_json
+    check.sampler_json = json.dumps({"K": cfg.K, "R": cfg.R, "T": sampling.get("T")})
+    check.counts_by_template_json = counts_json
+    check.artifact_json_path = None
+    check.prompt_char_len_max = aggregation.get("prompt_char_len_max")
+    check.pqs = None
+    check.gate_compliance_ok = gate_compliance_ok
+    check.gate_stability_ok = gate_stability_ok
+    check.gate_precision_ok = gate_precision_ok
+    check.pqs_version = None
+    check.was_cached = cache_hit_rate >= 0.999
+    check.provider_model_id = result.get("model", cfg.model)
+    check.created_at = now
+    check.finished_at = now
+
+    aggregates["ci_width"] = ci_width
+
+    response = RunResponse(
+        execution_id=result.get("execution_id"),
+        run_id=run_id,
+        claim=result.get("claim"),
+        model=result.get("model", cfg.model),
+        prompt_version=result.get("prompt_version", cfg.prompt_version),
+        sampling=SamplingInfo(**sampling),
+        aggregation=AggregationInfo(
+            method=aggregation.get("method"),
+            B=int(aggregation.get("B", cfg.B)),
+            center=aggregation.get("center"),
+            trim=aggregation.get("trim"),
+            bootstrap_seed=bootstrap_seed,
+            n_templates=aggregation.get("n_templates"),
+            counts_by_template=aggregation.get("counts_by_template", {}),
+            imbalance_ratio=aggregation.get("imbalance_ratio"),
+            template_iqr_logit=aggregation.get("template_iqr_logit"),
+            prompt_char_len_max=aggregation.get("prompt_char_len_max"),
+        ),
+        aggregates=Aggregates(**aggregates),
+        mock=use_mock,
+    )
+
+    return response

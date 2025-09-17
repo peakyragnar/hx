@@ -60,6 +60,17 @@ Legacy CLI is available under `legacy/` for reference but is not installed by de
 - Stop services when done: `docker compose down`
 - Production deployments point at the Neon connection string saved as `DATABASE_URL_PROD`.
 
+### Local API Scaffold
+- Install dependencies: `uv sync`
+- Start Postgres (`docker compose up -d postgres`) and run migrations (`uv run alembic upgrade head`).
+- Launch the API locally: `uv run uvicorn api.main:app --reload`
+- Smoke test (mock provider):
+  ```bash
+  curl -s http://127.0.0.1:8000/api/checks/run \
+    -H 'content-type: application/json' \
+    -d '{"claim": "Tariffs cause inflation", "mock": true}' | jq
+  ```
+
 ## Faster Runs (Optional Concurrency)
 
 - CLI (opt‑in):
