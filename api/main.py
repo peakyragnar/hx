@@ -4,17 +4,26 @@ import hashlib
 import json
 from datetime import datetime, timezone
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from heretix.config import RunConfig
 from heretix.rpl import run_single_version
 
+from .auth import complete_magic_link, get_current_user, handle_magic_link
 from .config import settings
 from .database import get_session
-from .schemas import AggregationInfo, Aggregates, RunRequest, RunResponse, SamplingInfo
-from heretix.db.models import Check
+from .schemas import (
+    AggregationInfo,
+    Aggregates,
+    MagicLinkPayload,
+    MeResponse,
+    RunRequest,
+    RunResponse,
+    SamplingInfo,
+)
+from heretix.db.models import Check, User
 
 app = FastAPI(title="Heretix API", version="0.1.0")
 
@@ -156,3 +165,26 @@ def run_check(payload: RunRequest, session: Session = Depends(get_session)) -> R
     )
 
     return response
+
+
+@app.post("/api/auth/magic-links", status_code=204)
+def request_magic_link(payload: MagicLinkPayload, session: Session = Depends(get_session)) -> None:
+    handle_magic_link(payload.email, session)
+
+
+@app.get("/api/auth/callback")
+def magic_link_callback(token: str, session: Session = Depends(get_session)):
+    return complete_magic_link(token, session)
+
+
+@app.get("/api/me", response_model=MeResponse)
+def read_me(user: User | None = Depends(get_current_user)) -> MeResponse:
+    if not user:
+        return MeResponse(authenticated=False)
+    return MeResponse(
+        authenticated=True,
+        email=user.email,
+        plan=getattr(user, "plan", None),
+        checks_allowed=None,
+        checks_used=None,
+    )

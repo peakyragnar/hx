@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 
 
 class RunRequest(BaseModel):
@@ -58,3 +58,15 @@ class RunResponse(BaseModel):
     aggregation: AggregationInfo
     aggregates: Aggregates
     mock: bool = False
+
+
+class MagicLinkPayload(BaseModel):
+    email: EmailStr
+
+
+class MeResponse(BaseModel):
+    authenticated: bool
+    email: Optional[EmailStr] = None
+    plan: Optional[str] = None
+    checks_allowed: Optional[int] = None
+    checks_used: Optional[int] = None

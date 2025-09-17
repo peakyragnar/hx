@@ -71,6 +71,22 @@ Legacy CLI is available under `legacy/` for reference but is not installed by de
     -d '{"claim": "Tariffs cause inflation", "mock": true}' | jq
   ```
 
+### Magic-Link Sign-in (local flow)
+- Request link:
+  ```bash
+  curl -s -X POST http://127.0.0.1:8000/api/auth/magic-links \
+    -H 'content-type: application/json' \
+    -d '{"email": "you@example.com"}' -o /dev/null -w "%{http_code}\n"
+  ```
+- Check server logs (or Postmark/MailHog) for the printed URL. Visit it in a browser or with curl to store the cookie:
+  ```bash
+  curl -s '<MAGIC_LINK_URL>' -c cookies.txt | jq
+  ```
+- Verify session:
+  ```bash
+  curl -s http://127.0.0.1:8000/api/me -b cookies.txt -c cookies.txt | jq
+  ```
+
 ## Faster Runs (Optional Concurrency)
 
 - CLI (opt‑in):

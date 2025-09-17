@@ -44,7 +44,7 @@ This document captures the current architecture after adding the Postgres schema
   - `api/config.py`: loads env settings (DB URL, RPL defaults, prompt path).
   - `api/database.py`: SQLAlchemy engine + session management (dependency for FastAPI).
   - `api/schemas.py`: Pydantic models describing request/response payloads.
-  - `api/main.py`: FastAPI app with a single endpoint (`POST /api/checks/run`).
+  - `api/main.py`: FastAPI app with endpoints for runs, magic-link sign-in, and session introspection.
 
 ### Request Flow (POST /api/checks/run)
 1. Client sends JSON `{ "claim": "...", ...optional overrides... }`.
@@ -53,8 +53,13 @@ This document captures the current architecture after adding the Postgres schema
 4. Upserts a row in Postgres `checks` with the returned metrics (prob_true_rpl, CI, stability, gate flags, etc.) and environment tag (`env`).
 5. Responds with structured JSON (sampling info, aggregation diagnostics, main aggregates).
 
+### Magic-Link Flow
+1. `POST /api/auth/magic-links` stores a selector/verifier hash for the user and sends the link via Postmark (or logs it locally).
+2. Visiting `/api/auth/callback?token=selector:verifier` validates the token, marks it consumed, creates a session row, and sets an HttpOnly cookie.
+3. `GET /api/me` returns whether the current cookie maps to an active session (email, plan, placeholders for usage).
+
 ### Mock Mode & Defaults
-- The endpoint honors the `mock` flag for local testing.
+- The run endpoint honors the `mock` flag for local testing.
 - Prompt files resolve via `settings.prompt_file()` (uses `RPL_PROMPT_VERSION` and optional `RPL_PROMPTS_DIR`).
 - DB writes currently assume `env=settings.app_env` (default `local`).
 

@@ -15,6 +15,8 @@ class Settings(BaseSettings):
         "postgresql+psycopg://heretix:heretix@localhost:5433/heretix",
         alias="DATABASE_URL",
     )
+    api_url: str = Field("http://127.0.0.1:8000", alias="API_URL")
+    app_url: str = Field("http://127.0.0.1:3000", alias="APP_URL")
     rpl_model: str = Field("gpt-5", alias="RPL_MODEL")
     rpl_prompt_version: str = Field("rpl_g5_v2", alias="RPL_PROMPT_VERSION")
     rpl_k: int = Field(16, alias="RPL_K")
@@ -22,6 +24,13 @@ class Settings(BaseSettings):
     rpl_b: int = Field(5000, alias="RPL_B")
     rpl_max_output_tokens: int = Field(1024, alias="RPL_MAX_OUTPUT_TOKENS")
     allow_mock: bool = Field(True, alias="RPL_ALLOW_MOCK")
+    magic_link_ttl_minutes: int = Field(10, alias="MAGIC_LINK_TTL_MINUTES")
+    session_ttl_days: int = Field(30, alias="SESSION_TTL_DAYS")
+    session_cookie_name: str = Field("heretix_session", alias="SESSION_COOKIE_NAME")
+    session_cookie_domain: Optional[str] = Field(None, alias="SESSION_COOKIE_DOMAIN")
+    session_cookie_secure: bool = Field(False, alias="SESSION_COOKIE_SECURE")
+    email_sender_address: str = Field("hello@heretix.local", alias="EMAIL_SENDER_ADDRESS")
+    postmark_token: Optional[str] = Field(None, alias="POSTMARK_TOKEN")
     prompts_dir: Optional[Path] = Field(None, alias="RPL_PROMPTS_DIR")
 
     class Config:
