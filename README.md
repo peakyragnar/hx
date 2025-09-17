@@ -55,7 +55,7 @@ Legacy CLI is available under `legacy/` for reference but is not installed by de
 ## Local Postgres (App Data)
 - Start the development database:
   - `docker compose up -d postgres`
-- Use the local connection string in your shell: `DATABASE_URL=postgresql+psycopg://heretix:heretix@localhost:5432/heretix`
+- Use the local connection string in your shell: `DATABASE_URL=postgresql+psycopg://heretix:heretix@localhost:5433/heretix`
 - Apply migrations after changes: `alembic upgrade head`
 - Stop services when done: `docker compose down`
 - Production deployments point at the Neon connection string saved as `DATABASE_URL_PROD`.

@@ -8,16 +8,16 @@ from sqlalchemy import (
     Boolean,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
-    Float,
     func,
 )
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -26,6 +26,7 @@ class Base(DeclarativeBase):
 
 
 UUID_TYPE = PG_UUID(as_uuid=True)
+JSON_TYPE = JSONB
 
 
 class User(Base):
