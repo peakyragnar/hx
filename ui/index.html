@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="heretix-api-base" content="http://127.0.0.1:8000" />
   <title>Heretix · Understand the AI answering your questions</title>
   <style>
     :root {
@@ -41,6 +42,49 @@
     .primary:hover { transform:translateY(-2px); box-shadow:0 18px 46px rgba(0,255,65,0.25); }
     .footnote { margin-top:12px; font-size:13px; color:var(--muted); text-align:center; }
     .footnote .full-link { display:none; }
+
+    .hidden { display:none !important; }
+    .status-message { min-height:18px; transition:color 0.2s ease; }
+    .status--info { color:var(--muted); }
+    .status--warn { color:#ffd166; }
+    .status--error { color:var(--accent); }
+
+    .usage-meter { margin-top:10px; padding:10px 12px; border-radius:10px; border:1px solid rgba(0,255,65,0.35); background:rgba(0,255,65,0.05); font-size:13px; text-align:center; }
+
+    .result-card { margin-top:36px; padding:28px; border:1px solid rgba(0,255,65,0.35); border-radius:18px; background:radial-gradient(circle at top,#112311 0%, #080c08 65%); box-shadow:0 0 36px rgba(0,255,65,0.18); }
+    .result-header { text-align:center; margin-bottom:22px; }
+    .result-value { font-size:54px; font-weight:600; color:var(--bright); text-shadow:0 0 28px rgba(0,255,65,0.35); }
+    .result-subtitle { font-size:14px; text-transform:uppercase; letter-spacing:2px; color:var(--muted); }
+    .result-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:22px; }
+    .metric-label { font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); margin-bottom:6px; }
+    .metric-value { font-size:18px; font-weight:500; }
+    .metric-note { font-size:12px; color:var(--muted); margin-top:4px; }
+    .result-card details { margin-top:18px; }
+    .result-card pre { background:#050705; border-radius:12px; padding:16px; overflow:auto; font-size:13px; color:#a0cba0; }
+
+    .modal { position:fixed; inset:0; display:none; align-items:center; justify-content:center; z-index:100; }
+    .modal.is-open { display:flex; }
+    .modal-backdrop { position:absolute; inset:0; background:rgba(0,0,0,0.6); }
+    .modal-dialog { position:relative; z-index:1; width:min(420px, 90vw); background:#0a0d0a; border:1px solid rgba(0,255,65,0.25); border-radius:16px; padding:28px; box-shadow:0 0 32px rgba(0,255,65,0.2); }
+    .modal-dialog h2 { margin:0 0 12px; font-size:24px; }
+    .modal-dialog p { color:var(--muted); font-size:14px; line-height:1.5; }
+    .modal-dialog form { margin-top:16px; display:grid; gap:12px; }
+    .modal-dialog input[type="email"] { padding:12px; border-radius:10px; border:1px solid rgba(0,255,65,0.35); background:#0b0d0b; color:var(--fg); }
+    .modal-dialog button[type="submit"], .modal-dialog button.plan-button { padding:12px 16px; border-radius:10px; border:0; background:var(--bright); color:#041105; font-weight:600; cursor:pointer; }
+    .modal-dialog button[disabled] { opacity:0.6; cursor:not-allowed; }
+    .modal-close { position:absolute; top:12px; right:12px; border:0; background:transparent; color:var(--muted); font-size:24px; cursor:pointer; }
+    .modal-status { margin-top:14px; font-size:13px; color:var(--muted); }
+    .modal-status--error { color:var(--accent); }
+
+    .plan-grid { display:grid; gap:18px; margin-top:18px; }
+    .plan-card { border:1px solid rgba(0,255,65,0.25); border-radius:14px; padding:18px; background:rgba(0,255,65,0.05); }
+    .plan-card.is-current { border-color:var(--bright); box-shadow:0 0 24px rgba(0,255,65,0.2); }
+    .plan-card h3 { margin:0 0 6px; font-size:18px; }
+    .plan-card .price { font-size:16px; font-weight:500; margin-bottom:6px; }
+    .plan-card p { font-size:14px; color:var(--muted); margin-bottom:12px; }
+    .plan-card button { width:100%; }
+
+    body.modal-open { overflow:hidden; }
 
     .hero-examples { display:flex; gap:10px; flex-wrap:wrap; }
     .example-pill { background:rgba(0,255,65,0.08); color:var(--bright); border:1px solid rgba(0,255,65,0.3); border-radius:24px; padding:8px 14px; font-size:13px; cursor:pointer; transition:background 0.2s ease; }
@@ -113,7 +157,7 @@
         </div>
       </div>
       <div class="form-card">
-        <form method="post" action="/run">
+        <form id="claim-form">
           <label for="claim">Check a claim</label>
           <textarea id="claim" name="claim" maxlength="280" placeholder="Type the claim you want to inspect." required></textarea>
           <div class="form-meta">
@@ -129,10 +173,37 @@
               <option value="user-data" disabled>User evidence · coming soon</option>
             </select>
           </div>
+          <div id="usage-meter" class="usage-meter hidden" aria-live="polite"></div>
           <button class="primary" type="submit">Ask the model</button>
-          <div class="footnote"></div>
+          <div class="footnote status-message status--info"></div>
         </form>
       </div>
+    </section>
+
+    <section id="result-card" class="result-card hidden" aria-live="polite">
+      <div class="result-header">
+        <div class="result-value" id="result-prob">--</div>
+        <div class="result-subtitle">Probability this claim is true</div>
+      </div>
+      <div class="result-grid">
+        <div>
+          <div class="metric-label">CI 95%</div>
+          <div class="metric-value" id="result-ci">--</div>
+        </div>
+        <div>
+          <div class="metric-label">Stability</div>
+          <div class="metric-value" id="result-stability">--</div>
+          <div class="metric-note" id="result-stability-band"></div>
+        </div>
+        <div>
+          <div class="metric-label">Run ID</div>
+          <div class="metric-value" id="result-runid">--</div>
+        </div>
+      </div>
+      <details>
+        <summary>Raw aggregates</summary>
+        <pre id="result-json"></pre>
+      </details>
     </section>
 
     <section class="how" id="how">
@@ -202,30 +273,352 @@
     <a href="mailto:hello@heretix.ai">Contact</a>
   </footer>
 
+  <div class="modal" id="signin-modal" aria-hidden="true" role="dialog" aria-modal="true">
+    <div class="modal-backdrop" data-close-modal></div>
+    <div class="modal-dialog">
+      <button class="modal-close" type="button" data-close-modal aria-label="Close">×</button>
+      <h2>Sign in to continue</h2>
+      <p>Use your email address and we’ll send a one-time link. No passwords, ever.</p>
+      <form id="signin-form">
+        <label for="signin-email">Email</label>
+        <input type="email" id="signin-email" name="email" placeholder="you@example.com" required />
+        <button type="submit">Send magic link</button>
+      </form>
+      <p class="modal-status" id="signin-status"></p>
+    </div>
+  </div>
+
+  <div class="modal" id="plan-modal" aria-hidden="true" role="dialog" aria-modal="true">
+    <div class="modal-backdrop" data-close-modal></div>
+    <div class="modal-dialog">
+      <button class="modal-close" type="button" data-close-modal aria-label="Close">×</button>
+      <h2>Choose a plan</h2>
+      <p>Upgrade to keep running new claims. You can change or cancel anytime.</p>
+      <div class="plan-grid">
+        <div class="plan-card" data-plan-card="starter">
+          <h3>Starter</h3>
+          <p class="price">$5 / month</p>
+          <p>20 checks per month · best for casual use</p>
+          <button class="plan-button" type="button" data-plan="starter">Continue</button>
+        </div>
+        <div class="plan-card" data-plan-card="core">
+          <h3>Core</h3>
+          <p class="price">$19 / month</p>
+          <p>100 checks per month · great for teams</p>
+          <button class="plan-button" type="button" data-plan="core">Continue</button>
+        </div>
+        <div class="plan-card" data-plan-card="pro">
+          <h3>Unlimited</h3>
+          <p class="price">$49 / month</p>
+          <p>750 checks per month · high-volume workflows</p>
+          <button class="plan-button" type="button" data-plan="pro">Continue</button>
+        </div>
+      </div>
+      <p class="modal-status" id="plan-status"></p>
+    </div>
+  </div>
+
   <script>
     (function(){
-      var isQuick = window.location.search.includes('quick=1');
-      if (isQuick) {
+      var params = new URLSearchParams(window.location.search);
+      if (params.get('quick') === '1') {
         document.body.classList.add('quick');
-        var claim = document.getElementById('claim');
-        if (claim) { claim.focus(); }
+        var quickClaim = document.getElementById('claim');
+        if (quickClaim) { quickClaim.focus(); }
       }
-    })();
-    document.querySelectorAll('.example-pill').forEach(function(btn){
-      btn.addEventListener('click', function(){
-        var target = document.getElementById('claim');
-        if (!target) return;
-        var example = this.getAttribute('data-example');
-        if (example) {
-          target.value = example;
-          target.focus();
+
+      var meta = document.querySelector('meta[name="heretix-api-base"]');
+      var apiBase = window.HERETIX_API_BASE || (meta && meta.content) || (function(){
+        if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+          return 'http://127.0.0.1:8000';
+        }
+        if (location.origin.includes('app.')) {
+          return location.origin.replace('app.', 'api.');
+        }
+        return location.origin;
+      })();
+
+      var claimForm = document.getElementById('claim-form');
+      var claimInput = document.getElementById('claim');
+      var submitBtn = claimForm ? claimForm.querySelector('button.primary') : null;
+      var statusEl = claimForm ? claimForm.querySelector('.footnote') : null;
+      var usageEl = document.getElementById('usage-meter');
+      var resultCard = document.getElementById('result-card');
+      var resultProb = document.getElementById('result-prob');
+      var resultCi = document.getElementById('result-ci');
+      var resultStability = document.getElementById('result-stability');
+      var resultBand = document.getElementById('result-stability-band');
+      var resultRunId = document.getElementById('result-runid');
+      var resultJson = document.getElementById('result-json');
+
+      var signInModal = document.getElementById('signin-modal');
+      var signInForm = document.getElementById('signin-form');
+      var signInStatus = document.getElementById('signin-status');
+      var planModal = document.getElementById('plan-modal');
+      var planStatus = document.getElementById('plan-status');
+
+      function setStatus(message, tone) {
+        if (!statusEl) return;
+        tone = tone || 'info';
+        statusEl.classList.remove('status--info', 'status--warn', 'status--error');
+        if (!message) {
+          statusEl.textContent = '';
+          statusEl.classList.add('hidden');
+          return;
+        }
+        statusEl.textContent = message;
+        statusEl.classList.remove('hidden');
+        statusEl.classList.add('status--' + tone);
+      }
+
+      function renderUsage(state) {
+        if (!usageEl || !state) return;
+        var planName = state.usage_plan || state.plan || 'trial';
+        var allowed = state.checks_allowed;
+        var used = state.checks_used ?? 0;
+        var remaining = state.remaining;
+        var text;
+        if (allowed === null || allowed === undefined) {
+          text = 'Plan ' + planName + ' · Unlimited checks';
+        } else {
+          text = 'Plan ' + planName + ' · ' + used + ' / ' + allowed + ' used';
+          if (typeof remaining === 'number') {
+            text += ' · ' + remaining + ' left';
+          }
+        }
+        usageEl.textContent = text;
+        usageEl.classList.remove('hidden');
+      }
+
+      function formatPercent(value) {
+        if (typeof value !== 'number') return '--';
+        return (value * 100).toFixed(1).replace(/\.0$/, '') + '%';
+      }
+
+      function renderResult(data) {
+        if (!resultCard || !data) return;
+        resultProb.textContent = formatPercent(data.aggregates.prob_true_rpl);
+        if (Array.isArray(data.aggregates.ci95)) {
+          var lo = formatPercent(data.aggregates.ci95[0]);
+          var hi = formatPercent(data.aggregates.ci95[1]);
+          resultCi.textContent = lo + ' – ' + hi;
+        } else {
+          resultCi.textContent = '--';
+        }
+        resultStability.textContent = data.aggregates.stability_score !== undefined ? data.aggregates.stability_score.toFixed(2) : '--';
+        resultBand.textContent = data.aggregates.stability_band ? ('Band: ' + data.aggregates.stability_band) : '';
+        resultRunId.textContent = data.run_id || '--';
+        resultJson.textContent = JSON.stringify(data.aggregates, null, 2);
+        resultCard.classList.remove('hidden');
+      }
+
+      function closeModal(modal) {
+        if (!modal) return;
+        modal.classList.remove('is-open');
+        modal.setAttribute('aria-hidden', 'true');
+        if (!document.querySelector('.modal.is-open')) {
+          document.body.classList.remove('modal-open');
+        }
+      }
+
+      function openModal(modal) {
+        if (!modal) return;
+        modal.classList.add('is-open');
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('modal-open');
+      }
+
+      function openPlanModal(currentPlan) {
+        if (!planModal) return;
+        planStatus.textContent = '';
+        planStatus.classList.remove('modal-status--error');
+        planModal.querySelectorAll('.plan-card').forEach(function(card){
+          card.classList.toggle('is-current', card.dataset.planCard === currentPlan);
+        });
+        openModal(planModal);
+      }
+
+      document.querySelectorAll('[data-close-modal]').forEach(function(btn){
+        btn.addEventListener('click', function(){
+          closeModal(this.closest('.modal'));
+        });
+      });
+
+      document.querySelectorAll('.modal').forEach(function(modal){
+        modal.addEventListener('click', function(evt){
+          if (evt.target.matches('.modal-backdrop')) {
+            closeModal(modal);
+          }
+        });
+      });
+
+      document.addEventListener('keydown', function(evt){
+        if (evt.key === 'Escape') {
+          closeModal(document.querySelector('.modal.is-open'));
         }
       });
-    });
-    var yearSpan = document.getElementById('year');
-    if (yearSpan) {
-      yearSpan.textContent = new Date().getFullYear();
-    }
+
+      async function fetchMe() {
+        try {
+          var res = await fetch(apiBase + '/api/me', { credentials: 'include' });
+          if (!res.ok) return;
+          var data = await res.json();
+          renderUsage(data);
+        } catch (err) {
+          console.warn('Unable to fetch session info', err);
+        }
+      }
+
+      async function handleCheckout(plan) {
+        if (!planStatus) return;
+        planStatus.textContent = 'Redirecting to checkout…';
+        planStatus.classList.remove('modal-status--error');
+        try {
+          var res = await fetch(apiBase + '/api/billing/checkout', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ plan: plan }),
+          });
+          if (res.status === 401) {
+            closeModal(planModal);
+            setStatus('Sign in to choose a plan.', 'warn');
+            openModal(signInModal);
+            return;
+          }
+          if (!res.ok) {
+            var errData = await res.json().catch(function(){ return {}; });
+            planStatus.textContent = errData.detail || 'Unable to create checkout session.';
+            planStatus.classList.add('modal-status--error');
+            return;
+          }
+          var payload = await res.json();
+          window.location.href = payload.checkout_url;
+        } catch (err) {
+          planStatus.textContent = 'Unable to reach billing service.';
+          planStatus.classList.add('modal-status--error');
+        }
+      }
+
+      if (planModal) {
+        planModal.querySelectorAll('[data-plan]').forEach(function(btn){
+          btn.addEventListener('click', function(){
+            handleCheckout(this.getAttribute('data-plan'));
+          });
+        });
+      }
+
+      if (signInForm) {
+        signInForm.addEventListener('submit', async function(evt){
+          evt.preventDefault();
+          var email = document.getElementById('signin-email').value.trim();
+          if (!email) {
+            signInStatus.textContent = 'Enter a valid email.';
+            signInStatus.classList.add('modal-status--error');
+            return;
+          }
+          signInStatus.textContent = 'Sending magic link…';
+          signInStatus.classList.remove('modal-status--error');
+          try {
+            var res = await fetch(apiBase + '/api/auth/magic-links', {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ email: email }),
+            });
+            if (!res.ok) {
+              signInStatus.textContent = 'Unable to send link. Try again later.';
+              signInStatus.classList.add('modal-status--error');
+              return;
+            }
+            signInStatus.textContent = 'Check your email—your link is on the way.';
+          } catch (err) {
+            signInStatus.textContent = 'Unable to send link. Check your connection and retry.';
+            signInStatus.classList.add('modal-status--error');
+          }
+        });
+      }
+
+      if (claimForm) {
+        var originalBtnText = submitBtn ? submitBtn.textContent : '';
+        claimForm.addEventListener('submit', async function(evt){
+          evt.preventDefault();
+          if (!claimInput) return;
+          var value = claimInput.value.trim();
+          if (!value) {
+            setStatus('Enter a claim to evaluate.', 'warn');
+            return;
+          }
+          setStatus('Running evaluation…', 'info');
+          if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Checking…';
+          }
+          try {
+            var payload = { claim: value };
+            if (params.get('mock') === '1') {
+              payload.mock = true;
+            }
+            var res = await fetch(apiBase + '/api/checks/run', {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify(payload),
+            });
+            if (res.ok) {
+              var data = await res.json();
+              renderResult(data);
+              renderUsage(data);
+              setStatus('All set! Scroll down to see the result.', 'info');
+            } else if (res.status === 402) {
+              var detail = await res.json().catch(function(){ return {}; });
+              var reason = detail.reason || (detail.detail && detail.detail.reason) || detail.detail || '';
+              if (reason === 'require_signin') {
+                setStatus('Sign in to keep reading new claims.', 'warn');
+                signInStatus.textContent = '';
+                openModal(signInModal);
+              } else if (reason === 'require_subscription' || reason === 'limit_reached') {
+                setStatus('You’ve used your free checks—choose a plan to continue.', 'warn');
+                openPlanModal(detail.plan || detail.usage_plan || 'starter');
+              } else {
+                setStatus('Usage limit reached. Try again later.', 'warn');
+              }
+              fetchMe();
+            } else {
+              var errPayload = await res.json().catch(function(){ return {}; });
+              var message = errPayload.detail || ('Request failed (' + res.status + ')');
+              setStatus(message, 'error');
+            }
+          } catch (err) {
+            console.error(err);
+            setStatus('Unable to reach the API. Check your connection and try again.', 'error');
+          } finally {
+            if (submitBtn) {
+              submitBtn.disabled = false;
+              submitBtn.textContent = originalBtnText;
+            }
+          }
+        });
+      }
+
+      document.querySelectorAll('.example-pill').forEach(function(btn){
+        btn.addEventListener('click', function(){
+          if (!claimInput) return;
+          var example = btn.getAttribute('data-example');
+          if (example) {
+            claimInput.value = example;
+            claimInput.focus();
+          }
+        });
+      });
+
+      var yearSpan = document.getElementById('year');
+      if (yearSpan) {
+        yearSpan.textContent = new Date().getFullYear();
+      }
+
+      fetchMe();
+    })();
   </script>
 </body>
 </html>

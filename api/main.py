@@ -26,7 +26,7 @@ from .schemas import (
     SamplingInfo,
 )
 from heretix.db.models import Check, User
-from .usage import ANON_PLAN, UsageState, get_usage_state, increment_usage
+from .usage import ANON_PLAN, get_usage_state, increment_usage
 from .billing import create_checkout_session, handle_checkout_completed, handle_subscription_deleted, handle_subscription_updated
 
 app = FastAPI(title="Heretix API", version="0.1.0")
