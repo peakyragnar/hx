@@ -86,6 +86,10 @@ Legacy CLI is available under `legacy/` for reference but is not installed by de
   ```bash
   curl -s http://127.0.0.1:8000/api/me -b cookies.txt -c cookies.txt | jq
   ```
+- Limits (local defaults):
+  - Anonymous: 1 run → subsequent requests return HTTP 402 with `{"reason":"require_signin"}`.
+  - Signed-in trial: total of 3 runs → HTTP 402 with `{"reason":"require_subscription"}` afterward.
+  - Subscribers: placeholder caps (Starter/Core/Pro) to be wired in during Stripe integration.
 
 ## Faster Runs (Optional Concurrency)
 

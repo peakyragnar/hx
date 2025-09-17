@@ -58,6 +58,10 @@ class RunResponse(BaseModel):
     aggregation: AggregationInfo
     aggregates: Aggregates
     mock: bool = False
+    usage_plan: Optional[str] = None
+    checks_allowed: Optional[int] = None
+    checks_used: Optional[int] = None
+    remaining: Optional[int] = None
 
 
 class MagicLinkPayload(BaseModel):
@@ -68,5 +72,7 @@ class MeResponse(BaseModel):
     authenticated: bool
     email: Optional[EmailStr] = None
     plan: Optional[str] = None
+    usage_plan: Optional[str] = None
     checks_allowed: Optional[int] = None
     checks_used: Optional[int] = None
+    remaining: Optional[int] = None

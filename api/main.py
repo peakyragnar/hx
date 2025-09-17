@@ -24,15 +24,25 @@ from .schemas import (
     SamplingInfo,
 )
 from heretix.db.models import Check, User
+from .usage import ANON_PLAN, UsageState, get_usage_state, increment_usage
 
 app = FastAPI(title="Heretix API", version="0.1.0")
 
 
 @app.post("/api/checks/run", response_model=RunResponse)
-def run_check(payload: RunRequest, session: Session = Depends(get_session)) -> RunResponse:
+def run_check(
+    payload: RunRequest,
+    session: Session = Depends(get_session),
+    user: User | None = Depends(get_current_user),
+) -> RunResponse:
     claim = payload.claim.strip()
     if not claim:
         raise HTTPException(status_code=422, detail="claim must not be empty")
+
+    usage_state = get_usage_state(session, user)
+    if not usage_state.enough_credit:
+        reason = "require_subscription" if user else "require_signin"
+        raise HTTPException(status_code=402, detail={"reason": reason, "plan": usage_state.plan.name})
 
     cfg = RunConfig(
         claim=claim,
@@ -52,6 +62,8 @@ def run_check(payload: RunRequest, session: Session = Depends(get_session)) -> R
 
     try:
         result = run_single_version(cfg, prompt_file=str(prompt_file), mock=use_mock)
+    except HTTPException:
+        raise
     except Exception as exc:  # pragma: no cover - let FastAPI handle responses
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -102,7 +114,7 @@ def run_check(payload: RunRequest, session: Session = Depends(get_session)) -> R
         session.add(check)
 
     check.env = settings.app_env
-    check.user_id = None
+    check.user_id = getattr(user, "id", None)
     check.claim = claim
     check.claim_hash = claim_hash
     check.model = result.get("model", cfg.model)
@@ -141,7 +153,14 @@ def run_check(payload: RunRequest, session: Session = Depends(get_session)) -> R
 
     aggregates["ci_width"] = ci_width
 
-    response = RunResponse(
+    checks_allowed = usage_state.checks_allowed
+    if usage_state.plan == ANON_PLAN:
+        used_after = min(usage_state.checks_used + 1, checks_allowed)
+    else:
+        used_after = increment_usage(session, user, usage_state)
+    remaining_after = max(checks_allowed - used_after, 0) if checks_allowed else None
+
+    return RunResponse(
         execution_id=result.get("execution_id"),
         run_id=run_id,
         claim=result.get("claim"),
@@ -162,9 +181,11 @@ def run_check(payload: RunRequest, session: Session = Depends(get_session)) -> R
         ),
         aggregates=Aggregates(**aggregates),
         mock=use_mock,
+        usage_plan=usage_state.plan.name,
+        checks_allowed=checks_allowed,
+        checks_used=used_after,
+        remaining=remaining_after,
     )
-
-    return response
 
 
 @app.post("/api/auth/magic-links", status_code=204)
@@ -178,13 +199,26 @@ def magic_link_callback(token: str, session: Session = Depends(get_session)):
 
 
 @app.get("/api/me", response_model=MeResponse)
-def read_me(user: User | None = Depends(get_current_user)) -> MeResponse:
+def read_me(
+    user: User | None = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> MeResponse:
     if not user:
-        return MeResponse(authenticated=False)
+        state = get_usage_state(session, None)
+        return MeResponse(
+            authenticated=False,
+            usage_plan=state.plan.name,
+            checks_allowed=state.checks_allowed,
+            checks_used=state.checks_used,
+            remaining=state.remaining,
+        )
+    state = get_usage_state(session, user)
     return MeResponse(
         authenticated=True,
         email=user.email,
-        plan=getattr(user, "plan", None),
-        checks_allowed=None,
-        checks_used=None,
+        plan=getattr(user, "plan", None) or state.plan.name,
+        usage_plan=state.plan.name,
+        checks_allowed=state.checks_allowed,
+        checks_used=state.checks_used,
+        remaining=state.remaining,
     )

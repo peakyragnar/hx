@@ -58,6 +58,15 @@ This document captures the current architecture after adding the Postgres schema
 2. Visiting `/api/auth/callback?token=selector:verifier` validates the token, marks it consumed, creates a session row, and sets an HttpOnly cookie.
 3. `GET /api/me` returns whether the current cookie maps to an active session (email, plan, placeholders for usage).
 
+### Usage & Gating
+- `api/usage.py` defines plan tiers (anon, trial, starter, core, pro) and interacts with `usage_ledger` to track monthly allowance.
+- `/api/checks/run` consults the usage state before executing:
+  - Anonymous clients receive one free run.
+  - Signed-in trial users receive three lifetime runs.
+  - Subscribers use their plan allowance (Starter 20, Core 100, Pro 750) per period.
+- When an allowance is exhausted the endpoint responds with HTTP 402 and a structured reason (`require_signin`, `require_subscription`, or `limit_reached`).
+- Successful runs update the ledger and return usage metadata (plan, checks_used, remaining) to drive the frontend meter.
+
 ### Mock Mode & Defaults
 - The run endpoint honors the `mock` flag for local testing.
 - Prompt files resolve via `settings.prompt_file()` (uses `RPL_PROMPT_VERSION` and optional `RPL_PROMPTS_DIR`).
