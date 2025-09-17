@@ -76,3 +76,11 @@ class MeResponse(BaseModel):
     checks_allowed: Optional[int] = None
     checks_used: Optional[int] = None
     remaining: Optional[int] = None
+
+
+class CheckoutRequest(BaseModel):
+    plan: str = Field(..., regex="^(starter|core|pro)$")
+
+
+class CheckoutResponse(BaseModel):
+    checkout_url: str

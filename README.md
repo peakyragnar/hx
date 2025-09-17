@@ -91,6 +91,20 @@ Legacy CLI is available under `legacy/` for reference but is not installed by de
   - Signed-in trial: total of 3 runs → HTTP 402 with `{"reason":"require_subscription"}` afterward.
   - Subscribers: placeholder caps (Starter/Core/Pro) to be wired in during Stripe integration.
 
+### Stripe Checkout (development)
+- Set test env vars (see `api/config.py` for keys such as `STRIPE_SECRET`, `STRIPE_PRICE_STARTER`, etc.).
+- Run Stripe CLI to forward webhooks:
+  ```bash
+  stripe listen --forward-to http://127.0.0.1:8000/api/stripe/webhook
+  ```
+- Create a checkout session (signed-in user required):
+  ```bash
+  curl -s -X POST http://127.0.0.1:8000/api/billing/checkout \
+    -H 'content-type: application/json' -b cookies.txt \
+    -d '{"plan": "starter"}' | jq
+  ```
+- Visit the returned `checkout_url`, complete payment with Stripe test card, and Stripe will invoke the webhook to promote the account plan.
+
 ## Faster Runs (Optional Concurrency)
 
 - CLI (opt‑in):

@@ -67,6 +67,13 @@ This document captures the current architecture after adding the Postgres schema
 - When an allowance is exhausted the endpoint responds with HTTP 402 and a structured reason (`require_signin`, `require_subscription`, or `limit_reached`).
 - Successful runs update the ledger and return usage metadata (plan, checks_used, remaining) to drive the frontend meter.
 
+### Stripe Integration
+- `api/billing.py` wraps Stripe Checkout and subscription webhooks.
+  - `POST /api/billing/checkout` creates a subscription checkout session for the requested plan, ensuring a Stripe customer is registered.
+  - `POST /api/stripe/webhook` handles `checkout.session.completed` and subscription lifecycle events to update `users.plan`, store Stripe IDs, and reset usage ledgers.
+- Plan IDs/keys are configured via environment variables (`STRIPE_SECRET`, `STRIPE_PRICE_STARTER`, etc.).
+- Local development uses the Stripe CLI (`stripe listen --forward-to http://127.0.0.1:8000/api/stripe/webhook`) alongside test price IDs.
+
 ### Mock Mode & Defaults
 - The run endpoint honors the `mock` flag for local testing.
 - Prompt files resolve via `settings.prompt_file()` (uses `RPL_PROMPT_VERSION` and optional `RPL_PROMPTS_DIR`).

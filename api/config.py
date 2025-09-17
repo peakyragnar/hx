@@ -31,6 +31,13 @@ class Settings(BaseSettings):
     session_cookie_secure: bool = Field(False, alias="SESSION_COOKIE_SECURE")
     email_sender_address: str = Field("hello@heretix.local", alias="EMAIL_SENDER_ADDRESS")
     postmark_token: Optional[str] = Field(None, alias="POSTMARK_TOKEN")
+    stripe_secret_key: Optional[str] = Field(None, alias="STRIPE_SECRET")
+    stripe_webhook_secret: Optional[str] = Field(None, alias="STRIPE_WEBHOOK_SECRET")
+    stripe_price_starter: Optional[str] = Field(None, alias="STRIPE_PRICE_STARTER")
+    stripe_price_core: Optional[str] = Field(None, alias="STRIPE_PRICE_CORE")
+    stripe_price_pro: Optional[str] = Field(None, alias="STRIPE_PRICE_PRO")
+    stripe_success_path: str = Field("/billing/success", alias="STRIPE_SUCCESS_PATH")
+    stripe_cancel_path: str = Field("/billing/cancel", alias="STRIPE_CANCEL_PATH")
     prompts_dir: Optional[Path] = Field(None, alias="RPL_PROMPTS_DIR")
 
     class Config:
@@ -49,6 +56,20 @@ class Settings(BaseSettings):
         if not path.exists():
             raise FileNotFoundError(f"Prompt file not found: {path}")
         return path
+
+    def price_for_plan(self, plan: str) -> Optional[str]:
+        mapping = {
+            "starter": self.stripe_price_starter,
+            "core": self.stripe_price_core,
+            "pro": self.stripe_price_pro,
+        }
+        return mapping.get(plan)
+
+    def stripe_success_url(self) -> str:
+        return f"{self.app_url.rstrip('/')}{self.stripe_success_path}"
+
+    def stripe_cancel_url(self) -> str:
+        return f"{self.app_url.rstrip('/')}{self.stripe_cancel_path}"
 
 
 @lru_cache(maxsize=1)

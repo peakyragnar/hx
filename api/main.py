@@ -19,12 +19,15 @@ from .schemas import (
     Aggregates,
     MagicLinkPayload,
     MeResponse,
+    CheckoutRequest,
+    CheckoutResponse,
     RunRequest,
     RunResponse,
     SamplingInfo,
 )
 from heretix.db.models import Check, User
 from .usage import ANON_PLAN, UsageState, get_usage_state, increment_usage
+from .billing import create_checkout_session, handle_checkout_completed, handle_subscription_deleted, handle_subscription_updated
 
 app = FastAPI(title="Heretix API", version="0.1.0")
 
@@ -222,3 +225,43 @@ def read_me(
         checks_used=state.checks_used,
         remaining=state.remaining,
     )
+
+
+@app.post("/api/billing/checkout", response_model=CheckoutResponse)
+def create_checkout(
+    payload: CheckoutRequest,
+    session: Session = Depends(get_session),
+    user: User | None = Depends(get_current_user),
+) -> CheckoutResponse:
+    if not user:
+        raise HTTPException(status_code=401, detail="Sign-in required")
+    url = create_checkout_session(session, user, payload.plan)
+    return CheckoutResponse(checkout_url=url)
+
+
+@app.post("/api/stripe/webhook", status_code=204)
+async def stripe_webhook(request: Request, session: Session = Depends(get_session)) -> None:
+    if not settings.stripe_webhook_secret or not settings.stripe_secret_key:
+        raise HTTPException(status_code=503, detail="Stripe integration not configured")
+    payload = await request.body()
+    signature = request.headers.get("stripe-signature")
+    import stripe
+
+    try:
+        event = stripe.Webhook.construct_event(
+            payload=payload.decode("utf-8"),
+            sig_header=signature,
+            secret=settings.stripe_webhook_secret,
+        )
+    except Exception as exc:  # pragma: no cover - signature failures
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    event_type = event.get("type")
+    data_obj = event.get("data", {}).get("object", {})
+
+    if event_type == "checkout.session.completed":
+        handle_checkout_completed(session, data_obj)
+    elif event_type == "customer.subscription.updated":
+        handle_subscription_updated(session, data_obj)
+    elif event_type in {"customer.subscription.deleted", "customer.subscription.cancelled"}:
+        handle_subscription_deleted(session, data_obj)
