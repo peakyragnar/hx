@@ -12,7 +12,7 @@ We are splitting storage into two clear lanes so production traffic stays clean 
 - `users`: account identity, plan, status.
 - `sessions`: active sessions / magic-link logins.
 - `email_tokens`: pending magic-link verifications.
-- `checks`: one row per RPL run. Includes `env`, config knobs, aggregates, cache flag, timestamps.
+- `checks`: one row per RPL run. Columns mirror the Phase‑1 SQLite `runs` table (prob_true_rpl, CI fields, sampler/config JSON) plus production context such as `env`, `user_id`, and cache metadata.
 - `usage_ledger`: monthly counters per user/plan (tracks allowances and resets).
 - `result_cache`: stored outputs keyed by deterministic hash for reuse across identical runs.
 

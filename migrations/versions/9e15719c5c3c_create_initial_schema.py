@@ -78,32 +78,46 @@ def upgrade() -> None:
     op.create_table(
         "checks",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column("env", sa.String(length=16), nullable=False),
         sa.Column("run_id", sa.String(length=64), nullable=False),
-        sa.Column("claim_hash", sa.String(length=64), nullable=False),
-        sa.Column("claim_text", sa.Text(), nullable=True),
+        sa.Column("env", sa.String(length=16), nullable=False),
+        sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("claim", sa.Text(), nullable=True),
+        sa.Column("claim_hash", sa.String(length=64), nullable=True),
         sa.Column("model", sa.String(length=64), nullable=False),
         sa.Column("prompt_version", sa.String(length=64), nullable=False),
-        sa.Column("k", sa.Integer(), nullable=False),
-        sa.Column("r", sa.Integer(), nullable=False),
-        sa.Column("t", sa.Integer(), nullable=True),
-        sa.Column("b", sa.Integer(), nullable=True),
+        sa.Column("K", sa.Integer(), nullable=False),
+        sa.Column("R", sa.Integer(), nullable=False),
+        sa.Column("T", sa.Integer(), nullable=True),
+        sa.Column("B", sa.Integer(), nullable=True),
+        sa.Column("seed", sa.Integer(), nullable=True),
+        sa.Column("bootstrap_seed", sa.Integer(), nullable=True),
         sa.Column("max_output_tokens", sa.Integer(), nullable=True),
         sa.Column("prob_true_rpl", sa.Float(), nullable=True),
         sa.Column("ci_lo", sa.Float(), nullable=True),
         sa.Column("ci_hi", sa.Float(), nullable=True),
+        sa.Column("ci_width", sa.Float(), nullable=True),
+        sa.Column("template_iqr_logit", sa.Float(), nullable=True),
         sa.Column("stability_score", sa.Float(), nullable=True),
         sa.Column("imbalance_ratio", sa.Float(), nullable=True),
+        sa.Column("rpl_compliance_rate", sa.Float(), nullable=True),
         sa.Column("cache_hit_rate", sa.Float(), nullable=True),
-        sa.Column("aggregation", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.Column("diagnostics", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column("config_json", sa.Text(), nullable=True),
+        sa.Column("sampler_json", sa.Text(), nullable=True),
+        sa.Column("counts_by_template_json", sa.Text(), nullable=True),
+        sa.Column("artifact_json_path", sa.Text(), nullable=True),
+        sa.Column("prompt_char_len_max", sa.Integer(), nullable=True),
+        sa.Column("pqs", sa.Float(), nullable=True),
+        sa.Column("gate_compliance_ok", sa.Boolean(), nullable=True),
+        sa.Column("gate_stability_ok", sa.Boolean(), nullable=True),
+        sa.Column("gate_precision_ok", sa.Boolean(), nullable=True),
+        sa.Column("pqs_version", sa.String(length=32), nullable=True),
         sa.Column("was_cached", sa.Boolean(), nullable=False, server_default=sa.text("false")),
-        sa.Column("started_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("provider_model_id", sa.String(length=64), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("run_id", name="uq_checks_run_id"),
     )
 
     op.create_table(
@@ -126,7 +140,6 @@ def upgrade() -> None:
     op.create_index("ix_checks_user_id", "checks", ["user_id"], unique=False)
     op.create_index("ix_checks_env", "checks", ["env"], unique=False)
     op.create_index("ix_checks_claim_hash", "checks", ["claim_hash"], unique=False)
-    op.create_index("ix_checks_run_id", "checks", ["run_id"], unique=False)
     op.create_index("ix_usage_user", "usage_ledger", ["user_id"], unique=False)
     op.create_index("ix_result_cache_env", "result_cache", ["env"], unique=False)
     op.create_index("ix_result_cache_user", "result_cache", ["user_id"], unique=False)
@@ -138,7 +151,6 @@ def downgrade() -> None:
     op.drop_index("ix_result_cache_env", table_name="result_cache")
     op.drop_table("result_cache")
 
-    op.drop_index("ix_checks_run_id", table_name="checks")
     op.drop_index("ix_checks_claim_hash", table_name="checks")
     op.drop_index("ix_checks_env", table_name="checks")
     op.drop_index("ix_checks_user_id", table_name="checks")

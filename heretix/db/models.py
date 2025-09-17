@@ -17,7 +17,7 @@ from sqlalchemy import (
     Float,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -26,7 +26,6 @@ class Base(DeclarativeBase):
 
 
 UUID_TYPE = PG_UUID(as_uuid=True)
-JSON_TYPE = JSONB
 
 
 class User(Base):
@@ -98,34 +97,47 @@ class Check(Base):  # noqa: D401 - simple data container
     __tablename__ = "checks"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID_TYPE, primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    env: Mapped[str] = mapped_column(String(16), nullable=False)
     user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID_TYPE, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
-    env: Mapped[str] = mapped_column(String(16), nullable=False)
-    run_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    claim_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    claim_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    claim: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    claim_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     model: Mapped[str] = mapped_column(String(64), nullable=False)
     prompt_version: Mapped[str] = mapped_column(String(64), nullable=False)
-    k: Mapped[int] = mapped_column(Integer, nullable=False)
-    r: Mapped[int] = mapped_column(Integer, nullable=False)
-    t: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    b: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    k: Mapped[int] = mapped_column("K", Integer, nullable=False)
+    r: Mapped[int] = mapped_column("R", Integer, nullable=False)
+    t: Mapped[Optional[int]] = mapped_column("T", Integer, nullable=True)
+    b: Mapped[Optional[int]] = mapped_column("B", Integer, nullable=True)
+    seed: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    bootstrap_seed: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     max_output_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     prob_true_rpl: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     ci_lo: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     ci_hi: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    ci_width: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    template_iqr_logit: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     stability_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     imbalance_ratio: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    rpl_compliance_rate: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     cache_hit_rate: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    aggregation: Mapped[Optional[dict]] = mapped_column(JSON_TYPE, nullable=True)
-    diagnostics: Mapped[Optional[dict]] = mapped_column(JSON_TYPE, nullable=True)
+    config_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    sampler_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    counts_by_template_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    artifact_json_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    prompt_char_len_max: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    pqs: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    gate_compliance_ok: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    gate_stability_ok: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    gate_precision_ok: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    pqs_version: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     was_cached: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    started_at: Mapped[datetime] = mapped_column(
+    provider_model_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    provider_model_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 
     user: Mapped[Optional[User]] = relationship(back_populates="checks")
 
@@ -133,7 +145,6 @@ class Check(Base):  # noqa: D401 - simple data container
         Index("ix_checks_user_id", "user_id"),
         Index("ix_checks_env", "env"),
         Index("ix_checks_claim_hash", "claim_hash"),
-        Index("ix_checks_run_id", "run_id"),
     )
 
 
