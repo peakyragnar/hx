@@ -38,6 +38,10 @@ Dev Environment
   - HERETIX_RPL_SEED: optional deterministic bootstrap seed (CI reproducibility)
   - HERETIX_RPL_NO_CACHE=1: bypass cached samples
   - HERETIX_CONCURRENCY: optional bounded thread pool for provider calls (e.g., 6–8). Default off.
+- Database:
+  - Start local Postgres with `docker compose up -d postgres` (connection string `postgresql+psycopg://heretix:heretix@localhost:5432/heretix`).
+  - Run `alembic upgrade head` after schema changes; stop services via `docker compose down`.
+  - Production deployments load credentials from `DATABASE_URL_PROD` (Neon project).
 - Secrets: keep .env local; never commit secrets
 
 Cloud Dev Environments
