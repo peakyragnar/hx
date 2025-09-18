@@ -74,6 +74,12 @@ This document captures the current architecture after adding the Postgres schema
 - Plan IDs/keys are configured via environment variables (`STRIPE_SECRET`, `STRIPE_PRICE_STARTER`, etc.).
 - Local development uses the Stripe CLI (`stripe listen --forward-to http://127.0.0.1:8000/api/stripe/webhook`) alongside test price IDs.
 
+### Deployment Stack
+- `Dockerfile` builds the FastAPI service (uvicorn) and is referenced by `fly.toml` for Fly.io deployments (port 8080).
+- `.dockerignore` keeps build context lean.
+- `/healthz` exposes a simple health check for Fly.
+- Neon hosts the managed Postgres instance; apply Alembic migrations via `DATABASE_URL=<neon> uv run alembic upgrade head` before deploying.
+
 ### Mock Mode & Defaults
 - The run endpoint honors the `mock` flag for local testing.
 - Prompt files resolve via `settings.prompt_file()` (uses `RPL_PROMPT_VERSION` and optional `RPL_PROMPTS_DIR`).

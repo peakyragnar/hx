@@ -32,6 +32,11 @@ from .billing import create_checkout_session, handle_checkout_completed, handle_
 app = FastAPI(title="Heretix API", version="0.1.0")
 
 
+@app.get("/healthz", tags=["system"])
+def healthz() -> dict[str, str]:
+    return {"status": "ok"}
+
+
 @app.post("/api/checks/run", response_model=RunResponse)
 def run_check(
     payload: RunRequest,

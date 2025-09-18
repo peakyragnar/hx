@@ -105,6 +105,49 @@ Legacy CLI is available under `legacy/` for reference but is not installed by de
   ```
 - Visit the returned `checkout_url`, complete payment with Stripe test card, and Stripe will invoke the webhook to promote the account plan.
 
+## Deploying to Production
+
+### 1. Provision infrastructure
+- **Database:** Create a Neon Postgres project (production branch). Keep the connection string handy (`DATABASE_URL_PROD`).
+- **API host:** Install Fly.io CLI (`flyctl`) and run `flyctl launch --no-deploy` from the repo root to create the app (uses the provided `fly.toml`).
+- **Frontend:** Deploy `ui/` to your static host (e.g., Vercel). Set `NEXT_PUBLIC_API_URL` (or equivalent) to the Fly API domain.
+
+### 2. Apply migrations to Neon
+```bash
+DATABASE_URL="<NEON_CONNECTION>" uv run alembic upgrade head
+```
+
+### 3. Configure secrets (Fly)
+```
+flyctl secrets set \
+  OPENAI_API_KEY=... \
+  DATABASE_URL="<NEON_CONNECTION>" \
+  EMAIL_SENDER_ADDRESS=hello@heretix.ai \
+  POSTMARK_TOKEN=... \
+  STRIPE_SECRET=sk_live_... \
+  STRIPE_WEBHOOK_SECRET=whsec_... \
+  STRIPE_PRICE_STARTER=price_live_starter \
+  STRIPE_PRICE_CORE=price_live_core \
+  STRIPE_PRICE_PRO=price_live_pro
+```
+Add any optional overrides (e.g., `SESSION_COOKIE_DOMAIN`, `STRIPE_SUCCESS_PATH`).
+
+### 4. Deploy the API
+```
+flyctl deploy
+flyctl logs tail
+```
+`/healthz` is available for platform checks.
+
+### 5. Wire DNS/TLS
+- Point `api.heretix.<domain>` to Fly (CNAME) and `app.heretix.<domain>` to the frontend host.
+- Fly/Vercel issue TLS certificates automatically once DNS is active.
+
+### 6. Verify production
+- Request a magic link (should deliver via Postmark) and complete the callback.
+- Run a claim (deducts usage and persists to Neon).
+- Trigger a real checkout with Stripe live mode (use $0 coupon or test card if on staging) and verify the webhook updates the plan.
+
 ## Faster Runs (Optional Concurrency)
 
 - CLI (opt‑in):
