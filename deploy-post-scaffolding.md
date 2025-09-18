@@ -24,18 +24,12 @@ This checklist covers the remaining operational steps to take the Heretix servic
   ```
 - [ ] Optionally create a staging branch and apply migrations for pre-prod testing
 
-## 3. Deploy API to Fly.io
-1. Authenticate: `fly auth login`
-2. Create app: `fly launch --no-deploy` (uses `fly.toml` + Dockerfile)
-3. Set secrets:
-   ```bash
-   flyctl secrets set OPENAI_API_KEY=... DATABASE_URL=... \
-       EMAIL_SENDER_ADDRESS=... POSTMARK_TOKEN=... \
-       STRIPE_SECRET=... STRIPE_WEBHOOK_SECRET=... \
-       STRIPE_PRICE_STARTER=... STRIPE_PRICE_CORE=... STRIPE_PRICE_PRO=...
-   ```
-4. Deploy: `flyctl deploy`
-5. Check logs/health: `flyctl logs tail` (ensure `/healthz` responds with `{"status":"ok"}`)
+## 3. Deploy API to Render
+1. Create a Docker-based Web Service pointed at this repository/branch.
+2. Instance type: choose at least the 1 GB RAM plan.
+3. Start command: `/app/.venv/bin/python -m uvicorn api.main:app --host 0.0.0.0 --port 8080`.
+4. Add environment variables in the Render dashboard (`OPENAI_API_KEY`, `DATABASE_URL`, Postmark, Stripe, session settings, `APP_URL`, `API_URL`, etc.).
+5. Trigger the initial deploy from the dashboard and wait for the health check to pass (`/healthz`).
 
 ## 4. Deploy Frontend
 - [ ] Configure your static host (e.g. Vercel) to point at `NEXT_PUBLIC_API_URL=https://api.heretix.<domain>`
@@ -43,9 +37,9 @@ This checklist covers the remaining operational steps to take the Heretix servic
 
 ## 5. DNS & TLS
 - [ ] Add records via Cloudflare (or DNS provider):
-  - `api.heretix.<domain>` → Fly (CNAME or A record per Fly instructions)
+  - `api.heretix.<domain>` → Render (CNAME to the service hostname)
   - `app.heretix.<domain>` → frontend host (CNAME)
-- [ ] Verify certificates (Fly/Vercel will auto-provision once DNS resolves)
+- [ ] Verify certificates (Render/Vercel will auto-provision once DNS resolves)
 
 ## 6. Email & Webhook Verification
 - [ ] Postmark: verify sending domain, ensure production server is active
@@ -56,7 +50,7 @@ This checklist covers the remaining operational steps to take the Heretix servic
 1. Request a magic link in production; confirm email delivery and cookie is set
 2. Run a claim (should decrement usage and persist to Neon)
 3. Trigger a live checkout (Coupon/test card if needed) and confirm plan updates via `/api/me`
-4. Watch Fly logs for webhook handling and error signals
+4. Watch Render logs for webhook handling and error signals
 
 ## 8. Observability & Monitoring (Optional Next Steps)
 - [ ] Add Sentry/Honeycomb (or preferred APM) to the FastAPI app

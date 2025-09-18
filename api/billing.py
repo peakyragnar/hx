@@ -127,5 +127,3 @@ def handle_subscription_deleted(session: Session, payload: dict) -> None:
     user.stripe_subscription_id = None
     session.add(user)
     _reset_usage_for_plan(session, user, user.plan)
-
-*** End PATCH

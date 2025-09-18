@@ -79,7 +79,7 @@ class MeResponse(BaseModel):
 
 
 class CheckoutRequest(BaseModel):
-    plan: str = Field(..., regex="^(starter|core|pro)$")
+    plan: str = Field(..., pattern="^(starter|core|pro)$")
 
 
 class CheckoutResponse(BaseModel):

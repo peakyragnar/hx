@@ -75,9 +75,9 @@ This document captures the current architecture after adding the Postgres schema
 - Local development uses the Stripe CLI (`stripe listen --forward-to http://127.0.0.1:8000/api/stripe/webhook`) alongside test price IDs.
 
 ### Deployment Stack
-- `Dockerfile` builds the FastAPI service (uvicorn) and is referenced by `fly.toml` for Fly.io deployments (port 8080).
+- `Dockerfile` builds the FastAPI service (uvicorn) and is consumed directly by Render’s Web Service deployment.
 - `.dockerignore` keeps build context lean.
-- `/healthz` exposes a simple health check for Fly.
+- `/healthz` exposes a simple health check for platform probes (Render, local, etc.).
 - Neon hosts the managed Postgres instance; apply Alembic migrations via `DATABASE_URL=<neon> uv run alembic upgrade head` before deploying.
 
 ### Mock Mode & Defaults
