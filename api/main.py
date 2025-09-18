@@ -4,7 +4,7 @@ import hashlib
 import json
 from datetime import datetime, timezone
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -196,9 +196,14 @@ def run_check(
     )
 
 
-@app.post("/api/auth/magic-links", status_code=204)
-def request_magic_link(payload: MagicLinkPayload, session: Session = Depends(get_session)) -> None:
+@app.post(
+    "/api/auth/magic-links",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+def request_magic_link(payload: MagicLinkPayload, session: Session = Depends(get_session)) -> Response:
     handle_magic_link(payload.email, session)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @app.get("/api/auth/callback")
