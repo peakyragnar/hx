@@ -140,6 +140,7 @@
         <ul>
           <li><a href="/how.html">How it works</a></li>
           <li><a href="/examples.html">Examples</a></li>
+          <li><a href="#" id="nav-signin">Sign in</a></li>
         </ul>
       </nav>
     </div>
@@ -335,7 +336,10 @@
         if (location.origin.includes('app.')) {
           return location.origin.replace('app.', 'api.');
         }
-        return location.origin;
+        if (location.hostname.endsWith('heretix.ai')) {
+          return 'https://api.heretix.ai';
+        }
+        return 'https://heretix-api.onrender.com';
       })();
 
       var claimForm = document.getElementById('claim-form');
@@ -356,6 +360,7 @@
       var signInStatus = document.getElementById('signin-status');
       var planModal = document.getElementById('plan-modal');
       var planStatus = document.getElementById('plan-status');
+      var navSignIn = document.getElementById('nav-signin');
 
       function setStatus(message, tone) {
         if (!statusEl) return;
@@ -451,6 +456,15 @@
           }
         });
       });
+
+      if (navSignIn) {
+        navSignIn.addEventListener('click', function(evt){
+          evt.preventDefault();
+          if (signInModal) {
+            openModal(signInModal);
+          }
+        });
+      }
 
       document.addEventListener('keydown', function(evt){
         if (evt.key === 'Escape') {
