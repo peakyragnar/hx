@@ -5,6 +5,7 @@ import json
 from datetime import datetime, timezone
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -30,6 +31,25 @@ from .usage import ANON_PLAN, get_usage_state, increment_usage
 from .billing import create_checkout_session, handle_checkout_completed, handle_subscription_deleted, handle_subscription_updated
 
 app = FastAPI(title="Heretix API", version="0.1.0")
+
+allowed_origins = {
+    "https://heretix.ai",
+    "https://www.heretix.ai",
+    "https://heretix-ui.vercel.app",
+    "https://heretix-api.onrender.com",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+}
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=list(allowed_origins),
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"]
+)
 
 
 @app.get("/healthz", tags=["system"])
