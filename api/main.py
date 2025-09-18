@@ -249,8 +249,12 @@ def create_checkout(
     return CheckoutResponse(checkout_url=url)
 
 
-@app.post("/api/stripe/webhook", status_code=204)
-async def stripe_webhook(request: Request, session: Session = Depends(get_session)) -> None:
+@app.post(
+    "/api/stripe/webhook",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def stripe_webhook(request: Request, session: Session = Depends(get_session)) -> Response:
     if not settings.stripe_webhook_secret or not settings.stripe_secret_key:
         raise HTTPException(status_code=503, detail="Stripe integration not configured")
     payload = await request.body()
@@ -275,3 +279,4 @@ async def stripe_webhook(request: Request, session: Session = Depends(get_sessio
         handle_subscription_updated(session, data_obj)
     elif event_type in {"customer.subscription.deleted", "customer.subscription.cancelled"}:
         handle_subscription_deleted(session, data_obj)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
