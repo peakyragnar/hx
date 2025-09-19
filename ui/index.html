@@ -158,7 +158,7 @@
         </div>
       </div>
       <div class="form-card">
-        <form id="claim-form">
+        <form id="claim-form" action="/run" method="post">
           <label for="claim">Check a claim</label>
           <textarea id="claim" name="claim" maxlength="280" placeholder="Type the claim you want to inspect." required></textarea>
           <div class="form-meta">
@@ -328,19 +328,20 @@
         if (quickClaim) { quickClaim.focus(); }
       }
 
+      var isLocalHarness = Boolean(window.HERETIX_UI_LOCAL);
       var meta = document.querySelector('meta[name="heretix-api-base"]');
-      var apiBase = window.HERETIX_API_BASE || (meta && meta.content) || (function(){
-        if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
-          return 'http://127.0.0.1:8000';
-        }
+      var apiBase = isLocalHarness ? null : (window.HERETIX_API_BASE || (meta && meta.content) || (function(){
         if (location.origin.includes('app.')) {
           return location.origin.replace('app.', 'api.');
         }
         if (location.hostname.endsWith('heretix.ai')) {
           return 'https://api.heretix.ai';
         }
+        if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+          return 'http://127.0.0.1:8000';
+        }
         return 'https://heretix-api.onrender.com';
-      })();
+      })());
 
       var claimForm = document.getElementById('claim-form');
       var claimInput = document.getElementById('claim');
@@ -457,7 +458,11 @@
         });
       });
 
-      if (navSignIn) {
+      if (isLocalHarness && navSignIn) {
+        navSignIn.classList.add('hidden');
+      }
+
+      if (!isLocalHarness && navSignIn) {
         navSignIn.addEventListener('click', function(evt){
           evt.preventDefault();
           if (signInModal) {
@@ -473,6 +478,7 @@
       });
 
       async function fetchMe() {
+        if (!apiBase) return;
         try {
           var res = await fetch(apiBase + '/api/me', { credentials: 'include' });
           if (!res.ok) return;
@@ -484,7 +490,13 @@
       }
 
       async function handleCheckout(plan) {
-        if (!planStatus) return;
+        if (isLocalHarness || !planStatus || !apiBase) {
+          if (planStatus) {
+            planStatus.textContent = 'Available in hosted mode.';
+            planStatus.classList.add('modal-status--error');
+          }
+          return;
+        }
         planStatus.textContent = 'Redirecting to checkout…';
         planStatus.classList.remove('modal-status--error');
         try {
@@ -514,7 +526,7 @@
         }
       }
 
-      if (planModal) {
+      if (!isLocalHarness && planModal) {
         planModal.querySelectorAll('[data-plan]').forEach(function(btn){
           btn.addEventListener('click', function(){
             handleCheckout(this.getAttribute('data-plan'));
@@ -522,7 +534,7 @@
         });
       }
 
-      if (signInForm) {
+      if (!isLocalHarness && signInForm) {
         signInForm.addEventListener('submit', async function(evt){
           evt.preventDefault();
           var email = document.getElementById('signin-email').value.trim();
@@ -553,7 +565,20 @@
         });
       }
 
-      if (claimForm) {
+      if (claimForm && isLocalHarness) {
+        claimForm.setAttribute('action', '/run');
+        claimForm.setAttribute('method', 'post');
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Ask the model';
+        }
+        setStatus('', 'info');
+        if (usageEl) {
+          usageEl.classList.add('hidden');
+        }
+      }
+
+      if (claimForm && !isLocalHarness) {
         var originalBtnText = submitBtn ? submitBtn.textContent : '';
         claimForm.addEventListener('submit', async function(evt){
           evt.preventDefault();
@@ -631,7 +656,9 @@
         yearSpan.textContent = new Date().getFullYear();
       }
 
-      fetchMe();
+      if (!isLocalHarness) {
+        fetchMe();
+      }
     })();
   </script>
 </body>

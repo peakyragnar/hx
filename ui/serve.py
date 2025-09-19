@@ -264,6 +264,22 @@ class Handler(BaseHTTPRequestHandler):
         ui_model_label = str(job.get("ui_model") or "GPT‑5")
         ui_mode_label = str(job.get("ui_mode") or "Internal Knowledge Only (no retrieval)")
 
+        # Re-validate that the job still points to files under runs/ui_tmp before invoking CLI.
+        try:
+            tmp_root = TMP_DIR.resolve(strict=True)
+            cfg_real = cfg_path.resolve(strict=False)
+            out_real = out_path.resolve(strict=False)
+            if not cfg_real.is_relative_to(tmp_root) or not out_real.is_relative_to(tmp_root):
+                logging.error("UI job has unsafe file paths: cfg=%s out=%s", cfg_path, out_path)
+                self._err("Invalid job data. Please start a new check."); return
+        except Exception as exc:
+            logging.error("UI job path validation failed: %s", exc)
+            self._err("Invalid job data. Please start a new check."); return
+
+        if not cfg_path.exists():
+            logging.error("UI job config missing: %s", cfg_path)
+            self._err("This run expired. Please try again."); return
+
         env = os.environ.copy()
         env.setdefault("HERETIX_DB_PATH", str(Path("runs/heretix_ui.sqlite")))
         env.setdefault("HERETIX_RPL_SEED", "42")
@@ -560,7 +576,18 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         path_only = parsed.path or "/"
         if path_only in ("/", "/index.html"):
-            body = (ROOT / "index.html").read_bytes()
+            html_path = ROOT / "index.html"
+            try:
+                text = html_path.read_text(encoding="utf-8")
+                marker = "</head>"
+                inject = "<script>window.HERETIX_UI_LOCAL = true;</script>"
+                if marker in text:
+                    text = text.replace(marker, inject + marker, 1)
+                else:
+                    text = inject + text
+                body = text.encode("utf-8")
+            except Exception:
+                body = html_path.read_bytes()
             self._ok(body, "text/html")
             return
         if path_only in ("/how", "/how.html"):
