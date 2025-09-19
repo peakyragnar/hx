@@ -35,7 +35,43 @@ This document captures the current architecture after adding the Postgres schema
 
 ---
 
-## 2. FastAPI Integration
+## 2. Application & Delivery Architecture
+
+### API Service (Render)
+- Hosted as a Render "Web Service" that builds directly from the repository `Dockerfile`.
+- Runs `uvicorn api.main:app` inside the container built by `uv sync --frozen --no-dev`.
+- Key environment variables (managed in Render):
+  - `DATABASE_URL` (Neon Postgres connection).
+  - RPL defaults (`RPL_MODEL`, `RPL_PROMPT_VERSION`, `RPL_K`, etc.).
+  - Stripe credentials (`STRIPE_SECRET`, `STRIPE_PRICE_*`, `STRIPE_WEBHOOK_SECRET`).
+  - URLs for cross-service coordination (`API_URL`, `APP_URL`).
+- FastAPI installs `CORSMiddleware` so the browser UI at `https://heretix.ai` (and previews on `vercel.app`) can call the API with cookies.
+- `/healthz` is Render's readiness probe before shifting traffic to a new deploy.
+
+### Frontend (Vercel)
+- Deployed from the `ui/` directory with the "Other" preset and root path `ui`.
+- Production domain: `https://heretix.ai`; preview domain: `https://heretix-ui.vercel.app`.
+- The HTML embeds `<meta name="heretix-api-base" content="https://api.heretix.ai">` and JS fallbacks for local development and preview hosts.
+- Client-side JS handles claim submission, magic-link sign-in, usage meter updates, and redirects to Stripe Checkout.
+
+### Networking & DNS
+- `api.heretix.ai` → CNAME to Render (`heretix-api.onrender.com`).
+- `heretix.ai` → A record `76.76.21.21` (Vercel) and `www.heretix.ai` → CNAME `cname.vercel-dns.com`.
+- Vercel and Render automatically issue TLS certificates once records resolve.
+
+### Secrets & Configuration
+- Local `.env` is for development; production secrets live in Render/Vercel dashboards.
+- Render environment changes require a redeploy to take effect.
+- Stripe webhook signing secret is stored in `STRIPE_WEBHOOK_SECRET` so events are verified.
+
+### Observability & Logs
+- Render console provides build/runtime logs (`stripe_webhook`, magic-link requests, run executions).
+- Stripe dashboard records webhook deliveries; the CLI (`stripe listen`) is used for testing.
+- Neon gives visibility into `users`, `usage_ledger`, and `checks` for debugging plan/usage issues.
+
+---
+
+## 3. FastAPI Integration
 
 ### Overview
 - Location: `api/` package.
@@ -97,12 +133,41 @@ This document captures the current architecture after adding the Postgres schema
    ```
 
 ### Future Extensions
-- Phases 2–4 will add authentication (magic links), gating/usage counters, and Stripe billing around this endpoint.
-- Frontend will call this API and react to gateway responses (e.g., 402 require_signin/require_subscription).
+- Additional providers (Claude, Grok, DeepSeek) can be surfaced once the harness plugs in alternate adapters.
+- Usage exports (Parquet + DuckDB) will enable analytics across SQLite + Neon datasets.
+- Stripe Customer Portal integration would allow self-serve plan management and invoicing.
 
 ---
 
-## 3. Summary
-- SQLite remains the research/stats store; Postgres hosts production-ready tables for runs, users, sessions, and subscriptions.
-- FastAPI now provides a clean API surface to trigger RPL runs and persist them in Postgres.
-- This foundation enables subsequent phases (auth, gating, payments) without touching the estimator math.
+## 4. End-to-End Flows
+
+### Claim Evaluation
+1. A visitor loads `https://heretix.ai` (Vercel) and submits a claim through the form.
+2. JS posts to `https://api.heretix.ai/api/checks/run` with cookies (if signed in) and optional mock flag.
+3. FastAPI executes the RPL harness, stores the result in Neon (`checks`, `usage_ledger`), and returns aggregates (probability, CI, stability).
+4. The UI renders the response and updates the usage meter by calling `/api/me`.
+
+### Magic-Link Sign-in
+1. The "Sign in" navigation item opens the modal and posts an email to `/api/auth/magic-links`.
+2. The API records a token (`email_tokens`) and asks Postmark to send the link.
+3. Visiting the link hits `/api/auth/callback`, verifies the token, creates a `sessions` row, and sets an HttpOnly cookie.
+4. Future requests include the cookie; `/api/me` reflects plan + remaining checks.
+
+### Billing & Plan Changes
+1. Signed-in users choose a plan; `/api/billing/checkout` creates a Stripe Checkout Session using the plan’s `STRIPE_PRICE_*` ID.
+2. On successful payment, Stripe redirects to `APP_URL+STRIPE_SUCCESS_PATH`.
+3. Stripe sends webhook events (`checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`).
+4. `/api/stripe/webhook` verifies the signature, updates `users.plan`, stores Stripe IDs, and resets the usage ledger to the allowance (Starter 20, Core 100, Pro 750 checks).
+
+### Deployment Workflow
+1. Changes land on `full-feature` (includes Dockerfile, uv.lock, API/UI updates).
+2. Render builds the Docker image and health-checks `/healthz` before routing traffic.
+3. Vercel builds the `ui/` directory and publishes to `heretix.ai`.
+4. After verification, merge `full-feature` → `main` to sync the default branch.
+
+---
+
+## 5. Summary
+- SQLite remains the research/store for CLI experiments; Neon Postgres is the authoritative production database for users, runs, and ledgers.
+- Render hosts the FastAPI service (CORS-enabled, Stripe-integrated) while Vercel serves the static UI that calls the API.
+- DNS (`heretix.ai`, `api.heretix.ai`), Stripe Checkout, and webhooks glue the experience together so subscription plans automatically align with usage limits.
