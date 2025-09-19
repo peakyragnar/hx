@@ -140,7 +140,7 @@
         <ul>
           <li><a href="/how.html">How it works</a></li>
           <li><a href="/examples.html">Examples</a></li>
-          <li><a href="#" id="nav-signin">Sign in</a></li>
+          <li><a href="#" id="nav-signin">Sign up / Sign in</a></li>
         </ul>
       </nav>
     </div>
@@ -278,8 +278,8 @@
     <div class="modal-backdrop" data-close-modal></div>
     <div class="modal-dialog">
       <button class="modal-close" type="button" data-close-modal aria-label="Close">×</button>
-      <h2>Sign in to continue</h2>
-      <p>Use your email address and we’ll send a one-time link. No passwords, ever.</p>
+      <h2>Create or access your account</h2>
+      <p>Enter your email and we’ll send a magic link—first-time visitors become members instantly, no passwords required.</p>
       <form id="signin-form">
         <label for="signin-email">Email</label>
         <input type="email" id="signin-email" name="email" placeholder="you@example.com" required />
@@ -508,7 +508,7 @@
           });
           if (res.status === 401) {
             closeModal(planModal);
-            setStatus('Sign in to choose a plan.', 'warn');
+                setStatus('Sign up or sign in to choose a plan.', 'warn');
             openModal(signInModal);
             return;
           }
@@ -557,7 +557,7 @@
               signInStatus.classList.add('modal-status--error');
               return;
             }
-            signInStatus.textContent = 'Check your email—your link is on the way.';
+            signInStatus.textContent = 'Check your email to finish—your link signs you in or creates your account automatically.';
           } catch (err) {
             signInStatus.textContent = 'Unable to send link. Check your connection and retry.';
             signInStatus.classList.add('modal-status--error');
@@ -613,7 +613,7 @@
               var detail = await res.json().catch(function(){ return {}; });
               var reason = detail.reason || (detail.detail && detail.detail.reason) || detail.detail || '';
               if (reason === 'require_signin') {
-                setStatus('Sign in to keep reading new claims.', 'warn');
+                setStatus('Sign up or sign in to keep reading new claims.', 'warn');
                 signInStatus.textContent = '';
                 openModal(signInModal);
               } else if (reason === 'require_subscription' || reason === 'limit_reached') {
