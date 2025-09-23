@@ -25,12 +25,7 @@
     nav ul { list-style:none; display:flex; gap:18px; margin:0; padding:0; }
     nav a { font-size:14px; color:var(--muted); transition:color 0.2s ease; }
     nav a:hover { color:var(--bright); }
-    .account-link { display:flex; align-items:center; gap:12px; }
-    .account-label { font-size:13px; color:var(--muted); letter-spacing:0.5px; }
-    .account-email { color:var(--fg); font-weight:500; }
-    .account-plan { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; }
-    .signout-button { padding:10px 16px; border-radius:10px; border:1px solid rgba(255,77,77,0.5); background:rgba(255,77,77,0.12); color:#ff9b9b; font-size:13px; cursor:pointer; transition:background 0.2s ease, border-color 0.2s ease; }
-    .signout-button:hover { background:rgba(255,77,77,0.22); border-color:rgba(255,77,77,0.8); }
+    .nav a.signed-in { color:var(--bright); font-weight:500; }
 
     main { max-width:1100px; margin:0 auto; padding:40px 20px 120px; }
     section { margin-top:80px; }
@@ -147,12 +142,6 @@
           <li><a href="/how.html">How it works</a></li>
           <li><a href="/examples.html">Examples</a></li>
           <li><a href="#" id="nav-signin">Sign up / Sign in</a></li>
-          <li id="nav-account" class="account-link hidden">
-            <span class="account-label">Signed in</span>
-            <span class="account-email" id="nav-account-email"></span>
-            <span class="account-plan hidden" id="nav-account-plan"></span>
-            <button type="button" class="signout-button" id="nav-signout">Sign out</button>
-          </li>
         </ul>
       </nav>
     </div>
@@ -376,10 +365,7 @@
       var planModal = document.getElementById('plan-modal');
       var planStatus = document.getElementById('plan-status');
       var navSignIn = document.getElementById('nav-signin');
-      var navAccount = document.getElementById('nav-account');
-      var navAccountEmail = document.getElementById('nav-account-email');
-      var navAccountPlan = document.getElementById('nav-account-plan');
-      var navSignOut = document.getElementById('nav-signout');
+      var currentUserEmail = '';
 
       function setStatus(message, tone) {
         if (!statusEl) return;
@@ -415,23 +401,19 @@
       }
 
       function renderAuth(state) {
-        if (!navSignIn || !navAccount) return;
+        if (!navSignIn) return;
         if (state && state.authenticated) {
-          navSignIn.classList.add('hidden');
-          navAccount.classList.remove('hidden');
-          if (navAccountEmail) {
-            navAccountEmail.textContent = state.email || '';
-          }
-          if (navAccountPlan) {
-            var planLabel = state.plan ? ('Plan ' + state.plan) : '';
-            navAccountPlan.textContent = planLabel;
-            navAccountPlan.classList.toggle('hidden', !planLabel);
-          }
+          currentUserEmail = state.email || '';
+          navSignIn.dataset.mode = 'signout';
+          navSignIn.textContent = 'Sign out';
+          navSignIn.title = currentUserEmail ? ('Signed in as ' + currentUserEmail) : 'Sign out';
+          navSignIn.classList.add('signed-in');
         } else {
-          navAccount.classList.add('hidden');
-          navSignIn.classList.remove('hidden');
-          if (navAccountEmail) navAccountEmail.textContent = '';
-          if (navAccountPlan) navAccountPlan.textContent = '';
+          currentUserEmail = '';
+          navSignIn.dataset.mode = 'signin';
+          navSignIn.textContent = 'Sign up / Sign in';
+          navSignIn.title = '';
+          navSignIn.classList.remove('signed-in');
         }
       }
 
@@ -447,6 +429,7 @@
           console.warn('Sign out failed', err);
           setStatus('Unable to sign out right now.', 'warn');
         }
+        renderAuth(null);
         fetchMe();
       }
 
@@ -515,29 +498,25 @@
       if (isLocalHarness && navSignIn) {
         navSignIn.classList.add('hidden');
       }
-      if (isLocalHarness && navAccount) {
-        navAccount.classList.add('hidden');
-      }
-
       if (!isLocalHarness && navSignIn) {
+        navSignIn.dataset.mode = 'signin';
         navSignIn.addEventListener('click', function(evt){
           evt.preventDefault();
-          if (signInModal) {
+          if (navSignIn.dataset.mode === 'signout') {
+            handleSignOut();
+          } else if (signInModal) {
             openModal(signInModal);
           }
         });
       }
 
-      if (!isLocalHarness && navSignOut) {
-        navSignOut.addEventListener('click', function(){
-          handleSignOut();
-        });
-      }
-
       if (!isLocalHarness && navSignIn) {
+        navSignIn.dataset.mode = 'signin';
         navSignIn.addEventListener('click', function(evt){
           evt.preventDefault();
-          if (signInModal) {
+          if (navSignIn.dataset.mode === 'signout') {
+            handleSignOut();
+          } else if (signInModal) {
             openModal(signInModal);
           }
         });
