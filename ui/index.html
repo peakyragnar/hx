@@ -25,13 +25,11 @@
     nav ul { list-style:none; display:flex; gap:18px; margin:0; padding:0; }
     nav a { font-size:14px; color:var(--muted); transition:color 0.2s ease; }
     nav a:hover { color:var(--bright); }
-    .account-link { position:relative; }
-    .account-button { padding:10px 14px; border-radius:10px; border:1px solid rgba(0,255,65,0.35); background:rgba(0,255,65,0.08); color:var(--bright); font-size:13px; letter-spacing:0.5px; cursor:pointer; transition:background 0.2s ease, border-color 0.2s ease; }
-    .account-button:hover, .account-button.is-open { background:rgba(0,255,65,0.15); border-color:rgba(0,255,65,0.55); }
-    .account-menu { position:absolute; right:0; top:calc(100% + 10px); min-width:220px; border-radius:14px; border:1px solid rgba(0,255,65,0.25); background:rgba(10,13,10,0.95); box-shadow:0 14px 32px rgba(0,255,65,0.18); padding:18px 20px; display:flex; flex-direction:column; gap:14px; z-index:50; }
-    .account-email { font-size:14px; color:var(--fg); word-break:break-all; }
+    .account-link { display:flex; align-items:center; gap:12px; }
+    .account-label { font-size:13px; color:var(--muted); letter-spacing:0.5px; }
+    .account-email { color:var(--fg); font-weight:500; }
     .account-plan { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; }
-    .signout-button { align-self:flex-start; padding:10px 16px; border-radius:10px; border:1px solid rgba(255,77,77,0.5); background:rgba(255,77,77,0.12); color:#ff9b9b; font-size:13px; cursor:pointer; transition:background 0.2s ease, border-color 0.2s ease; }
+    .signout-button { padding:10px 16px; border-radius:10px; border:1px solid rgba(255,77,77,0.5); background:rgba(255,77,77,0.12); color:#ff9b9b; font-size:13px; cursor:pointer; transition:background 0.2s ease, border-color 0.2s ease; }
     .signout-button:hover { background:rgba(255,77,77,0.22); border-color:rgba(255,77,77,0.8); }
 
     main { max-width:1100px; margin:0 auto; padding:40px 20px 120px; }
@@ -150,12 +148,10 @@
           <li><a href="/examples.html">Examples</a></li>
           <li><a href="#" id="nav-signin">Sign up / Sign in</a></li>
           <li id="nav-account" class="account-link hidden">
-            <button type="button" class="account-button" id="nav-account-btn">Account</button>
-            <div class="account-menu hidden" id="nav-account-menu">
-              <div class="account-email" id="nav-account-email"></div>
-              <div class="account-plan" id="nav-account-plan"></div>
-              <button type="button" class="signout-button" id="nav-signout">Sign out</button>
-            </div>
+            <span class="account-label">Signed in</span>
+            <span class="account-email" id="nav-account-email"></span>
+            <span class="account-plan hidden" id="nav-account-plan"></span>
+            <button type="button" class="signout-button" id="nav-signout">Sign out</button>
           </li>
         </ul>
       </nav>
@@ -381,44 +377,9 @@
       var planStatus = document.getElementById('plan-status');
       var navSignIn = document.getElementById('nav-signin');
       var navAccount = document.getElementById('nav-account');
-      var navAccountBtn = document.getElementById('nav-account-btn');
-      var navAccountMenu = document.getElementById('nav-account-menu');
       var navAccountEmail = document.getElementById('nav-account-email');
       var navAccountPlan = document.getElementById('nav-account-plan');
       var navSignOut = document.getElementById('nav-signout');
-
-      function closeAccountMenu() {
-        if (navAccountMenu) {
-          navAccountMenu.classList.add('hidden');
-        }
-        if (navAccountBtn) {
-          navAccountBtn.classList.remove('is-open');
-        }
-      }
-
-      function toggleAccountMenu() {
-        if (!navAccountMenu || !navAccountBtn) return;
-        if (navAccountMenu.classList.contains('hidden')) {
-          navAccountMenu.classList.remove('hidden');
-          navAccountBtn.classList.add('is-open');
-        } else {
-          closeAccountMenu();
-        }
-      }
-
-      document.addEventListener('click', function(evt){
-        if (!navAccount || !navAccountMenu) return;
-        if (navAccountMenu.classList.contains('hidden')) return;
-        if (!navAccount.contains(evt.target)) {
-          closeAccountMenu();
-        }
-      });
-
-      document.addEventListener('keydown', function(evt){
-        if (evt.key === 'Escape') {
-          closeAccountMenu();
-        }
-      });
 
       function setStatus(message, tone) {
         if (!statusEl) return;
@@ -466,22 +427,16 @@
             navAccountPlan.textContent = planLabel;
             navAccountPlan.classList.toggle('hidden', !planLabel);
           }
-          if (navAccountBtn) {
-            navAccountBtn.textContent = state.email || 'Account';
-          }
         } else {
-          closeAccountMenu();
           navAccount.classList.add('hidden');
           navSignIn.classList.remove('hidden');
           if (navAccountEmail) navAccountEmail.textContent = '';
           if (navAccountPlan) navAccountPlan.textContent = '';
-          if (navAccountBtn) navAccountBtn.textContent = 'Account';
         }
       }
 
       async function handleSignOut() {
         if (!apiBase) return;
-        closeAccountMenu();
         try {
           await fetch(apiBase + '/api/auth/signout', {
             method: 'POST',
@@ -570,12 +525,6 @@
           if (signInModal) {
             openModal(signInModal);
           }
-        });
-      }
-
-      if (!isLocalHarness && navAccountBtn) {
-        navAccountBtn.addEventListener('click', function(){
-          toggleAccountMenu();
         });
       }
 
@@ -694,6 +643,7 @@
       }
 
       if (magicSignedIn && !isLocalHarness) {
+        renderAuth({ authenticated: true });
         setStatus('Signed in—welcome back!', 'info');
         if (typeof window.history.replaceState === 'function') {
           window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
