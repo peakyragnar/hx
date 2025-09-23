@@ -4,7 +4,9 @@ import hashlib
 import json
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 
+import yaml
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
@@ -13,6 +15,8 @@ from sqlalchemy.orm import Session
 
 from heretix.config import RunConfig
 from heretix.rpl import run_single_version
+from heretix.provider.openai_gpt5 import score_claim as score_claim_live
+from heretix.provider.mock import score_claim_mock
 
 from .auth import complete_magic_link, get_current_user, handle_magic_link, sign_out
 from .config import settings
@@ -136,13 +140,22 @@ def run_check(
 
     claim_hash = hashlib.sha256(claim.encode("utf-8")).hexdigest()
 
+    bootstrap_seed_val = aggregation.get("bootstrap_seed")
+    verdict_label, verdict_text, explanation_headline, explanation_text, explanation_reasons = build_explanation(
+        claim=claim,
+        prob=aggregates.get("prob_true_rpl"),
+        cfg=cfg,
+        prompt_file=prompt_file,
+        use_mock=use_mock,
+        max_output_tokens=cfg.max_output_tokens,
+    )
+
     checks_allowed = usage_state.checks_allowed
     used_after = usage_state.checks_used
     remaining_after = max(checks_allowed - used_after, 0) if checks_allowed else None
     aggregates["ci_width"] = ci_width
 
     check = None
-    bootstrap_seed_val = aggregation.get("bootstrap_seed")
     try:
         existing = session.scalar(select(Check).where(Check.run_id == run_id))
         if existing:
@@ -226,6 +239,11 @@ def run_check(
         checks_allowed=checks_allowed,
         checks_used=used_after,
         remaining=remaining_after,
+        verdict_label=verdict_label,
+        verdict_text=verdict_text,
+        explanation_headline=explanation_headline,
+        explanation_text=explanation_text,
+        explanation_reasons=explanation_reasons,
     )
 
 
@@ -322,3 +340,127 @@ async def stripe_webhook(request: Request, session: Session = Depends(get_sessio
     elif event_type in {"customer.subscription.deleted", "customer.subscription.cancelled"}:
         handle_subscription_deleted(session, data_obj)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def build_explanation(
+    *,
+    claim: str,
+    prob: float | None,
+    cfg: RunConfig,
+    prompt_file: str | Path,
+    use_mock: bool,
+    max_output_tokens: int | None,
+) -> tuple[str, str, str, str, list[str]]:
+    verdict_label, verdict_text, headline, interpretation = classify_probability(prob)
+    system_text, user_template, paraphrases = load_prompt_components(prompt_file)
+    paraphrase_text = paraphrases[0] if paraphrases else "Without retrieval, estimate P(true) for: {CLAIM}"
+    tokens = max_output_tokens or cfg.max_output_tokens or settings.rpl_max_output_tokens
+
+    reasons: list[str] = []
+    if system_text and user_template and paraphrase_text:
+        try:
+            if use_mock:
+                out = score_claim_mock(
+                    claim=claim,
+                    system_text=system_text,
+                    user_template=user_template,
+                    paraphrase_text=paraphrase_text,
+                    model=cfg.model,
+                    max_output_tokens=tokens,
+                )
+            else:
+                out = score_claim_live(
+                    claim=claim,
+                    system_text=system_text,
+                    user_template=user_template,
+                    paraphrase_text=paraphrase_text,
+                    model=cfg.model,
+                    max_output_tokens=tokens,
+                )
+            reasons = extract_reasons(out)
+        except Exception as exc:  # pragma: no cover - best-effort explanation
+            logging.warning("Explanation provider call failed: %s", exc)
+
+    if not reasons:
+        reasons = fallback_reasons(prob)
+
+    return verdict_label, verdict_text, headline, interpretation, reasons
+
+
+def load_prompt_components(prompt_file: str | Path) -> tuple[str, str, list[str]]:
+    try:
+        text = Path(prompt_file).read_text(encoding="utf-8")
+        doc = yaml.safe_load(text) or {}
+    except Exception:
+        doc = {}
+    system_text = str(doc.get("system") or "")
+    user_template = str(doc.get("user_template") or "")
+    paraphrases = [str(x) for x in (doc.get("paraphrases") or [])]
+    return system_text, user_template, paraphrases
+
+
+def extract_reasons(payload: dict) -> list[str]:
+    raw = (payload or {}).get("raw") or {}
+    reasons: list[str] = []
+
+    def add_items(items):
+        for item in items:
+            if not isinstance(item, str):
+                continue
+            text = item.strip().rstrip(".;")
+            if not text:
+                continue
+            if not text.endswith("."):
+                text += "."
+            reasons.append(text)
+            if len(reasons) >= 3:
+                break
+
+    primary = raw.get("reasoning_bullets") or []
+    add_items(primary)
+    if len(reasons) < 3:
+        secondary = raw.get("contrary_considerations") or []
+        add_items(secondary)
+
+    if not reasons:
+        alt: list[str] = []
+        add_items(raw.get("assumptions") or [])
+        if len(reasons) < 3:
+            add_items(raw.get("ambiguity_flags") or [])
+
+    if not reasons:
+        return []
+    return reasons[:3]
+
+
+def fallback_reasons(prob: float | None) -> list[str]:
+    probability = prob if isinstance(prob, (int, float)) else 0.5
+    if probability >= 0.60:
+        return ["The claim aligns with common definitions and typical examples."]
+    if probability <= 0.40:
+        return ["The claim conflicts with common definitions and typical examples."]
+    return ["It depends on definitions or missing context."]
+
+
+def classify_probability(prob: float | None) -> tuple[str, str, str, str]:
+    probability = prob if isinstance(prob, (int, float)) else 0.5
+    if probability >= 0.60:
+        return (
+            "Likely true",
+            "LIKELY TRUE",
+            "Why it’s likely true",
+            "GPT‑5 leans toward this claim being true based on its training data.",
+        )
+    if probability <= 0.40:
+        return (
+            "Likely false",
+            "LIKELY FALSE",
+            "Why it’s likely false",
+            "GPT‑5 leans toward this claim being false based on its training data.",
+        )
+    return (
+        "Uncertain",
+        "UNCERTAIN",
+        "Why it’s uncertain",
+        "GPT‑5 did not express a strong prior either way; responses were mixed.",
+    )

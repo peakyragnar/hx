@@ -62,6 +62,11 @@ class RunResponse(BaseModel):
     checks_allowed: Optional[int] = None
     checks_used: Optional[int] = None
     remaining: Optional[int] = None
+    verdict_label: Optional[str] = None
+    verdict_text: Optional[str] = None
+    explanation_headline: Optional[str] = None
+    explanation_text: Optional[str] = None
+    explanation_reasons: Optional[List[str]] = None
 
 
 class MagicLinkPayload(BaseModel):

@@ -56,7 +56,7 @@
     .result-header { text-align:center; margin-bottom:22px; }
     .result-value { font-size:54px; font-weight:600; color:var(--bright); text-shadow:0 0 28px rgba(0,255,65,0.35); }
     .result-subtitle { font-size:14px; text-transform:uppercase; letter-spacing:2px; color:var(--muted); }
-    .result-explainer { margin-top:16px; padding:18px; border-radius:14px; border:1px solid rgba(0,255,65,0.25); background:rgba(0,255,65,0.05); }
+    .result-explainer { margin-top:16px; padding:18px; border-radius:14px; border:1px solid rgba(0,255,65,0.25); background:rgba(0,255,65,0.05); text-align:left; }
     .result-explainer h3 { margin:0 0 10px; font-size:18px; color:var(--bright); }
     .result-explainer p { margin:0 0 12px; color:var(--muted); line-height:1.6; }
     .result-explainer ul { margin:0; padding-left:20px; color:var(--muted); line-height:1.6; }
@@ -66,11 +66,19 @@
     .metric-note { font-size:12px; color:var(--muted); margin-top:4px; }
     .result-card details { margin-top:18px; }
     .result-card pre { background:#050705; border-radius:12px; padding:16px; overflow:auto; font-size:13px; color:#a0cba0; }
-    .loading-overlay { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(6,8,7,0.88); z-index:1000; backdrop-filter:blur(10px); }
-    .loading-box { text-align:center; max-width:360px; padding:32px; border-radius:18px; border:1px solid rgba(0,255,65,0.25); background:rgba(0,0,0,0.55); box-shadow:0 0 42px rgba(0,255,65,0.32); }
-    .loading-spinner { width:56px; height:56px; border-radius:50%; border:4px solid rgba(0,255,65,0.2); border-top-color:rgba(0,255,65,0.8); margin:0 auto 18px; animation: spin 1s linear infinite; }
-    .loading-box p { color:var(--muted); margin:8px 0 0; line-height:1.5; }
-    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-overlay { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(6,8,7,0.9); backdrop-filter:blur(12px); z-index:1000; padding:24px; }
+    .loading-content { text-align:center; max-width:520px; color:var(--muted); }
+    .loading-content h2 { margin:0 0 16px; font-size:24px; color:var(--bright); }
+    .loading-claim { font-size:18px; color:var(--fg); margin-bottom:18px; }
+    .loading-steps { list-style:none; margin:0 auto 24px; padding:0; max-width:340px; text-align:left; }
+    .loading-steps li { padding:12px 16px; border-radius:12px; border:1px solid rgba(0,255,65,0.2); background:rgba(0,255,65,0.04); margin-bottom:10px; font-size:14px; color:var(--muted); position:relative; overflow:hidden; }
+    .loading-steps li::before { content:''; position:absolute; left:0; top:0; bottom:0; width:4px; background:rgba(0,255,65,0.4); opacity:0; transition:opacity 0.3s ease; }
+    .loading-steps li.active::before { opacity:1; }
+    .loading-hero { width:340px; height:340px; margin:28px auto; position:relative; background:url('/assets/running_bg.png') center/cover no-repeat; border-radius:14px; box-shadow:0 0 36px rgba(0,255,65,0.25) inset, 0 0 24px rgba(0,255,65,0.25); }
+    .loading-mask { position:absolute; left:50%; top:48%; width:120px; height:120px; transform:translate(-50%,-50%); background:radial-gradient(circle at center, rgba(6,6,6,0.85) 0%, rgba(6,6,6,0.1) 70%, rgba(6,6,6,0) 100%); border-radius:50%; pointer-events:none; }
+    .loading-pill { position:absolute; left:50%; top:48%; width:56px; height:20px; transform:translate(-50%,-50%); background:#ff2b2b; border-radius:999px; border:1px solid #ff6b6b; box-shadow:0 0 18px rgba(255,0,0,0.5); animation: spin-pill 1.6s linear infinite; }
+    .loading-note { margin-top:14px; color:var(--muted); font-size:14px; }
+    @keyframes spin-pill { from { transform:translate(-50%,-50%) rotate(0deg); } to { transform:translate(-50%,-50%) rotate(360deg); } }
 
     .modal { position:fixed; inset:0; display:none; align-items:center; justify-content:center; z-index:100; }
     .modal.is-open { display:flex; }
@@ -143,11 +151,20 @@
   </style>
 </head>
 <body>
-  <div class="loading-overlay hidden" id="loading-overlay">
-    <div class="loading-box">
-      <div class="loading-spinner" role="status" aria-label="Running claim"></div>
-      <h2>Checking your claim…</h2>
-      <p>We’re asking GPT‑5 across multiple paraphrases. This usually takes less than a minute.</p>
+  <div class="loading-overlay hidden" id="loading-overlay" aria-live="polite">
+    <div class="loading-content">
+      <h2>Measuring how GPT‑5’s training data anchors this claim…</h2>
+      <div class="loading-claim" id="loading-claim"></div>
+      <ol class="loading-steps">
+        <li class="active">Planning the different phrasings.</li>
+        <li>Asking GPT‑5 with internal knowledge only.</li>
+        <li>Preparing the explanation for the verdict.</li>
+      </ol>
+      <div class="loading-hero">
+        <div class="loading-mask"></div>
+        <div class="loading-pill" aria-label="Animated red pill"></div>
+      </div>
+      <p class="loading-note">This usually takes less than a minute.</p>
     </div>
   </div>
   <header>
@@ -201,7 +218,7 @@
     <section id="result-card" class="result-card hidden" aria-live="polite">
       <div class="result-header">
         <div class="result-value" id="result-prob">--</div>
-        <div class="result-subtitle">Probability this claim is true</div>
+        <div class="result-subtitle" id="result-subtitle">Probability this claim is true</div>
       </div>
       <div class="result-explainer hidden" id="result-explainer">
         <h3 id="result-verdict">—</h3>
@@ -374,6 +391,7 @@
       var usageEl = document.getElementById('usage-meter');
       var resultCard = document.getElementById('result-card');
       var resultProb = document.getElementById('result-prob');
+      var resultSubtitle = document.getElementById('result-subtitle');
       var resultCi = document.getElementById('result-ci');
       var resultStability = document.getElementById('result-stability');
       var resultBand = document.getElementById('result-stability-band');
@@ -384,6 +402,7 @@
       var resultInterpretation = document.getElementById('result-interpretation');
       var resultReasons = document.getElementById('result-reasons');
       var loadingOverlay = document.getElementById('loading-overlay');
+      var loadingClaim = document.getElementById('loading-claim');
 
       var signInModal = document.getElementById('signin-modal');
       var signInForm = document.getElementById('signin-form');
@@ -466,7 +485,8 @@
 
       function renderResult(data) {
         if (!resultCard || !data) return;
-        resultProb.textContent = formatPercent(data.aggregates.prob_true_rpl);
+        var probValue = data.aggregates && typeof data.aggregates.prob_true_rpl === 'number' ? data.aggregates.prob_true_rpl : 0;
+        resultProb.textContent = formatPercent(probValue);
         if (Array.isArray(data.aggregates.ci95)) {
           var lo = formatPercent(data.aggregates.ci95[0]);
           var hi = formatPercent(data.aggregates.ci95[1]);
@@ -479,16 +499,25 @@
         resultRunId.textContent = data.run_id || '--';
         resultJson.textContent = JSON.stringify(data.aggregates, null, 2);
 
-        if (resultExplainer && resultVerdict && resultInterpretation) {
-          var verdictInfo = buildVerdict(data.aggregates.prob_true_rpl || 0);
-          resultVerdict.textContent = verdictInfo.title;
-          resultInterpretation.textContent = verdictInfo.text;
+        var verdictInfo = buildVerdict(probValue);
+        var verdictLabel = data.verdict_label || verdictInfo.title;
+        var headline = data.explanation_headline || verdictInfo.headline;
+        var interpretation = data.explanation_text || verdictInfo.text;
 
-          var bullets = buildReasons(data);
+        if (resultSubtitle) {
+          resultSubtitle.textContent = verdictLabel ? verdictLabel + ' · Probability this claim is true' : 'Probability this claim is true';
+        }
+
+        if (resultExplainer && resultVerdict && resultInterpretation) {
+          resultVerdict.textContent = headline;
+          resultInterpretation.textContent = interpretation;
+
           if (resultReasons) {
+            var apiReasons = Array.isArray(data.explanation_reasons) ? data.explanation_reasons.filter(Boolean) : [];
+            var reasonList = apiReasons.length ? apiReasons : buildReasons(data);
             resultReasons.innerHTML = '';
-            if (bullets.length) {
-              bullets.forEach(function(line){
+            if (reasonList.length) {
+              reasonList.forEach(function(line){
                 var li = document.createElement('li');
                 li.textContent = line;
                 resultReasons.appendChild(li);
@@ -679,9 +708,19 @@
         }
       }
 
-      function toggleLoading(show) {
+      function toggleLoading(show, claimText) {
         if (!loadingOverlay) return;
-        loadingOverlay.classList.toggle('hidden', !show);
+        if (show) {
+          loadingOverlay.classList.remove('hidden');
+          if (loadingClaim) {
+            loadingClaim.textContent = claimText ? '“' + claimText + '”' : '';
+          }
+        } else {
+          loadingOverlay.classList.add('hidden');
+          if (loadingClaim) {
+            loadingClaim.textContent = '';
+          }
+        }
       }
 
       if (claimForm && !isLocalHarness) {
@@ -695,7 +734,7 @@
             return;
           }
           setStatus('Running evaluation…', 'info');
-          toggleLoading(true);
+          toggleLoading(true, value);
           if (submitBtn) {
             submitBtn.disabled = true;
             submitBtn.textContent = 'Checking…';
@@ -770,33 +809,38 @@
     })();
 
     function buildVerdict(prob) {
-      var pct = Math.round(prob * 1000) / 10;
-      if (prob >= 0.6) {
-        return { title: 'Likely true', text: 'GPT‑5 leans toward this claim being true based on its training data.' };
+      var value = typeof prob === 'number' ? prob : 0.5;
+      if (value >= 0.6) {
+        return {
+          title: 'Likely true',
+          headline: 'Why it’s likely true',
+          text: 'GPT‑5 leans toward this claim being true based on its training data.'
+        };
       }
-      if (prob <= 0.4) {
-        return { title: 'Likely false', text: 'GPT‑5 leans toward this claim being false based on its training data.' };
+      if (value <= 0.4) {
+        return {
+          title: 'Likely false',
+          headline: 'Why it’s likely false',
+          text: 'GPT‑5 leans toward this claim being false based on its training data.'
+        };
       }
-      return { title: 'Uncertain', text: 'GPT‑5 did not express a strong prior either way; responses were mixed.' };
+      return {
+        title: 'Uncertain',
+        headline: 'Why it’s uncertain',
+        text: 'GPT‑5 did not express a strong prior either way; responses were mixed.'
+      };
     }
 
     function buildReasons(data) {
-      var reasons = [];
-      if (!data || !data.aggregates) return reasons;
-      var width = data.aggregates.ci_width;
-      if (typeof width === 'number') {
-        var widthPct = Math.round(width * 1000) / 10;
-        reasons.push('Confidence interval width ' + widthPct + '% reflects ' + (width <= 0.05 ? 'tight agreement across templates.' : 'meaningful variation between paraphrases.'));
+      if (!data || !data.aggregates) return [];
+      var probability = typeof data.aggregates.prob_true_rpl === 'number' ? data.aggregates.prob_true_rpl : 0.5;
+      if (probability >= 0.6) {
+        return ['The claim aligns with common definitions and typical examples.'];
       }
-      if (typeof data.aggregates.stability_score === 'number') {
-        var stability = data.aggregates.stability_score;
-        reasons.push('Template stability score ' + stability.toFixed(2) + ' (' + (data.aggregates.stability_band || 'unknown') + ') captures how consistently GPT‑5 answered across paraphrases.');
+      if (probability <= 0.4) {
+        return ['The claim conflicts with common definitions and typical examples.'];
       }
-      if (typeof data.aggregates.rpl_compliance_rate === 'number') {
-        var compliance = Math.round(data.aggregates.rpl_compliance_rate * 100);
-        reasons.push('Policy compliance at ' + compliance + '% shows how often responses followed the Raw Prior rules (JSON-only, no links).');
-      }
-      return reasons;
+      return ['It depends on definitions or missing context.'];
     }
   </script>
 </body>
