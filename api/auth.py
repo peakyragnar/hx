@@ -87,7 +87,9 @@ def _consume_magic_token(session: Session, selector: str, verifier: str) -> User
 def _create_session(session: Session, user: User) -> DbSession:
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(days=settings.session_ttl_days)
+    session_id = uuid.uuid4()
     s = DbSession(
+        id=session_id,
         user_id=user.id,
         created_at=now,
         last_seen_at=now,
@@ -155,7 +157,11 @@ def get_current_user(request: Request, session: Session = Depends(get_session)) 
     token = request.cookies.get(settings.session_cookie_name)
     if not token:
         return None
-    db_session = session.get(DbSession, token)
+    try:
+        session_id = uuid.UUID(token)
+    except (ValueError, TypeError):
+        return None
+    db_session = session.get(DbSession, session_id)
     if not db_session:
         return None
     now = datetime.now(timezone.utc)

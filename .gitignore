@@ -46,3 +46,4 @@ build/
 # Testing
 .pytest_cache/
 .hypothesis/
+.vercel

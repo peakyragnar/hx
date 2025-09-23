@@ -510,18 +510,6 @@
         });
       }
 
-      if (!isLocalHarness && navSignIn) {
-        navSignIn.dataset.mode = 'signin';
-        navSignIn.addEventListener('click', function(evt){
-          evt.preventDefault();
-          if (navSignIn.dataset.mode === 'signout') {
-            handleSignOut();
-          } else if (signInModal) {
-            openModal(signInModal);
-          }
-        });
-      }
-
       document.addEventListener('keydown', function(evt){
         if (evt.key === 'Escape') {
           closeModal(document.querySelector('.modal.is-open'));
