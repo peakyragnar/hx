@@ -513,8 +513,8 @@
           resultInterpretation.textContent = interpretation;
 
           if (resultReasons) {
-            var apiReasons = Array.isArray(data.explanation_reasons) ? data.explanation_reasons.filter(Boolean) : [];
-            var reasonList = apiReasons.length ? apiReasons : buildReasons(data);
+         var apiReasons = Array.isArray(data.explanation_reasons) ? data.explanation_reasons.filter(Boolean) : [];
+          var reasonList = apiReasons.length ? apiReasons : buildReasons(probValue);
             resultReasons.innerHTML = '';
             if (reasonList.length) {
               reasonList.forEach(function(line){
