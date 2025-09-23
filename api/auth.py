@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import Depends, HTTPException, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from pydantic import EmailStr
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -115,16 +116,38 @@ def complete_magic_link(token_param: str, session: Session) -> JSONResponse:
 
     cookie_params = {
         "key": settings.session_cookie_name,
-        "value": db_session.id,
+        "value": str(db_session.id),
         "httponly": True,
         "max_age": settings.session_ttl_days * 86400,
         "samesite": "lax",
+        "path": "/",
     }
     if settings.session_cookie_secure:
         cookie_params["secure"] = True
     if settings.session_cookie_domain:
         cookie_params["domain"] = settings.session_cookie_domain
     response.set_cookie(**cookie_params)
+    return response
+
+
+def sign_out(request: Request, session: Session) -> Response:
+    token = request.cookies.get(settings.session_cookie_name)
+    if token:
+        try:
+            session_id = uuid.UUID(token)
+        except ValueError:
+            session_id = None
+        if session_id:
+            db_session = session.get(DbSession, session_id)
+            if db_session:
+                session.delete(db_session)
+
+    response = Response(status_code=204)
+    response.delete_cookie(
+        key=settings.session_cookie_name,
+        path="/",
+        domain=settings.session_cookie_domain or None,
+    )
     return response
 
 

@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from heretix.config import RunConfig
 from heretix.rpl import run_single_version
 
-from .auth import complete_magic_link, get_current_user, handle_magic_link
+from .auth import complete_magic_link, get_current_user, handle_magic_link, sign_out
 from .config import settings
 from .database import get_session
 from .schemas import (
@@ -229,6 +229,15 @@ def request_magic_link(payload: MagicLinkPayload, session: Session = Depends(get
 @app.get("/api/auth/callback")
 def magic_link_callback(token: str, session: Session = Depends(get_session)):
     return complete_magic_link(token, session)
+
+
+@app.post(
+    "/api/auth/signout",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+def auth_signout(request: Request, session: Session = Depends(get_session)) -> Response:
+    return sign_out(request, session)
 
 
 @app.get("/api/me", response_model=MeResponse)
