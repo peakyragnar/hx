@@ -328,6 +328,8 @@
         if (quickClaim) { quickClaim.focus(); }
       }
 
+      var magicSignedIn = params.get('signed') === '1';
+
       var isLocalHarness = Boolean(window.HERETIX_UI_LOCAL);
       var meta = document.querySelector('meta[name="heretix-api-base"]');
       var apiBase = isLocalHarness ? null : (window.HERETIX_API_BASE || (meta && meta.content) || (function(){
@@ -563,6 +565,13 @@
             signInStatus.classList.add('modal-status--error');
           }
         });
+      }
+
+      if (magicSignedIn && !isLocalHarness) {
+        setStatus('Signed in—welcome back!', 'info');
+        if (typeof window.history.replaceState === 'function') {
+          window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
+        }
       }
 
       if (claimForm && isLocalHarness) {

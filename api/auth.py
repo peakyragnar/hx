@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import Depends, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import EmailStr
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -108,7 +108,11 @@ def complete_magic_link(token_param: str, session: Session) -> JSONResponse:
     user = _consume_magic_token(session, selector, verifier)
     db_session = _create_session(session, user)
 
-    response = JSONResponse({"detail": "signed in", "email": user.email})
+    # Prepare redirect back to the app; UI detects the flag in query params.
+    redirect_target = settings.app_url.rstrip("/") + "/?signed=1"
+    response: JSONResponse | RedirectResponse
+    response = RedirectResponse(url=redirect_target, status_code=303)
+
     cookie_params = {
         "key": settings.session_cookie_name,
         "value": db_session.id,
