@@ -142,6 +142,7 @@ def run_check(
     aggregates["ci_width"] = ci_width
 
     check = None
+    bootstrap_seed_val = aggregation.get("bootstrap_seed")
     try:
         existing = session.scalar(select(Check).where(Check.run_id == run_id))
         if existing:
@@ -161,8 +162,7 @@ def run_check(
         check.t = sampling.get("T")
         check.b = cfg.B
         check.seed = cfg.seed
-        bootstrap_seed = aggregation.get("bootstrap_seed")
-        check.bootstrap_seed = int(bootstrap_seed) if bootstrap_seed is not None else None
+        check.bootstrap_seed = int(bootstrap_seed_val) if bootstrap_seed_val is not None else None
         check.max_output_tokens = cfg.max_output_tokens
         check.prob_true_rpl = float(aggregates.get("prob_true_rpl"))
         check.ci_lo = float(ci95[0]) if ci95[0] is not None else None
@@ -213,7 +213,7 @@ def run_check(
             B=int(aggregation.get("B", cfg.B)),
             center=aggregation.get("center"),
             trim=aggregation.get("trim"),
-            bootstrap_seed=bootstrap_seed,
+            bootstrap_seed=int(bootstrap_seed_val) if bootstrap_seed_val is not None else None,
             n_templates=aggregation.get("n_templates"),
             counts_by_template=aggregation.get("counts_by_template", {}),
             imbalance_ratio=aggregation.get("imbalance_ratio"),
