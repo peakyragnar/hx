@@ -56,12 +56,21 @@
     .result-header { text-align:center; margin-bottom:22px; }
     .result-value { font-size:54px; font-weight:600; color:var(--bright); text-shadow:0 0 28px rgba(0,255,65,0.35); }
     .result-subtitle { font-size:14px; text-transform:uppercase; letter-spacing:2px; color:var(--muted); }
+    .result-explainer { margin-top:16px; padding:18px; border-radius:14px; border:1px solid rgba(0,255,65,0.25); background:rgba(0,255,65,0.05); }
+    .result-explainer h3 { margin:0 0 10px; font-size:18px; color:var(--bright); }
+    .result-explainer p { margin:0 0 12px; color:var(--muted); line-height:1.6; }
+    .result-explainer ul { margin:0; padding-left:20px; color:var(--muted); line-height:1.6; }
     .result-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:22px; }
     .metric-label { font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); margin-bottom:6px; }
     .metric-value { font-size:18px; font-weight:500; }
     .metric-note { font-size:12px; color:var(--muted); margin-top:4px; }
     .result-card details { margin-top:18px; }
     .result-card pre { background:#050705; border-radius:12px; padding:16px; overflow:auto; font-size:13px; color:#a0cba0; }
+    .loading-overlay { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(6,8,7,0.88); z-index:1000; backdrop-filter:blur(10px); }
+    .loading-box { text-align:center; max-width:360px; padding:32px; border-radius:18px; border:1px solid rgba(0,255,65,0.25); background:rgba(0,0,0,0.55); box-shadow:0 0 42px rgba(0,255,65,0.32); }
+    .loading-spinner { width:56px; height:56px; border-radius:50%; border:4px solid rgba(0,255,65,0.2); border-top-color:rgba(0,255,65,0.8); margin:0 auto 18px; animation: spin 1s linear infinite; }
+    .loading-box p { color:var(--muted); margin:8px 0 0; line-height:1.5; }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
     .modal { position:fixed; inset:0; display:none; align-items:center; justify-content:center; z-index:100; }
     .modal.is-open { display:flex; }
@@ -134,6 +143,13 @@
   </style>
 </head>
 <body>
+  <div class="loading-overlay hidden" id="loading-overlay">
+    <div class="loading-box">
+      <div class="loading-spinner" role="status" aria-label="Running claim"></div>
+      <h2>Checking your claim…</h2>
+      <p>We’re asking GPT‑5 across multiple paraphrases. This usually takes less than a minute.</p>
+    </div>
+  </div>
   <header>
     <div class="nav">
       <a class="brand" href="/">HERETIX</a>
@@ -186,6 +202,11 @@
       <div class="result-header">
         <div class="result-value" id="result-prob">--</div>
         <div class="result-subtitle">Probability this claim is true</div>
+      </div>
+      <div class="result-explainer hidden" id="result-explainer">
+        <h3 id="result-verdict">—</h3>
+        <p id="result-interpretation"></p>
+        <ul id="result-reasons" class="hidden"></ul>
       </div>
       <div class="result-grid">
         <div>
@@ -358,6 +379,11 @@
       var resultBand = document.getElementById('result-stability-band');
       var resultRunId = document.getElementById('result-runid');
       var resultJson = document.getElementById('result-json');
+      var resultExplainer = document.getElementById('result-explainer');
+      var resultVerdict = document.getElementById('result-verdict');
+      var resultInterpretation = document.getElementById('result-interpretation');
+      var resultReasons = document.getElementById('result-reasons');
+      var loadingOverlay = document.getElementById('loading-overlay');
 
       var signInModal = document.getElementById('signin-modal');
       var signInForm = document.getElementById('signin-form');
@@ -452,6 +478,29 @@
         resultBand.textContent = data.aggregates.stability_band ? ('Band: ' + data.aggregates.stability_band) : '';
         resultRunId.textContent = data.run_id || '--';
         resultJson.textContent = JSON.stringify(data.aggregates, null, 2);
+
+        if (resultExplainer && resultVerdict && resultInterpretation) {
+          var verdictInfo = buildVerdict(data.aggregates.prob_true_rpl || 0);
+          resultVerdict.textContent = verdictInfo.title;
+          resultInterpretation.textContent = verdictInfo.text;
+
+          var bullets = buildReasons(data);
+          if (resultReasons) {
+            resultReasons.innerHTML = '';
+            if (bullets.length) {
+              bullets.forEach(function(line){
+                var li = document.createElement('li');
+                li.textContent = line;
+                resultReasons.appendChild(li);
+              });
+              resultReasons.classList.remove('hidden');
+            } else {
+              resultReasons.classList.add('hidden');
+            }
+          }
+          resultExplainer.classList.remove('hidden');
+        }
+
         resultCard.classList.remove('hidden');
       }
 
@@ -630,6 +679,11 @@
         }
       }
 
+      function toggleLoading(show) {
+        if (!loadingOverlay) return;
+        loadingOverlay.classList.toggle('hidden', !show);
+      }
+
       if (claimForm && !isLocalHarness) {
         var originalBtnText = submitBtn ? submitBtn.textContent : '';
         claimForm.addEventListener('submit', async function(evt){
@@ -641,6 +695,7 @@
             return;
           }
           setStatus('Running evaluation…', 'info');
+          toggleLoading(true);
           if (submitBtn) {
             submitBtn.disabled = true;
             submitBtn.textContent = 'Checking…';
@@ -688,6 +743,7 @@
               submitBtn.disabled = false;
               submitBtn.textContent = originalBtnText;
             }
+            toggleLoading(false);
           }
         });
       }
@@ -712,6 +768,36 @@
         fetchMe();
       }
     })();
+
+    function buildVerdict(prob) {
+      var pct = Math.round(prob * 1000) / 10;
+      if (prob >= 0.6) {
+        return { title: 'Likely true', text: 'GPT‑5 leans toward this claim being true based on its training data.' };
+      }
+      if (prob <= 0.4) {
+        return { title: 'Likely false', text: 'GPT‑5 leans toward this claim being false based on its training data.' };
+      }
+      return { title: 'Uncertain', text: 'GPT‑5 did not express a strong prior either way; responses were mixed.' };
+    }
+
+    function buildReasons(data) {
+      var reasons = [];
+      if (!data || !data.aggregates) return reasons;
+      var width = data.aggregates.ci_width;
+      if (typeof width === 'number') {
+        var widthPct = Math.round(width * 1000) / 10;
+        reasons.push('Confidence interval width ' + widthPct + '% reflects ' + (width <= 0.05 ? 'tight agreement across templates.' : 'meaningful variation between paraphrases.'));
+      }
+      if (typeof data.aggregates.stability_score === 'number') {
+        var stability = data.aggregates.stability_score;
+        reasons.push('Template stability score ' + stability.toFixed(2) + ' (' + (data.aggregates.stability_band || 'unknown') + ') captures how consistently GPT‑5 answered across paraphrases.');
+      }
+      if (typeof data.aggregates.rpl_compliance_rate === 'number') {
+        var compliance = Math.round(data.aggregates.rpl_compliance_rate * 100);
+        reasons.push('Policy compliance at ' + compliance + '% shows how often responses followed the Raw Prior rules (JSON-only, no links).');
+      }
+      return reasons;
+    }
   </script>
 </body>
 </html>
