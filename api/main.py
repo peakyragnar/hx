@@ -141,6 +141,7 @@ def run_check(
     remaining_after = max(checks_allowed - used_after, 0) if checks_allowed else None
     aggregates["ci_width"] = ci_width
 
+    check = None
     try:
         existing = session.scalar(select(Check).where(Check.run_id == run_id))
         if existing:
@@ -197,6 +198,8 @@ def run_check(
     except ProgrammingError as exc:
         session.rollback()
         logging.warning("Skipping DB persistence for run %s due to schema mismatch: %s", run_id, exc)
+        used_after = usage_state.checks_used
+        remaining_after = max(checks_allowed - used_after, 0) if checks_allowed else None
 
     return RunResponse(
         execution_id=result.get("execution_id"),
