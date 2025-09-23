@@ -85,10 +85,8 @@ def _consume_magic_token(session: Session, selector: str, verifier: str) -> User
 
 def _create_session(session: Session, user: User) -> DbSession:
     now = datetime.now(timezone.utc)
-    token = secrets.token_urlsafe(32)
     expires_at = now + timedelta(days=settings.session_ttl_days)
     s = DbSession(
-        id=token,
         user_id=user.id,
         created_at=now,
         last_seen_at=now,
