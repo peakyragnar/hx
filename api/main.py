@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from datetime import datetime, timezone
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
 from heretix.config import RunConfig
@@ -134,59 +136,67 @@ def run_check(
 
     claim_hash = hashlib.sha256(claim.encode("utf-8")).hexdigest()
 
-    existing = session.scalar(select(Check).where(Check.run_id == run_id))
-    if existing:
-        check = existing
-    else:
-        check = Check(run_id=run_id, env=settings.app_env)
-        session.add(check)
-
-    check.env = settings.app_env
-    check.user_id = getattr(user, "id", None)
-    check.claim = claim
-    check.claim_hash = claim_hash
-    check.model = result.get("model", cfg.model)
-    check.prompt_version = result.get("prompt_version", cfg.prompt_version)
-    check.k = int(cfg.K)
-    check.r = int(cfg.R)
-    check.t = sampling.get("T")
-    check.b = cfg.B
-    check.seed = cfg.seed
-    bootstrap_seed = aggregation.get("bootstrap_seed")
-    check.bootstrap_seed = int(bootstrap_seed) if bootstrap_seed is not None else None
-    check.max_output_tokens = cfg.max_output_tokens
-    check.prob_true_rpl = float(aggregates.get("prob_true_rpl"))
-    check.ci_lo = float(ci95[0]) if ci95[0] is not None else None
-    check.ci_hi = float(ci95[1]) if ci95[1] is not None else None
-    check.ci_width = ci_width
-    check.template_iqr_logit = aggregation.get("template_iqr_logit")
-    check.stability_score = stability_score
-    check.imbalance_ratio = aggregation.get("imbalance_ratio")
-    check.rpl_compliance_rate = rpl_compliance_rate
-    check.cache_hit_rate = cache_hit_rate
-    check.config_json = config_json
-    check.sampler_json = json.dumps({"K": cfg.K, "R": cfg.R, "T": sampling.get("T")})
-    check.counts_by_template_json = counts_json
-    check.artifact_json_path = None
-    check.prompt_char_len_max = aggregation.get("prompt_char_len_max")
-    check.pqs = None
-    check.gate_compliance_ok = gate_compliance_ok
-    check.gate_stability_ok = gate_stability_ok
-    check.gate_precision_ok = gate_precision_ok
-    check.pqs_version = None
-    check.was_cached = cache_hit_rate >= 0.999
-    check.provider_model_id = result.get("model", cfg.model)
-    check.created_at = now
-    check.finished_at = now
-
+    checks_allowed = usage_state.checks_allowed
+    used_after = usage_state.checks_used
+    remaining_after = max(checks_allowed - used_after, 0) if checks_allowed else None
     aggregates["ci_width"] = ci_width
 
-    checks_allowed = usage_state.checks_allowed
-    if usage_state.plan == ANON_PLAN:
-        used_after = min(usage_state.checks_used + 1, checks_allowed)
-    else:
-        used_after = increment_usage(session, user, usage_state)
-    remaining_after = max(checks_allowed - used_after, 0) if checks_allowed else None
+    try:
+        existing = session.scalar(select(Check).where(Check.run_id == run_id))
+        if existing:
+            check = existing
+        else:
+            check = Check(run_id=run_id, env=settings.app_env)
+            session.add(check)
+
+        check.env = settings.app_env
+        check.user_id = getattr(user, "id", None)
+        check.claim = claim
+        check.claim_hash = claim_hash
+        check.model = result.get("model", cfg.model)
+        check.prompt_version = result.get("prompt_version", cfg.prompt_version)
+        check.k = int(cfg.K)
+        check.r = int(cfg.R)
+        check.t = sampling.get("T")
+        check.b = cfg.B
+        check.seed = cfg.seed
+        bootstrap_seed = aggregation.get("bootstrap_seed")
+        check.bootstrap_seed = int(bootstrap_seed) if bootstrap_seed is not None else None
+        check.max_output_tokens = cfg.max_output_tokens
+        check.prob_true_rpl = float(aggregates.get("prob_true_rpl"))
+        check.ci_lo = float(ci95[0]) if ci95[0] is not None else None
+        check.ci_hi = float(ci95[1]) if ci95[1] is not None else None
+        check.ci_width = ci_width
+        check.template_iqr_logit = aggregation.get("template_iqr_logit")
+        check.stability_score = stability_score
+        check.imbalance_ratio = aggregation.get("imbalance_ratio")
+        check.rpl_compliance_rate = rpl_compliance_rate
+        check.cache_hit_rate = cache_hit_rate
+        check.config_json = config_json
+        check.sampler_json = json.dumps({"K": cfg.K, "R": cfg.R, "T": sampling.get("T")})
+        check.counts_by_template_json = counts_json
+        check.artifact_json_path = None
+        check.prompt_char_len_max = aggregation.get("prompt_char_len_max")
+        check.pqs = None
+        check.gate_compliance_ok = gate_compliance_ok
+        check.gate_stability_ok = gate_stability_ok
+        check.gate_precision_ok = gate_precision_ok
+        check.pqs_version = None
+        check.was_cached = cache_hit_rate >= 0.999
+        check.provider_model_id = result.get("model", cfg.model)
+        check.created_at = now
+        check.finished_at = now
+
+        if usage_state.plan == ANON_PLAN:
+            used_after = min(usage_state.checks_used + 1, checks_allowed)
+        else:
+            used_after = increment_usage(session, user, usage_state)
+        remaining_after = max(checks_allowed - used_after, 0) if checks_allowed else None
+
+        session.commit()
+    except ProgrammingError as exc:
+        session.rollback()
+        logging.warning("Skipping DB persistence for run %s due to schema mismatch: %s", run_id, exc)
 
     return RunResponse(
         execution_id=result.get("execution_id"),
