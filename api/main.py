@@ -240,8 +240,19 @@ def run_check(
     except ProgrammingError as exc:
         session.rollback()
         logging.warning("Skipping DB persistence for run %s due to schema mismatch: %s", run_id, exc)
-        used_after = usage_state.checks_used
-        remaining_after = max(checks_allowed - used_after, 0) if checks_allowed else None
+        try:
+            refreshed_state = get_usage_state(session, user, anon_token=anon_token)
+            used_after = increment_usage(session, user, refreshed_state)
+            remaining_after = (
+                max(refreshed_state.checks_allowed - used_after, 0)
+                if refreshed_state.checks_allowed
+                else None
+            )
+            session.commit()
+        except Exception:  # pragma: no cover - best-effort fallback when schema is stale
+            session.rollback()
+            used_after = usage_state.checks_used
+            remaining_after = max(checks_allowed - used_after, 0) if checks_allowed else None
 
     return RunResponse(
         execution_id=result.get("execution_id"),
