@@ -233,10 +233,7 @@ def run_check(
         check.created_at = now
         check.finished_at = now
 
-        if usage_state.plan == ANON_PLAN:
-            used_after = min(usage_state.checks_used + 1, checks_allowed)
-        else:
-            used_after = increment_usage(session, user, usage_state)
+        used_after = increment_usage(session, user, usage_state)
         remaining_after = max(checks_allowed - used_after, 0) if checks_allowed else None
 
         session.commit()
