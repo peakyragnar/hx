@@ -20,8 +20,8 @@ def upgrade() -> None:
     op.create_table(
         "anonymous_usage",
         sa.Column("token", sa.String(length=64), primary_key=True, nullable=False),
-        sa.Column("checks_allowed", sa.Integer(), nullable=False, server_default=sa.text("1")),
-        sa.Column("checks_used", sa.Integer(), nullable=False, server_default=sa.text("0")),
+        sa.Column("checks_allowed", sa.BigInteger(), nullable=False, server_default=sa.text("1")),
+        sa.Column("checks_used", sa.BigInteger(), nullable=False, server_default=sa.text("0")),
         sa.Column(
             "updated_at",
             sa.DateTime(timezone=True),

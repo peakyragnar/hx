@@ -12,6 +12,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    BigInteger,
     String,
     Text,
     UniqueConstraint,
@@ -110,13 +111,13 @@ class Check(Base):  # noqa: D401 - simple data container
     claim_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     model: Mapped[str] = mapped_column(String(64), nullable=False)
     prompt_version: Mapped[str] = mapped_column(String(64), nullable=False)
-    k: Mapped[int] = mapped_column("K", Integer, nullable=False)
-    r: Mapped[int] = mapped_column("R", Integer, nullable=False)
-    t: Mapped[Optional[int]] = mapped_column("T", Integer, nullable=True)
-    b: Mapped[Optional[int]] = mapped_column("B", Integer, nullable=True)
-    seed: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    bootstrap_seed: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    max_output_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    k: Mapped[int] = mapped_column("K", BigInteger, nullable=False)
+    r: Mapped[int] = mapped_column("R", BigInteger, nullable=False)
+    t: Mapped[Optional[int]] = mapped_column("T", BigInteger, nullable=True)
+    b: Mapped[Optional[int]] = mapped_column("B", BigInteger, nullable=True)
+    seed: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    bootstrap_seed: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    max_output_tokens: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     prob_true_rpl: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     ci_lo: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     ci_hi: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
@@ -164,8 +165,8 @@ class UsageLedger(Base):
     period_start: Mapped[date] = mapped_column(Date, nullable=False)
     period_end: Mapped[date] = mapped_column(Date, nullable=False)
     plan: Mapped[str] = mapped_column(String(32), nullable=False)
-    checks_allowed: Mapped[int] = mapped_column(Integer, nullable=False)
-    checks_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    checks_allowed: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    checks_used: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
