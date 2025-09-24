@@ -831,16 +831,27 @@
       };
     }
 
-    function buildReasons(data) {
-      if (!data || !data.aggregates) return [];
-      var probability = typeof data.aggregates.prob_true_rpl === 'number' ? data.aggregates.prob_true_rpl : 0.5;
-      if (probability >= 0.6) {
-        return ['The claim aligns with common definitions and typical examples.'];
+    function buildReasons(probability) {
+      var value = typeof probability === 'number' ? probability : 0.5;
+      if (value >= 0.6) {
+        return [
+          'GPT‑5 has seen many supporting examples in its training data.',
+          'Typical definitions and historical references line up with the claim.',
+          'Counterexamples are rare compared to supporting evidence in its corpus.'
+        ];
       }
-      if (probability <= 0.4) {
-        return ['The claim conflicts with common definitions and typical examples.'];
+      if (value <= 0.4) {
+        return [
+          'GPT‑5’s training data contains many instances that contradict the claim.',
+          'Common usage and reference materials point the other way.',
+          'Supporting anecdotes are outweighed by counterexamples it has seen.'
+        ];
       }
-      return ['It depends on definitions or missing context.'];
+      return [
+        'GPT‑5 finds mixed signals in its training data.',
+        'It depends on definitions or missing context.',
+        'Supporting and opposing examples appear in roughly equal measure.'
+      ];
     }
   </script>
 </body>

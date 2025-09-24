@@ -357,26 +357,18 @@ def build_explanation(
     tokens = max_output_tokens or cfg.max_output_tokens or settings.rpl_max_output_tokens
 
     reasons: list[str] = []
-    if system_text and user_template and paraphrase_text:
+    if use_mock:
+        reasons = fallback_reasons(prob)
+    elif system_text and user_template and paraphrase_text:
         try:
-            if use_mock:
-                out = score_claim_mock(
-                    claim=claim,
-                    system_text=system_text,
-                    user_template=user_template,
-                    paraphrase_text=paraphrase_text,
-                    model=cfg.model,
-                    max_output_tokens=tokens,
-                )
-            else:
-                out = score_claim_live(
-                    claim=claim,
-                    system_text=system_text,
-                    user_template=user_template,
-                    paraphrase_text=paraphrase_text,
-                    model=cfg.model,
-                    max_output_tokens=tokens,
-                )
+            out = score_claim_live(
+                claim=claim,
+                system_text=system_text,
+                user_template=user_template,
+                paraphrase_text=paraphrase_text,
+                model=cfg.model,
+                max_output_tokens=tokens,
+            )
             reasons = extract_reasons(out)
         except Exception as exc:  # pragma: no cover - best-effort explanation
             logging.warning("Explanation provider call failed: %s", exc)
@@ -436,10 +428,22 @@ def extract_reasons(payload: dict) -> list[str]:
 def fallback_reasons(prob: float | None) -> list[str]:
     probability = prob if isinstance(prob, (int, float)) else 0.5
     if probability >= 0.60:
-        return ["The claim aligns with common definitions and typical examples."]
+        return [
+            "GPT‑5 has seen many supporting examples in its training data.",
+            "Typical definitions and historical references line up with the claim.",
+            "Counterexamples are rare compared to supporting evidence in its corpus.",
+        ]
     if probability <= 0.40:
-        return ["The claim conflicts with common definitions and typical examples."]
-    return ["It depends on definitions or missing context."]
+        return [
+            "GPT‑5’s training data contains many instances that contradict the claim.",
+            "Common usage and reference materials point the other way.",
+            "Supporting anecdotes are outweighed by counterexamples it has seen.",
+        ]
+    return [
+        "GPT‑5 finds mixed signals in its training data.",
+        "It depends on definitions or missing context.",
+        "Supporting and opposing examples appear in roughly equal measure.",
+    ]
 
 
 def classify_probability(prob: float | None) -> tuple[str, str, str, str]:
