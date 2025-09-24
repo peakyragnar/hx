@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     session_cookie_secure: bool = Field(False, alias="SESSION_COOKIE_SECURE")
     email_sender_address: str = Field("hello@heretix.local", alias="EMAIL_SENDER_ADDRESS")
     postmark_token: Optional[str] = Field(None, alias="POSTMARK_TOKEN")
+    anon_cookie_name: str = Field("heretix_anon", alias="ANON_COOKIE_NAME")
     stripe_secret_key: Optional[str] = Field(None, alias="STRIPE_SECRET")
     stripe_webhook_secret: Optional[str] = Field(None, alias="STRIPE_WEBHOOK_SECRET")
     stripe_price_starter: Optional[str] = Field(None, alias="STRIPE_PRICE_STARTER")

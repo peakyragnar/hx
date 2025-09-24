@@ -8,7 +8,7 @@ from typing import Optional
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from heretix.db.models import Check, UsageLedger, User
+from heretix.db.models import AnonymousUsage, Check, UsageLedger, User
 
 from .config import settings
 
@@ -44,6 +44,8 @@ class UsageState:
     checks_allowed: int
     remaining: int
     ledger: Optional[UsageLedger] = None
+    anon_token: Optional[str] = None
+    anon_usage: Optional[AnonymousUsage] = None
 
     @property
     def enough_credit(self) -> bool:
@@ -70,19 +72,42 @@ def _resolve_plan(user: Optional[User]) -> UsagePlan:
     return PLAN_MAP.get(user.plan, TRIAL_PLAN)
 
 
-def get_usage_state(session: Session, user: Optional[User]) -> UsageState:
+def get_usage_state(
+    session: Session,
+    user: Optional[User],
+    *,
+    anon_token: Optional[str] = None,
+) -> UsageState:
     plan = _resolve_plan(user)
     today = _today()
 
     if not user:
-        run_count = session.scalar(
-            select(func.count())
-            .select_from(Check)
-            .where(Check.env == settings.app_env, Check.user_id.is_(None))
+        if not anon_token:
+            return UsageState(
+                plan=ANON_PLAN,
+                checks_used=0,
+                checks_allowed=ANON_PLAN.checks_allowed,
+                remaining=ANON_PLAN.checks_allowed,
+            )
+        anon_usage = session.get(AnonymousUsage, anon_token)
+        if not anon_usage:
+            anon_usage = AnonymousUsage(
+                token=anon_token,
+                checks_allowed=ANON_PLAN.checks_allowed,
+                checks_used=0,
+            )
+            session.add(anon_usage)
+            session.flush()
+        used = anon_usage.checks_used
+        remaining = max(anon_usage.checks_allowed - used, 0)
+        return UsageState(
+            plan=ANON_PLAN,
+            checks_used=used,
+            checks_allowed=anon_usage.checks_allowed,
+            remaining=remaining,
+            anon_token=anon_token,
+            anon_usage=anon_usage,
         )
-        used = int(run_count or 0)
-        remaining = max(ANON_PLAN.checks_allowed - used, 0)
-        return UsageState(plan=ANON_PLAN, checks_used=used, checks_allowed=ANON_PLAN.checks_allowed, remaining=remaining)
 
     period_start, period_end = _current_period(today)
     stmt = select(UsageLedger).where(
@@ -109,6 +134,10 @@ def get_usage_state(session: Session, user: Optional[User]) -> UsageState:
 def increment_usage(session: Session, user: Optional[User], state: UsageState) -> int:
     """Increment usage and return total used after the increment."""
     if not user:
+        if state.anon_usage is not None and state.anon_usage.checks_used < state.anon_usage.checks_allowed:
+            state.anon_usage.checks_used += 1
+            session.add(state.anon_usage)
+            return state.anon_usage.checks_used
         return min(state.checks_used + 1, state.checks_allowed)
     if not state.ledger:
         logger.warning("No usage ledger for user %s", user.id)

@@ -134,6 +134,7 @@ MAGIC_LINK_TTL_MINUTES=15
 SESSION_TTL_DAYS=30
 SESSION_COOKIE_DOMAIN=.heretix.ai
 SESSION_COOKIE_SECURE=true
+ANON_COOKIE_NAME=heretix_anon
 APP_ENV=production
 APP_URL=https://heretix.ai
 API_URL=https://<your-api>.onrender.com

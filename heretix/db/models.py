@@ -138,6 +138,7 @@ class Check(Base):  # noqa: D401 - simple data container
     pqs_version: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     was_cached: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     provider_model_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    anon_token: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -149,6 +150,7 @@ class Check(Base):  # noqa: D401 - simple data container
         Index("ix_checks_user_id", "user_id"),
         Index("ix_checks_env", "env"),
         Index("ix_checks_claim_hash", "claim_hash"),
+        Index("ix_checks_env_anon_token", "env", "anon_token"),
     )
 
 
@@ -199,4 +201,15 @@ class ResultCache(Base):
     __table_args__ = (
         Index("ix_result_cache_env", "env"),
         Index("ix_result_cache_user", "user_id"),
+    )
+
+
+class AnonymousUsage(Base):
+    __tablename__ = "anonymous_usage"
+
+    token: Mapped[str] = mapped_column(String(64), primary_key=True)
+    checks_allowed: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    checks_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )

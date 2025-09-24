@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -58,6 +59,30 @@ app.add_middleware(
 )
 
 
+ANON_COOKIE_MAX_AGE = 365 * 24 * 60 * 60
+
+
+def ensure_anon_token(request: Request, response: Response) -> str:
+    token = request.cookies.get(settings.anon_cookie_name)
+    if token:
+        return token
+    token = secrets.token_urlsafe(32)
+    cookie_kwargs = {
+        "key": settings.anon_cookie_name,
+        "value": token,
+        "max_age": ANON_COOKIE_MAX_AGE,
+        "httponly": True,
+        "samesite": "lax",
+        "path": "/",
+    }
+    if settings.session_cookie_secure:
+        cookie_kwargs["secure"] = True
+    if settings.session_cookie_domain:
+        cookie_kwargs["domain"] = settings.session_cookie_domain
+    response.set_cookie(**cookie_kwargs)
+    return token
+
+
 @app.get("/healthz", tags=["system"])
 def healthz() -> dict[str, str]:
     return {"status": "ok"}
@@ -66,6 +91,8 @@ def healthz() -> dict[str, str]:
 @app.post("/api/checks/run", response_model=RunResponse)
 def run_check(
     payload: RunRequest,
+    request: Request,
+    response: Response,
     session: Session = Depends(get_session),
     user: User | None = Depends(get_current_user),
 ) -> RunResponse:
@@ -73,7 +100,11 @@ def run_check(
     if not claim:
         raise HTTPException(status_code=422, detail="claim must not be empty")
 
-    usage_state = get_usage_state(session, user)
+    anon_token: str | None = None
+    if not user:
+        anon_token = ensure_anon_token(request, response)
+
+    usage_state = get_usage_state(session, user, anon_token=anon_token)
     if not usage_state.enough_credit:
         reason = "require_subscription" if user else "require_signin"
         raise HTTPException(status_code=402, detail={"reason": reason, "plan": usage_state.plan.name})
@@ -198,6 +229,7 @@ def run_check(
         check.pqs_version = None
         check.was_cached = cache_hit_rate >= 0.999
         check.provider_model_id = result.get("model", cfg.model)
+        check.anon_token = anon_token if not user else None
         check.created_at = now
         check.finished_at = now
 
@@ -273,11 +305,14 @@ def auth_signout(request: Request, session: Session = Depends(get_session)) -> R
 
 @app.get("/api/me", response_model=MeResponse)
 def read_me(
+    request: Request,
+    response: Response,
     user: User | None = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> MeResponse:
     if not user:
-        state = get_usage_state(session, None)
+        anon_token = ensure_anon_token(request, response)
+        state = get_usage_state(session, None, anon_token=anon_token)
         return MeResponse(
             authenticated=False,
             usage_plan=state.plan.name,

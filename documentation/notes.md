@@ -4,6 +4,8 @@
 •	typer = CLI
 •	numpy = log‑odds math
 
+•	Anonymous UI sessions now receive a persistent `heretix_anon` cookie for the single free claim run. Incognito windows that drop cookies can claim one new free run per browser session; add an IP-level throttle (e.g., 3/day) if abuse becomes a concern.
+
 . Removed: venv/ directory
   2. Added:
     - pyproject.toml - Modern Python project configuration
