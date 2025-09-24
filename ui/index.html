@@ -30,6 +30,13 @@
     main { max-width:1100px; margin:0 auto; padding:40px 20px 120px; }
     section { margin-top:80px; }
 
+    body.results-mode .hero,
+    body.results-mode .how,
+    body.results-mode .example-section,
+    body.results-mode .faq {
+      display:none;
+    }
+
     .hero { margin-top:40px; display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:40px; align-items:center; }
     .hero h1 { font-size:clamp(32px, 4.6vw, 54px); margin:0 0 12px; text-shadow:0 0 22px rgba(0,255,65,0.25); }
     .hero p { margin:0 0 24px; color:var(--muted); font-size:18px; line-height:1.5; }
@@ -70,6 +77,11 @@
     .metric-note { font-size:12px; color:var(--muted); margin-top:4px; }
     .result-card details { margin-top:18px; }
     .result-card pre { background:#050705; border-radius:12px; padding:16px; overflow:auto; font-size:13px; color:#a0cba0; }
+    .result-actions { margin-top:32px; display:flex; flex-wrap:wrap; gap:16px; }
+    .btn { display:inline-flex; align-items:center; justify-content:center; padding:14px 22px; border-radius:14px; font-weight:600; border:0; cursor:pointer; transition:transform 0.2s ease, box-shadow 0.2s ease; }
+    .btn-primary { background:var(--bright); color:#041105; box-shadow:0 16px 32px rgba(0,255,65,0.18); }
+    .btn-primary:hover { transform:translateY(-2px); box-shadow:0 20px 36px rgba(0,255,65,0.28); }
+    body.results-mode footer { margin-top:40px; }
     .loading-overlay { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(6,8,7,0.9); backdrop-filter:blur(12px); z-index:1000; padding:24px; }
     .loading-content { text-align:center; max-width:520px; color:var(--muted); }
     .loading-content h2 { margin:0 0 16px; font-size:24px; color:var(--bright); }
@@ -255,6 +267,9 @@
         <summary>Raw aggregates</summary>
         <pre id="result-json"></pre>
       </details>
+      <div class="result-actions">
+        <button type="button" class="btn btn-primary" id="result-new">Ask another claim</button>
+      </div>
     </section>
 
     <section class="how" id="how">
@@ -418,6 +433,7 @@
       var resultReasons = document.getElementById('result-reasons');
       var loadingOverlay = document.getElementById('loading-overlay');
       var loadingClaim = document.getElementById('loading-claim');
+      var resultNewButton = document.getElementById('result-new');
 
       var signInModal = document.getElementById('signin-modal');
       var signInForm = document.getElementById('signin-form');
@@ -559,6 +575,7 @@
         }
 
         resultCard.classList.remove('hidden');
+        document.body.classList.add('results-mode');
       }
 
       function closeModal(modal) {
@@ -751,6 +768,52 @@
         }
       }
 
+      function resetResultsView() {
+        document.body.classList.remove('results-mode');
+        if (resultCard) {
+          resultCard.classList.add('hidden');
+        }
+        if (resultExplainer) {
+          resultExplainer.classList.add('hidden');
+        }
+        if (resultReasons) {
+          resultReasons.innerHTML = '';
+          resultReasons.classList.add('hidden');
+        }
+        if (resultJson) {
+          resultJson.textContent = '';
+        }
+        if (resultPercentage) {
+          resultPercentage.textContent = '--%';
+        }
+        if (resultProb) {
+          resultProb.textContent = '--';
+        }
+        if (resultSubtitle) {
+          resultSubtitle.textContent = 'Probability this claim is true';
+        }
+        if (resultClaimEl) {
+          resultClaimEl.textContent = '“—”';
+        }
+        if (resultInterpretationMain) {
+          resultInterpretationMain.textContent = '';
+        }
+        if (resultInterpretationDetail) {
+          resultInterpretationDetail.textContent = '';
+        }
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+
+      if (resultNewButton) {
+        resultNewButton.addEventListener('click', function(){
+          resetResultsView();
+          if (claimInput) {
+            claimInput.focus();
+            claimInput.select();
+          }
+        });
+      }
+
       if (claimForm && !isLocalHarness) {
         var originalBtnText = submitBtn ? submitBtn.textContent : '';
         claimForm.addEventListener('submit', async function(evt){
@@ -767,24 +830,25 @@
             submitBtn.disabled = true;
             submitBtn.textContent = 'Checking…';
           }
+          var response = null;
           try {
             var payload = { claim: value };
             if (params.get('mock') === '1') {
               payload.mock = true;
             }
-            var res = await fetch(apiBase + '/api/checks/run', {
+            response = await fetch(apiBase + '/api/checks/run', {
               method: 'POST',
               credentials: 'include',
               headers: { 'content-type': 'application/json' },
               body: JSON.stringify(payload),
             });
-            if (res.ok) {
-              var data = await res.json();
+            if (response.ok) {
+              var data = await response.json();
               renderResult(data);
               renderUsage(data);
               setStatus('All set! Scroll down to see the result.', 'info');
-            } else if (res.status === 402) {
-              var detail = await res.json().catch(function(){ return {}; });
+            } else if (response.status === 402) {
+              var detail = await response.json().catch(function(){ return {}; });
               var reason = detail.reason || (detail.detail && detail.detail.reason) || detail.detail || '';
               if (reason === 'require_signin') {
                 setStatus('Sign up or sign in to keep reading new claims.', 'warn');
@@ -798,8 +862,8 @@
               }
               fetchMe();
             } else {
-              var errPayload = await res.json().catch(function(){ return {}; });
-              var message = errPayload.detail || ('Request failed (' + res.status + ')');
+              var errPayload = await response.json().catch(function(){ return {}; });
+              var message = errPayload.detail || ('Request failed (' + response.status + ')');
               setStatus(message, 'error');
             }
           } catch (err) {
@@ -811,6 +875,9 @@
               submitBtn.textContent = originalBtnText;
             }
             toggleLoading(false);
+            if (response && !response.ok) {
+              resetResultsView();
+            }
           }
         });
       }
