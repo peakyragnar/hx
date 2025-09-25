@@ -13,6 +13,7 @@ from sqlalchemy import (
     Index,
     Integer,
     BigInteger,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -115,8 +116,9 @@ class Check(Base):  # noqa: D401 - simple data container
     r: Mapped[int] = mapped_column("R", BigInteger, nullable=False)
     t: Mapped[Optional[int]] = mapped_column("T", BigInteger, nullable=True)
     b: Mapped[Optional[int]] = mapped_column("B", BigInteger, nullable=True)
-    seed: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
-    bootstrap_seed: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    # Allow deterministic seeds that exceed signed 64-bit range
+    seed: Mapped[Optional[int]] = mapped_column(Numeric(20, 0), nullable=True)
+    bootstrap_seed: Mapped[Optional[int]] = mapped_column(Numeric(20, 0), nullable=True)
     max_output_tokens: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     prob_true_rpl: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     ci_lo: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
