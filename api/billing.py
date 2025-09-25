@@ -69,6 +69,7 @@ def create_portal_session(session: Session, user: User) -> str:
         configuration=config_id,
         return_url=settings.stripe_portal_return_url(),
     )
+    logger.info("Created portal session for user %s return_url=%s", user.id, settings.stripe_portal_return_url())
     return portal_session["url"]
 
 
