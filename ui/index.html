@@ -392,6 +392,9 @@
   <script>
     (function(){
       var params = new URLSearchParams(window.location.search);
+      if (params.get('plans') === '1' && !document.body.classList.contains('modal-open')) {
+        setTimeout(function(){ openPlanModal('starter'); }, 0);
+      }
       if (params.get('quick') === '1') {
         document.body.classList.add('quick');
         var quickClaim = document.getElementById('claim');
@@ -643,6 +646,11 @@
         planModal.querySelectorAll('.plan-card').forEach(function(card){
           card.classList.toggle('is-current', card.dataset.planCard === currentPlan);
         });
+        if (managePlanBtn && !managePlanBtn.classList.contains('hidden')) {
+          var btnText = (currentPlan && currentPlan !== 'starter') ? ('Manage your ' + currentPlan + ' subscription') : 'Manage current subscription';
+          managePlanBtn.textContent = btnText;
+          managePlanBtn.setAttribute('aria-label', btnText);
+        }
         openModal(planModal);
       }
 
