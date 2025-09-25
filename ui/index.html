@@ -107,6 +107,7 @@
     .modal-dialog form { margin-top:16px; display:grid; gap:12px; }
     .modal-dialog input[type="email"] { padding:12px; border-radius:10px; border:1px solid rgba(0,255,65,0.35); background:#0b0d0b; color:var(--fg); }
     .modal-dialog button[type="submit"], .modal-dialog button.plan-button { padding:12px 16px; border-radius:10px; border:0; background:var(--bright); color:#041105; font-weight:600; cursor:pointer; }
+    .modal-dialog button.plan-button.plan-button--secondary { background:rgba(0,255,65,0.1); color:var(--bright); border:1px solid rgba(0,255,65,0.35); width:100%; margin-top:16px; }
     .modal-dialog button[disabled] { opacity:0.6; cursor:not-allowed; }
     .modal-close { position:absolute; top:12px; right:12px; border:0; background:transparent; color:var(--muted); font-size:24px; cursor:pointer; }
     .modal-status { margin-top:14px; font-size:13px; color:var(--muted); }
@@ -383,6 +384,7 @@
           <button class="plan-button" type="button" data-plan="pro">Continue</button>
         </div>
       </div>
+      <button class="plan-button plan-button--secondary hidden" type="button" id="manage-plan">Manage current subscription</button>
       <p class="modal-status" id="plan-status"></p>
     </div>
   </div>
@@ -443,6 +445,7 @@
       var signInStatus = document.getElementById('signin-status');
       var planModal = document.getElementById('plan-modal');
       var planStatus = document.getElementById('plan-status');
+      var managePlanBtn = document.getElementById('manage-plan');
       var navSignIn = document.getElementById('nav-signin');
       var currentUserEmail = '';
 
@@ -477,6 +480,20 @@
         }
         usageEl.textContent = text;
         usageEl.classList.remove('hidden');
+      }
+
+      function updatePortalButton(state) {
+        if (!managePlanBtn) return;
+        if (isLocalHarness || !state || !state.authenticated) {
+          managePlanBtn.classList.add('hidden');
+          return;
+        }
+        var planName = (state.plan || state.usage_plan || '').toLowerCase();
+        if (!planName || planName === 'trial') {
+          managePlanBtn.classList.add('hidden');
+          return;
+        }
+        managePlanBtn.classList.remove('hidden');
       }
 
       function renderAuth(state) {
@@ -670,14 +687,17 @@
           var res = await fetch(apiBase + '/api/me', { credentials: 'include' });
           if (!res.ok) {
             renderAuth(null);
+            updatePortalButton(null);
             return;
           }
           var data = await res.json();
           renderUsage(data);
           renderAuth(data);
+          updatePortalButton(data);
         } catch (err) {
           console.warn('Unable to fetch session info', err);
           renderAuth(null);
+          updatePortalButton(null);
         }
       }
 
@@ -718,12 +738,51 @@
         }
       }
 
+      async function handleManageSubscription() {
+        if (isLocalHarness || !planStatus || !apiBase) {
+          if (planStatus) {
+            planStatus.textContent = 'Self-service billing is only available in hosted mode.';
+            planStatus.classList.add('modal-status--error');
+          }
+          return;
+        }
+        planStatus.textContent = 'Opening billing portal…';
+        planStatus.classList.remove('modal-status--error');
+        try {
+          var res = await fetch(apiBase + '/api/billing/portal', {
+            method: 'POST',
+            credentials: 'include'
+          });
+          if (res.status === 401) {
+            closeModal(planModal);
+            setStatus('Sign up or sign in to manage your subscription.', 'warn');
+            openModal(signInModal);
+            return;
+          }
+          if (!res.ok) {
+            var errData = await res.json().catch(function(){ return {}; });
+            planStatus.textContent = errData.detail || 'Unable to open billing portal right now.';
+            planStatus.classList.add('modal-status--error');
+            return;
+          }
+          var payload = await res.json();
+          window.location.href = payload.portal_url;
+        } catch (err) {
+          planStatus.textContent = 'Unable to reach billing service.';
+          planStatus.classList.add('modal-status--error');
+        }
+      }
+
       if (!isLocalHarness && planModal) {
         planModal.querySelectorAll('[data-plan]').forEach(function(btn){
           btn.addEventListener('click', function(){
             handleCheckout(this.getAttribute('data-plan'));
           });
         });
+      }
+
+      if (!isLocalHarness && managePlanBtn) {
+        managePlanBtn.addEventListener('click', handleManageSubscription);
       }
 
       if (!isLocalHarness && signInForm) {

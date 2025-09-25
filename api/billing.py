@@ -57,6 +57,21 @@ def create_checkout_session(session: Session, user: User, plan: str) -> str:
     return checkout["url"]
 
 
+def create_portal_session(session: Session, user: User) -> str:
+    config_id = settings.stripe_portal_config
+    if not config_id:
+        raise HTTPException(status_code=503, detail="Stripe customer portal not configured")
+
+    client = _stripe_client()
+    customer_id = _ensure_customer(session, user)
+    portal_session = client.billing_portal.Session.create(
+        customer=customer_id,
+        configuration=config_id,
+        return_url=settings.stripe_portal_return_url(),
+    )
+    return portal_session["url"]
+
+
 def _reset_usage_for_plan(session: Session, user: User, plan: str) -> None:
     state = get_usage_state(session, user)
     if state.ledger:

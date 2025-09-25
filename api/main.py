@@ -29,13 +29,20 @@ from .schemas import (
     MeResponse,
     CheckoutRequest,
     CheckoutResponse,
+    PortalResponse,
     RunRequest,
     RunResponse,
     SamplingInfo,
 )
 from heretix.db.models import Check, User
 from .usage import ANON_PLAN, get_usage_state, increment_usage
-from .billing import create_checkout_session, handle_checkout_completed, handle_subscription_deleted, handle_subscription_updated
+from .billing import (
+    create_checkout_session,
+    create_portal_session,
+    handle_checkout_completed,
+    handle_subscription_deleted,
+    handle_subscription_updated,
+)
 
 app = FastAPI(title="Heretix API", version="0.1.0")
 
@@ -350,6 +357,17 @@ def create_checkout(
         raise HTTPException(status_code=401, detail="Sign-in required")
     url = create_checkout_session(session, user, payload.plan)
     return CheckoutResponse(checkout_url=url)
+
+
+@app.post("/api/billing/portal", response_model=PortalResponse)
+def create_portal(
+    session: Session = Depends(get_session),
+    user: User | None = Depends(get_current_user),
+) -> PortalResponse:
+    if not user:
+        raise HTTPException(status_code=401, detail="Sign-in required")
+    url = create_portal_session(session, user)
+    return PortalResponse(portal_url=url)
 
 
 @app.post(

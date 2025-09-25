@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     stripe_price_pro: Optional[str] = Field(None, alias="STRIPE_PRICE_PRO")
     stripe_success_path: str = Field("/billing/success", alias="STRIPE_SUCCESS_PATH")
     stripe_cancel_path: str = Field("/billing/cancel", alias="STRIPE_CANCEL_PATH")
+    stripe_portal_config: Optional[str] = Field(None, alias="STRIPE_PORTAL_CONFIG")
+    stripe_portal_return_path: str = Field("/", alias="STRIPE_PORTAL_RETURN_PATH")
     prompts_dir: Optional[Path] = Field(None, alias="RPL_PROMPTS_DIR")
 
     class Config:
@@ -72,6 +74,9 @@ class Settings(BaseSettings):
 
     def stripe_cancel_url(self) -> str:
         return f"{self.app_url.rstrip('/')}{self.stripe_cancel_path}"
+
+    def stripe_portal_return_url(self) -> str:
+        return f"{self.app_url.rstrip('/')}{self.stripe_portal_return_path}"
 
 
 @lru_cache(maxsize=1)
