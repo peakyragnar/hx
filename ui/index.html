@@ -193,6 +193,7 @@
         <ul>
           <li><a href="/how.html">How it works</a></li>
           <li><a href="/examples.html">Examples</a></li>
+          <li><a href="#" id="nav-plan-link">Plans</a></li>
           <li><a href="#" id="nav-signin">Sign up / Sign in</a></li>
         </ul>
       </nav>
@@ -393,7 +394,7 @@
     (function(){
       var params = new URLSearchParams(window.location.search);
       if (params.get('plans') === '1' && !document.body.classList.contains('modal-open')) {
-        setTimeout(function(){ openPlanModal('starter'); }, 0);
+        setTimeout(function(){ openPlanModal(normalizePlanName(latestPlanName)); }, 0);
       }
       if (params.get('quick') === '1') {
         document.body.classList.add('quick');
@@ -449,8 +450,16 @@
       var planModal = document.getElementById('plan-modal');
       var planStatus = document.getElementById('plan-status');
       var managePlanBtn = document.getElementById('manage-plan');
+      var navPlanLink = document.getElementById('nav-plan-link');
       var navSignIn = document.getElementById('nav-signin');
       var currentUserEmail = '';
+      var latestPlanName = 'trial';
+
+      function normalizePlanName(name) {
+        if (!name) return 'starter';
+        var lower = String(name).toLowerCase();
+        return ['starter', 'core', 'pro'].indexOf(lower) !== -1 ? lower : 'starter';
+      }
 
       function setStatus(message, tone) {
         if (!statusEl) return;
@@ -472,6 +481,7 @@
         var allowed = state.checks_allowed;
         var used = state.checks_used ?? 0;
         var remaining = state.remaining;
+        latestPlanName = (planName || 'trial').toLowerCase();
         var text;
         if (allowed === null || allowed === undefined) {
           text = 'Plan ' + planName + ' · Unlimited checks';
@@ -489,13 +499,16 @@
         if (!managePlanBtn) return;
         if (isLocalHarness || !state || !state.authenticated) {
           managePlanBtn.classList.add('hidden');
+          latestPlanName = 'trial';
           return;
         }
         var planName = (state.plan || state.usage_plan || '').toLowerCase();
         if (!planName || planName === 'trial') {
           managePlanBtn.classList.add('hidden');
+          latestPlanName = planName || 'trial';
           return;
         }
+        latestPlanName = planName;
         managePlanBtn.classList.remove('hidden');
       }
 
@@ -643,11 +656,12 @@
         if (!planModal) return;
         planStatus.textContent = '';
         planStatus.classList.remove('modal-status--error');
+        var planKey = normalizePlanName(currentPlan);
         planModal.querySelectorAll('.plan-card').forEach(function(card){
-          card.classList.toggle('is-current', card.dataset.planCard === currentPlan);
+          card.classList.toggle('is-current', card.dataset.planCard === planKey);
         });
         if (managePlanBtn && !managePlanBtn.classList.contains('hidden')) {
-          var btnText = (currentPlan && currentPlan !== 'starter') ? ('Manage your ' + currentPlan + ' subscription') : 'Manage current subscription';
+          var btnText = planKey !== 'starter' ? ('Manage your ' + planKey + ' subscription') : 'Manage current subscription';
           managePlanBtn.textContent = btnText;
           managePlanBtn.setAttribute('aria-label', btnText);
         }
@@ -680,6 +694,13 @@
           } else if (signInModal) {
             openModal(signInModal);
           }
+        });
+      }
+
+      if (navPlanLink) {
+        navPlanLink.addEventListener('click', function(evt){
+          evt.preventDefault();
+          openPlanModal(normalizePlanName(latestPlanName));
         });
       }
 
