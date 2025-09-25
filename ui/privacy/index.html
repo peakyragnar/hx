@@ -8,6 +8,9 @@
   <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
   <style>
     :root { --bg:#040404; --fg:#e9ffe9; --muted:#8aa28a; --bright:#00ff41; }
+
+    .top-nav{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
+    .brand{font-family:'Space Mono',monospace;font-size:18px;letter-spacing:4px;color:var(--bright);text-decoration:none;text-shadow:0 0 12px rgba(0,255,65,0.3);}
     *{box-sizing:border-box;}
     html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font-family:'Inter','Helvetica Neue',Arial,sans-serif;}
     header{max-width:780px;margin:48px auto 24px;padding:0 24px;}
@@ -25,6 +28,7 @@
 </head>
 <body>
   <header>
+    <div class="top-nav"><a class="brand" href="/">HERETIX</a></div>
     <h1>Privacy Policy</h1>
     <div class="meta">Effective date: September 25, 2025</div>
     <div class="meta">Contact: <a href="mailto:team@heretix.ai">team@heretix.ai</a> · 30 N Gould St, Ste R, Sheridan, WY 82801</div>
