@@ -936,8 +936,8 @@
         resultNewButton.addEventListener('click', function(){
           resetResultsView();
           if (claimInput) {
+            claimInput.value = '';
             claimInput.focus();
-            claimInput.select();
           }
         });
       }
