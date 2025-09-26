@@ -38,6 +38,7 @@ Dev Environment
   - HERETIX_RPL_SEED: optional deterministic bootstrap seed (CI reproducibility)
   - HERETIX_RPL_NO_CACHE=1: bypass cached samples
   - HERETIX_CONCURRENCY: optional bounded thread pool for provider calls (e.g., 6–8). Default off.
+  - ANON_COOKIE_NAME: optional override for the anonymous usage cookie (defaults to `heretix_anon`).
 - Database:
   - Start local Postgres with `docker compose up -d postgres` (connection string `postgresql+psycopg://heretix:heretix@localhost:5433/heretix`).
   - Run `alembic upgrade head` after schema changes; stop services via `docker compose down`.

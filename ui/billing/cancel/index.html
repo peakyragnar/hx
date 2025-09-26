@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Heretix · Checkout Cancelled</title>
+  <link rel="preconnect" href="https://rsms.me/" />
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+  <style>
+    :root { --bg:#040404; --fg:#e9ffe9; --muted:#8aa28a; --bright:#00ff41; }
+    *{box-sizing:border-box;}
+    html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font-family:'Inter','Helvetica Neue',Arial,sans-serif;min-height:100%;}
+    main{max-width:560px;margin:80px auto;padding:0 24px;text-align:center;}
+    h1{font-size:clamp(32px,6vw,44px);margin-bottom:12px;text-shadow:0 0 18px rgba(0,255,65,0.25);} 
+    p{margin:0 0 18px;color:var(--muted);line-height:1.7;}
+    a.button{display:inline-flex;align-items:center;justify-content:center;padding:12px 22px;border-radius:10px;background:var(--bright);color:#013310;font-weight:600;text-decoration:none;margin-top:22px;}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Checkout Cancelled</h1>
+    <p>You closed Stripe Checkout before finishing. Your existing plan is unchanged.</p>
+    <p>If you still want to upgrade, reopen the plan chooser and continue from there.</p>
+    <a class="button" href="/">Back to Heretix</a>
+  </main>
+</body>
+</html>

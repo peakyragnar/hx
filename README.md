@@ -60,6 +60,100 @@ Legacy CLI is available under `legacy/` for reference but is not installed by de
 - Stop services when done: `docker compose down`
 - Production deployments point at the Neon connection string saved as `DATABASE_URL_PROD`.
 
+### Local API Scaffold
+- Install dependencies: `uv sync`
+- Start Postgres (`docker compose up -d postgres`) and run migrations (`uv run alembic upgrade head`).
+- Launch the API locally: `uv run uvicorn api.main:app --reload`
+- Smoke test (mock provider):
+  ```bash
+  curl -s http://127.0.0.1:8000/api/checks/run \
+    -H 'content-type: application/json' \
+    -d '{"claim": "Tariffs cause inflation", "mock": true}' | jq
+  ```
+
+### Magic-Link Sign-in (local flow)
+- Request link:
+  ```bash
+  curl -s -X POST http://127.0.0.1:8000/api/auth/magic-links \
+    -H 'content-type: application/json' \
+    -d '{"email": "you@example.com"}' -o /dev/null -w "%{http_code}\n"
+  ```
+- Check server logs (or Postmark/MailHog) for the printed URL. Visit it in a browser or with curl to store the cookie:
+  ```bash
+  curl -s '<MAGIC_LINK_URL>' -c cookies.txt | jq
+  ```
+- Verify session:
+  ```bash
+  curl -s http://127.0.0.1:8000/api/me -b cookies.txt -c cookies.txt | jq
+  ```
+- Limits (local defaults):
+  - Anonymous: 1 run → subsequent requests return HTTP 402 with `{"reason":"require_signin"}`.
+  - Signed-in trial: total of 3 runs → HTTP 402 with `{"reason":"require_subscription"}` afterward.
+  - Subscribers: placeholder caps (Starter/Core/Pro) to be wired in during Stripe integration.
+
+### Stripe Checkout (development)
+- Set test env vars (see `api/config.py` for keys such as `STRIPE_SECRET`, `STRIPE_PRICE_STARTER`, etc.).
+- Run Stripe CLI to forward webhooks:
+  ```bash
+  stripe listen --forward-to http://127.0.0.1:8000/api/stripe/webhook
+  ```
+- Create a checkout session (signed-in user required):
+  ```bash
+  curl -s -X POST http://127.0.0.1:8000/api/billing/checkout \
+    -H 'content-type: application/json' -b cookies.txt \
+    -d '{"plan": "starter"}' | jq
+  ```
+- Visit the returned `checkout_url`, complete payment with Stripe test card, and Stripe will invoke the webhook to promote the account plan.
+
+## Deploying to Production
+
+### 1. Provision infrastructure
+- **Database:** Create a Neon Postgres project (production branch). Keep the connection string handy (`DATABASE_URL_PROD`).
+- **API host:** Create a Render Web Service from this repository, select the Dockerfile, and use at least the 1 GB instance size. Set the start command to `/app/.venv/bin/python -m uvicorn api.main:app --host 0.0.0.0 --port 8080`.
+- **Frontend:** Deploy `ui/` to your static host (e.g., Vercel). Set `NEXT_PUBLIC_API_URL` (or equivalent) to the Render service URL (update to your custom domain once DNS is in place).
+
+### 2. Apply migrations to Neon
+```bash
+DATABASE_URL="<NEON_CONNECTION>" uv run alembic upgrade head
+```
+
+### 3. Configure secrets (Render)
+Add the required environment variables in **Render → Dashboard → Service → Environment** or via `render.yaml`:
+
+```
+OPENAI_API_KEY=...
+DATABASE_URL="<NEON_CONNECTION>"
+EMAIL_SENDER_ADDRESS=team@heretix.ai
+POSTMARK_TOKEN=...
+STRIPE_SECRET=sk_live_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+STRIPE_PRICE_STARTER=price_live_starter
+STRIPE_PRICE_CORE=price_live_core
+STRIPE_PRICE_PRO=price_live_pro
+STRIPE_PORTAL_CONFIG=bpc_...
+MAGIC_LINK_TTL_MINUTES=15
+SESSION_TTL_DAYS=30
+SESSION_COOKIE_DOMAIN=.heretix.ai
+SESSION_COOKIE_SECURE=true
+ANON_COOKIE_NAME=heretix_anon
+APP_ENV=production
+APP_URL=https://heretix.ai
+API_URL=https://<your-api>.onrender.com
+```
+
+### 4. Deploy the API
+- Render will build and deploy automatically after you connect the repository. Use the Render dashboard to trigger redeploys as needed.
+- `/healthz` remains available for platform checks.
+
+### 5. Wire DNS/TLS
+- Point `api.heretix.<domain>` to the Render service (CNAME) and `app.heretix.<domain>` to the frontend host.
+- Render/Vercel issue TLS certificates automatically once DNS is active.
+
+### 6. Verify production
+- Request a magic link (should deliver via Postmark) and complete the callback.
+- Run a claim (deducts usage and persists to Neon).
+- Trigger a real checkout with Stripe live mode (use $0 coupon or test card if on staging) and verify the webhook updates the plan.
+
 ## Faster Runs (Optional Concurrency)
 
 - CLI (opt‑in):

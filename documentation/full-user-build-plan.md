@@ -48,15 +48,15 @@ This document outlines the end-to-end rollout for converting the existing RPL ha
 - Ensure fetch requests include credentials (cookies) and handle redirects/success messages gracefully.
 
 ## Phase 6 – Deployment
-- API on Fly.io
-  - `flyctl launch`, `flyctl deploy`, set secrets (OpenAI, DB URLs, Postmark, Stripe, cookie secret).
-  - Enable health checks and logging.
+- API on Render
+  - Create a Docker-based Web Service from this repo, set the start command to `/app/.venv/bin/python -m uvicorn api.main:app --host 0.0.0.0 --port 8080`, and choose at least the 1 GB instance.
+  - Configure environment variables (OpenAI, Neon DB URL, Postmark, Stripe, session settings) via the Render dashboard.
 - Database
   - Apply Alembic migrations to Neon production branch.
 - Frontend
-  - Deploy static assets to Vercel (or current host) with `NEXT_PUBLIC_API_URL` set to Fly endpoint.
+  - Deploy static assets to Vercel (or current host) with `NEXT_PUBLIC_API_URL` set to the Render endpoint.
 - DNS & TLS
-  - Configure Cloudflare (or provider) to route `api.heretix.* → Fly`, `app.heretix.* → Vercel`.
+  - Configure Cloudflare (or provider) to route `api.heretix.* → Render`, `app.heretix.* → Vercel`.
 - Postmark
   - Verify sending domain, set live token.
 - Stripe

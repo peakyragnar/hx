@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="heretix-api-base" content="https://api.heretix.ai" />
   <title>Heretix · Understand the AI answering your questions</title>
   <style>
     :root {
@@ -24,9 +25,17 @@
     nav ul { list-style:none; display:flex; gap:18px; margin:0; padding:0; }
     nav a { font-size:14px; color:var(--muted); transition:color 0.2s ease; }
     nav a:hover { color:var(--bright); }
+    .nav a.signed-in { color:var(--bright); font-weight:500; }
 
     main { max-width:1100px; margin:0 auto; padding:40px 20px 120px; }
     section { margin-top:80px; }
+
+    body.results-mode .hero,
+    body.results-mode .how,
+    body.results-mode .example-section,
+    body.results-mode .faq {
+      display:none;
+    }
 
     .hero { margin-top:40px; display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:40px; align-items:center; }
     .hero h1 { font-size:clamp(32px, 4.6vw, 54px); margin:0 0 12px; text-shadow:0 0 22px rgba(0,255,65,0.25); }
@@ -41,6 +50,78 @@
     .primary:hover { transform:translateY(-2px); box-shadow:0 18px 46px rgba(0,255,65,0.25); }
     .footnote { margin-top:12px; font-size:13px; color:var(--muted); text-align:center; }
     .footnote .full-link { display:none; }
+
+    .hidden { display:none !important; }
+    .status-message { min-height:18px; transition:color 0.2s ease; }
+    .status--info { color:var(--muted); }
+    .status--warn { color:#ffd166; }
+    .status--error { color:var(--accent); }
+
+    .usage-meter { margin-top:10px; padding:10px 12px; border-radius:10px; border:1px solid rgba(0,255,65,0.35); background:rgba(0,255,65,0.05); font-size:13px; text-align:center; }
+
+    .result-card { margin-top:40px; padding:32px; border:1px solid rgba(0,255,65,0.35); border-radius:20px; background:radial-gradient(circle at top,#112311 0%, #080c08 65%); box-shadow:0 0 42px rgba(0,255,65,0.24); }
+    .result-hero { display:flex; gap:34px; flex-wrap:wrap; align-items:center; justify-content:space-between; border-bottom:1px solid rgba(0,255,65,0.18); padding-bottom:24px; }
+    .result-pill { display:inline-flex; align-items:center; gap:8px; padding:8px 14px; border-radius:999px; border:1px solid rgba(0,255,65,0.35); background:rgba(0,255,65,0.1); font-size:12px; letter-spacing:1px; text-transform:uppercase; color:var(--bright); margin-bottom:16px; }
+    .result-percent { font-size:clamp(56px, 10vw, 112px); font-weight:700; color:var(--bright); text-shadow:0 0 36px rgba(0,255,65,0.35); line-height:1; }
+    .result-verdict-tag { font-size:16px; text-transform:uppercase; letter-spacing:3px; color:var(--muted); margin-top:8px; }
+    .result-claim-block { max-width:540px; }
+    .result-claim { font-size:22px; line-height:1.6; color:var(--fg); margin-bottom:16px; }
+    .result-interpretation { font-size:18px; color:var(--muted); line-height:1.6; }
+    .result-explainer { margin-top:28px; padding:24px; border-radius:16px; border:1px solid rgba(0,255,65,0.25); background:rgba(0,255,65,0.04); text-align:left; }
+    .result-explainer h3 { margin:0 0 12px; font-size:20px; color:var(--bright); }
+    .result-explainer p { margin:0 0 14px; color:var(--muted); line-height:1.6; }
+    .result-explainer ul { margin:0; padding-left:22px; color:var(--muted); line-height:1.6; list-style:disc; }
+    .result-advanced { margin-top:28px; }
+    .result-advanced .advanced-grid { margin-top:18px; display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:18px; color:var(--muted); }
+    .metric-label { font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); margin-bottom:6px; }
+    .metric-value { font-size:18px; font-weight:500; color:var(--fg); }
+    .metric-note { font-size:12px; color:var(--muted); margin-top:4px; }
+    .result-advanced .note { margin-top:18px; color:var(--muted); font-size:13px; }
+    .result-actions { margin-top:32px; display:flex; flex-wrap:wrap; gap:16px; }
+    .btn { display:inline-flex; align-items:center; justify-content:center; padding:14px 22px; border-radius:14px; font-weight:600; border:0; cursor:pointer; transition:transform 0.2s ease, box-shadow 0.2s ease; }
+    .btn-primary { background:var(--bright); color:#041105; box-shadow:0 16px 32px rgba(0,255,65,0.18); }
+    .btn-primary:hover { transform:translateY(-2px); box-shadow:0 20px 36px rgba(0,255,65,0.28); }
+    .btn-secondary { background:rgba(255,255,255,0.08); color:var(--fg); border:1px solid rgba(0,255,65,0.2); }
+    .btn-secondary:hover { transform:translateY(-2px); border-color:rgba(0,255,65,0.4); }
+    body.results-mode footer { margin-top:40px; }
+    .loading-overlay { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(6,8,7,0.9); backdrop-filter:blur(12px); z-index:1000; padding:24px; }
+    .loading-content { text-align:center; max-width:520px; color:var(--muted); }
+    .loading-content h2 { margin:0 0 16px; font-size:24px; color:var(--bright); }
+    .loading-claim { font-size:18px; color:var(--fg); margin-bottom:18px; }
+    .loading-steps { list-style:none; margin:0 auto 24px; padding:0; max-width:340px; text-align:left; }
+    .loading-steps li { padding:12px 16px; border-radius:12px; border:1px solid rgba(0,255,65,0.2); background:rgba(0,255,65,0.04); margin-bottom:10px; font-size:14px; color:var(--muted); position:relative; overflow:hidden; }
+    .loading-steps li::before { content:''; position:absolute; left:0; top:0; bottom:0; width:4px; background:rgba(0,255,65,0.4); opacity:0; transition:opacity 0.3s ease; }
+    .loading-steps li.active::before { opacity:1; }
+    .loading-hero { width:340px; height:340px; margin:28px auto; position:relative; background:url('/assets/running_bg.png') center/cover no-repeat; border-radius:14px; box-shadow:0 0 36px rgba(0,255,65,0.25) inset, 0 0 24px rgba(0,255,65,0.25); }
+    .loading-mask { position:absolute; left:50%; top:48%; width:120px; height:120px; transform:translate(-50%,-50%); background:radial-gradient(circle at center, rgba(6,6,6,0.85) 0%, rgba(6,6,6,0.1) 70%, rgba(6,6,6,0) 100%); border-radius:50%; pointer-events:none; }
+    .loading-pill { position:absolute; left:50%; top:48%; width:56px; height:20px; transform:translate(-50%,-50%); background:#ff2b2b; border-radius:999px; border:1px solid #ff6b6b; box-shadow:0 0 18px rgba(255,0,0,0.5); animation: spin-pill 1.6s linear infinite; }
+    .loading-note { margin-top:14px; color:var(--muted); font-size:14px; }
+    @keyframes spin-pill { from { transform:translate(-50%,-50%) rotate(0deg); } to { transform:translate(-50%,-50%) rotate(360deg); } }
+
+    .modal { position:fixed; inset:0; display:none; align-items:center; justify-content:center; z-index:100; }
+    .modal.is-open { display:flex; }
+    .modal-backdrop { position:absolute; inset:0; background:rgba(0,0,0,0.6); }
+    .modal-dialog { position:relative; z-index:1; width:min(420px, 90vw); background:#0a0d0a; border:1px solid rgba(0,255,65,0.25); border-radius:16px; padding:28px; box-shadow:0 0 32px rgba(0,255,65,0.2); }
+    .modal-dialog h2 { margin:0 0 12px; font-size:24px; }
+    .modal-dialog p { color:var(--muted); font-size:14px; line-height:1.5; }
+    .modal-dialog form { margin-top:16px; display:grid; gap:12px; }
+    .modal-dialog input[type="email"] { padding:12px; border-radius:10px; border:1px solid rgba(0,255,65,0.35); background:#0b0d0b; color:var(--fg); }
+    .modal-dialog button[type="submit"], .modal-dialog button.plan-button { padding:12px 16px; border-radius:10px; border:0; background:var(--bright); color:#041105; font-weight:600; cursor:pointer; }
+    .modal-dialog button.plan-button.plan-button--secondary { background:rgba(0,255,65,0.1); color:var(--bright); border:1px solid rgba(0,255,65,0.35); width:100%; margin-top:16px; }
+    .modal-dialog button[disabled] { opacity:0.6; cursor:not-allowed; }
+    .modal-close { position:absolute; top:12px; right:12px; border:0; background:transparent; color:var(--muted); font-size:24px; cursor:pointer; }
+    .modal-status { margin-top:14px; font-size:13px; color:var(--muted); }
+    .modal-status--error { color:var(--accent); }
+
+    .plan-grid { display:grid; gap:18px; margin-top:18px; }
+    .plan-card { border:1px solid rgba(0,255,65,0.25); border-radius:14px; padding:18px; background:rgba(0,255,65,0.05); }
+    .plan-card.is-current { border-color:var(--bright); box-shadow:0 0 24px rgba(0,255,65,0.2); }
+    .plan-card h3 { margin:0 0 6px; font-size:18px; }
+    .plan-card .price { font-size:16px; font-weight:500; margin-bottom:6px; }
+    .plan-card p { font-size:14px; color:var(--muted); margin-bottom:12px; }
+    .plan-card button { width:100%; }
+
+    body.modal-open { overflow:hidden; }
 
     .hero-examples { display:flex; gap:10px; flex-wrap:wrap; }
     .example-pill { background:rgba(0,255,65,0.08); color:var(--bright); border:1px solid rgba(0,255,65,0.3); border-radius:24px; padding:8px 14px; font-size:13px; cursor:pointer; transition:background 0.2s ease; }
@@ -89,6 +170,22 @@
   </style>
 </head>
 <body>
+  <div class="loading-overlay hidden" id="loading-overlay" aria-live="polite">
+    <div class="loading-content">
+      <h2>Measuring how GPT‑5’s training data anchors this claim…</h2>
+      <div class="loading-claim" id="loading-claim"></div>
+      <ol class="loading-steps">
+        <li class="active">Planning the different phrasings.</li>
+        <li>Asking GPT‑5 with internal knowledge only.</li>
+        <li>Preparing the explanation for the verdict.</li>
+      </ol>
+      <div class="loading-hero">
+        <div class="loading-mask"></div>
+        <div class="loading-pill" aria-label="Animated red pill"></div>
+      </div>
+      <p class="loading-note">This usually takes less than a minute.</p>
+    </div>
+  </div>
   <header>
     <div class="nav">
       <a class="brand" href="/">HERETIX</a>
@@ -96,6 +193,8 @@
         <ul>
           <li><a href="/how.html">How it works</a></li>
           <li><a href="/examples.html">Examples</a></li>
+          <li><a href="#" id="nav-plan-link">Plans</a></li>
+          <li><a href="#" id="nav-signin">Sign up / Sign in</a></li>
         </ul>
       </nav>
     </div>
@@ -113,7 +212,7 @@
         </div>
       </div>
       <div class="form-card">
-        <form method="post" action="/run">
+        <form id="claim-form" action="/run" method="post">
           <label for="claim">Check a claim</label>
           <textarea id="claim" name="claim" maxlength="280" placeholder="Type the claim you want to inspect." required></textarea>
           <div class="form-meta">
@@ -129,9 +228,52 @@
               <option value="user-data" disabled>User evidence · coming soon</option>
             </select>
           </div>
+          <div id="usage-meter" class="usage-meter hidden" aria-live="polite"></div>
           <button class="primary" type="submit">Ask the model</button>
-          <div class="footnote"></div>
+          <div class="footnote status-message status--info"></div>
         </form>
+      </div>
+    </section>
+
+    <section id="result-card" class="result-card hidden" aria-live="polite">
+      <div class="result-hero">
+        <div>
+          <div class="result-pill" id="result-pill">GPT‑5 · Internal knowledge only</div>
+          <div class="result-percent" id="result-percentage">--%</div>
+          <div class="result-verdict-tag" id="result-subtitle">Probability this claim is true</div>
+        </div>
+        <div class="result-claim-block">
+          <div class="result-claim" id="result-claim">“—”</div>
+          <p class="result-interpretation" id="result-interpretation-main"></p>
+        </div>
+      </div>
+      <div class="result-explainer hidden" id="result-explainer">
+        <h3 id="result-verdict">—</h3>
+        <p id="result-interpretation-detail"></p>
+        <ul id="result-reasons" class="hidden"></ul>
+      </div>
+      <details class="result-advanced">
+        <summary>Advanced details</summary>
+        <div class="advanced-grid">
+          <div>
+            <div class="metric-label">Confidence width</div>
+            <div class="metric-value" id="result-ci">--</div>
+          </div>
+          <div>
+            <div class="metric-label">Template stability</div>
+            <div class="metric-value" id="result-stability">--</div>
+            <div class="metric-note" id="result-stability-band"></div>
+          </div>
+          <div>
+            <div class="metric-label">Policy compliance</div>
+            <div class="metric-value" id="result-compliance">--</div>
+          </div>
+        </div>
+        <p class="note">Narrower confidence widths mean the model gave consistent answers. Stability reflects how similar the paraphrased prompts were. Compliance shows how often responses followed the Raw Prior rules.</p>
+      </details>
+      <div class="result-actions">
+        <button type="button" class="btn btn-primary" id="result-new">Ask another claim</button>
+        <button type="button" class="btn btn-secondary" id="result-copy">Copy summary</button>
       </div>
     </section>
 
@@ -200,31 +342,791 @@
   <footer>
     <span>© <span id="year"></span> Heretix</span>
     <a href="mailto:hello@heretix.ai">Contact</a>
+    <a href="/privacy/">Privacy Policy</a>
+    <a href="/terms/">Terms of Service</a>
   </footer>
+
+  <div class="modal" id="signin-modal" aria-hidden="true" role="dialog" aria-modal="true">
+    <div class="modal-backdrop" data-close-modal></div>
+    <div class="modal-dialog">
+      <button class="modal-close" type="button" data-close-modal aria-label="Close">×</button>
+      <h2>Create or access your account</h2>
+      <p>Enter your email and we’ll send a magic link—first-time visitors become members instantly, no passwords required.</p>
+      <form id="signin-form">
+        <label for="signin-email">Email</label>
+        <input type="email" id="signin-email" name="email" placeholder="you@example.com" required />
+        <button type="submit">Send magic link</button>
+      </form>
+      <p class="modal-status" id="signin-status"></p>
+    </div>
+  </div>
+
+  <div class="modal" id="plan-modal" aria-hidden="true" role="dialog" aria-modal="true">
+    <div class="modal-backdrop" data-close-modal></div>
+    <div class="modal-dialog">
+      <button class="modal-close" type="button" data-close-modal aria-label="Close">×</button>
+      <h2>Choose a plan</h2>
+      <p>Upgrade to keep running new claims. You can change or cancel anytime.</p>
+      <div class="plan-grid">
+        <div class="plan-card" data-plan-card="starter">
+          <h3>Starter</h3>
+          <p class="price">$5 / month</p>
+          <p>20 checks per month · best for casual use</p>
+          <button class="plan-button" type="button" data-plan="starter">Continue</button>
+        </div>
+        <div class="plan-card" data-plan-card="core">
+          <h3>Core</h3>
+          <p class="price">$19 / month</p>
+          <p>100 checks per month · great for teams</p>
+          <button class="plan-button" type="button" data-plan="core">Continue</button>
+        </div>
+        <div class="plan-card" data-plan-card="pro">
+          <h3>Unlimited</h3>
+          <p class="price">$49 / month</p>
+          <p>750 checks per month · high-volume workflows</p>
+          <button class="plan-button" type="button" data-plan="pro">Continue</button>
+        </div>
+      </div>
+      <button class="plan-button plan-button--secondary hidden" type="button" id="manage-plan">Manage current subscription</button>
+      <p class="modal-status" id="plan-status"></p>
+    </div>
+  </div>
 
   <script>
     (function(){
-      var isQuick = window.location.search.includes('quick=1');
-      if (isQuick) {
-        document.body.classList.add('quick');
-        var claim = document.getElementById('claim');
-        if (claim) { claim.focus(); }
+      var params = new URLSearchParams(window.location.search);
+      if (params.get('plans') === '1' && !document.body.classList.contains('modal-open')) {
+        setTimeout(function(){ openPlanModal(normalizePlanName(latestPlanName)); }, 0);
       }
-    })();
-    document.querySelectorAll('.example-pill').forEach(function(btn){
-      btn.addEventListener('click', function(){
-        var target = document.getElementById('claim');
-        if (!target) return;
-        var example = this.getAttribute('data-example');
-        if (example) {
-          target.value = example;
-          target.focus();
+      if (params.get('quick') === '1') {
+        document.body.classList.add('quick');
+        var quickClaim = document.getElementById('claim');
+        if (quickClaim) { quickClaim.focus(); }
+      }
+
+      var magicSignedIn = params.get('signed') === '1';
+
+      var isLocalHarness = Boolean(window.HERETIX_UI_LOCAL);
+      var meta = document.querySelector('meta[name="heretix-api-base"]');
+      var apiBase = isLocalHarness ? null : (window.HERETIX_API_BASE || (meta && meta.content) || (function(){
+        if (location.origin.includes('app.')) {
+          return location.origin.replace('app.', 'api.');
+        }
+        if (location.hostname.endsWith('heretix.ai')) {
+          return 'https://api.heretix.ai';
+        }
+        if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+          return 'http://127.0.0.1:8000';
+        }
+        return 'https://heretix-api.onrender.com';
+      })());
+
+      var claimForm = document.getElementById('claim-form');
+      var claimInput = document.getElementById('claim');
+      var submitBtn = claimForm ? claimForm.querySelector('button.primary') : null;
+      var statusEl = claimForm ? claimForm.querySelector('.footnote') : null;
+      var usageEl = document.getElementById('usage-meter');
+      var resultCard = document.getElementById('result-card');
+      var resultProb = document.getElementById('result-prob'); // legacy element (kept for compatibility)
+      var resultPercentage = document.getElementById('result-percentage');
+      var resultSubtitle = document.getElementById('result-subtitle');
+      var resultClaimEl = document.getElementById('result-claim');
+      var resultPill = document.getElementById('result-pill');
+      var resultCi = document.getElementById('result-ci');
+      var resultStability = document.getElementById('result-stability');
+      var resultBand = document.getElementById('result-stability-band');
+      var resultCompliance = document.getElementById('result-compliance');
+      var resultExplainer = document.getElementById('result-explainer');
+      var resultVerdict = document.getElementById('result-verdict');
+      var resultInterpretationMain = document.getElementById('result-interpretation-main');
+      var resultInterpretationDetail = document.getElementById('result-interpretation-detail');
+      var resultReasons = document.getElementById('result-reasons');
+      var loadingOverlay = document.getElementById('loading-overlay');
+      var loadingClaim = document.getElementById('loading-claim');
+      var resultNewButton = document.getElementById('result-new');
+      var resultCopyButton = document.getElementById('result-copy');
+
+      var signInModal = document.getElementById('signin-modal');
+      var signInForm = document.getElementById('signin-form');
+      var signInStatus = document.getElementById('signin-status');
+      var planModal = document.getElementById('plan-modal');
+      var planStatus = document.getElementById('plan-status');
+      var managePlanBtn = document.getElementById('manage-plan');
+      var navPlanLink = document.getElementById('nav-plan-link');
+      var navSignIn = document.getElementById('nav-signin');
+      var currentUserEmail = '';
+      var latestPlanName = 'trial';
+
+      function normalizePlanName(name) {
+        if (!name) return 'starter';
+        var lower = String(name).toLowerCase();
+        return ['starter', 'core', 'pro'].indexOf(lower) !== -1 ? lower : 'starter';
+      }
+
+      function setStatus(message, tone) {
+        if (!statusEl) return;
+        tone = tone || 'info';
+        statusEl.classList.remove('status--info', 'status--warn', 'status--error');
+        if (!message) {
+          statusEl.textContent = '';
+          statusEl.classList.add('hidden');
+          return;
+        }
+        statusEl.textContent = message;
+        statusEl.classList.remove('hidden');
+        statusEl.classList.add('status--' + tone);
+      }
+
+      function renderUsage(state) {
+        if (!usageEl || !state) return;
+        var planName = state.usage_plan || state.plan || 'trial';
+        var allowed = state.checks_allowed;
+        var used = state.checks_used ?? 0;
+        var remaining = state.remaining;
+        latestPlanName = (planName || 'trial').toLowerCase();
+        var text;
+        if (allowed === null || allowed === undefined) {
+          text = 'Plan ' + planName + ' · Unlimited checks';
+        } else {
+          text = 'Plan ' + planName + ' · ' + used + ' / ' + allowed + ' used';
+          if (typeof remaining === 'number') {
+            text += ' · ' + remaining + ' left';
+          }
+        }
+        usageEl.textContent = text;
+        usageEl.classList.remove('hidden');
+      }
+
+      function updatePortalButton(state) {
+        if (!managePlanBtn) return;
+        if (isLocalHarness || !state || !state.authenticated) {
+          managePlanBtn.classList.add('hidden');
+          latestPlanName = 'trial';
+          return;
+        }
+        var planName = (state.plan || state.usage_plan || '').toLowerCase();
+        if (!planName || planName === 'trial') {
+          managePlanBtn.classList.add('hidden');
+          latestPlanName = planName || 'trial';
+          return;
+        }
+        latestPlanName = planName;
+        managePlanBtn.classList.remove('hidden');
+      }
+
+      function renderAuth(state) {
+        if (!navSignIn) return;
+        if (state && state.authenticated) {
+          currentUserEmail = state.email || '';
+          navSignIn.dataset.mode = 'signout';
+          navSignIn.textContent = 'Sign out';
+          navSignIn.title = currentUserEmail ? ('Signed in as ' + currentUserEmail) : 'Sign out';
+          navSignIn.classList.add('signed-in');
+        } else {
+          currentUserEmail = '';
+          navSignIn.dataset.mode = 'signin';
+          navSignIn.textContent = 'Sign up / Sign in';
+          navSignIn.title = '';
+          navSignIn.classList.remove('signed-in');
+        }
+      }
+
+      async function handleSignOut() {
+        if (!apiBase) return;
+        try {
+          await fetch(apiBase + '/api/auth/signout', {
+            method: 'POST',
+            credentials: 'include'
+          });
+          setStatus('Signed out.', 'info');
+        } catch (err) {
+          console.warn('Sign out failed', err);
+          setStatus('Unable to sign out right now.', 'warn');
+        }
+        renderAuth(null);
+        fetchMe();
+      }
+
+      function formatPercent(value) {
+        if (typeof value !== 'number') return '--';
+        return (value * 100).toFixed(1).replace(/\.0$/, '') + '%';
+      }
+
+      function renderResult(data) {
+      if (!resultCard || !data) return;
+        var probValue = data.aggregates && typeof data.aggregates.prob_true_rpl === 'number' ? data.aggregates.prob_true_rpl : 0;
+        var percentText = formatPercent(probValue);
+        if (resultProb) { resultProb.textContent = percentText; }
+        if (resultPercentage) { resultPercentage.textContent = percentText; }
+        if (resultClaimEl && data.claim) { resultClaimEl.textContent = '“' + data.claim + '”'; }
+        if (resultPill) {
+          var pillText = (data.model || 'GPT‑5') + ' · Internal knowledge only';
+          resultPill.textContent = pillText;
+        }
+        if (resultCi) {
+          if (typeof data.aggregates.ci_width === 'number') {
+            resultCi.textContent = data.aggregates.ci_width.toFixed(3);
+          } else {
+            resultCi.textContent = '--';
+          }
+        }
+        if (resultStability) {
+          resultStability.textContent = data.aggregates.stability_score !== undefined ? data.aggregates.stability_score.toFixed(2) : '--';
+        }
+        if (resultBand) {
+          resultBand.textContent = data.aggregates.stability_band ? ('Band: ' + data.aggregates.stability_band) : '';
+        }
+        if (resultCompliance) {
+          if (typeof data.aggregates.rpl_compliance_rate === 'number') {
+            resultCompliance.textContent = Math.round(data.aggregates.rpl_compliance_rate * 100) + '%';
+          } else {
+            resultCompliance.textContent = '--';
+          }
+        }
+
+        var verdictInfo = buildVerdict(probValue);
+        var verdictLabel = data.verdict_label || verdictInfo.title;
+        var headline = data.explanation_headline || verdictInfo.headline;
+        var interpretation = data.explanation_text || verdictInfo.text;
+
+        if (resultSubtitle) {
+          resultSubtitle.textContent = verdictLabel ? verdictLabel + ' · Probability this claim is true' : 'Probability this claim is true';
+        }
+
+        if (resultInterpretationMain) {
+          resultInterpretationMain.textContent = interpretation;
+        }
+
+        var apiReasons = Array.isArray(data.explanation_reasons) ? data.explanation_reasons.filter(Boolean) : [];
+        var reasonList = apiReasons.length ? apiReasons : buildReasons(probValue);
+
+        if (resultExplainer && resultVerdict) {
+          resultVerdict.textContent = headline;
+          if (resultInterpretationDetail) {
+            resultInterpretationDetail.textContent = interpretation;
+          }
+
+          if (resultReasons) {
+            resultReasons.innerHTML = '';
+            if (reasonList.length) {
+              reasonList.forEach(function(line){
+                var li = document.createElement('li');
+                li.textContent = line;
+                resultReasons.appendChild(li);
+              });
+              resultReasons.classList.remove('hidden');
+            } else {
+              resultReasons.classList.add('hidden');
+            }
+          }
+          resultExplainer.classList.remove('hidden');
+        }
+
+        if (resultCopyButton) {
+          var summaryText = buildSummary({
+            claim: data.claim,
+            verdict: verdictLabel,
+            percent: percentText,
+            reasons: Array.isArray(data.explanation_reasons) && data.explanation_reasons.length ? data.explanation_reasons.filter(Boolean) : buildReasons(probValue),
+            modelText: resultPill ? resultPill.textContent : (data.model || 'GPT‑5'),
+          });
+          resultCopyButton.dataset.summary = summaryText;
+          resultCopyButton.textContent = 'Copy summary';
+        }
+
+        resultCard.classList.remove('hidden');
+        document.body.classList.add('results-mode');
+      }
+
+      function closeModal(modal) {
+        if (!modal) return;
+        modal.classList.remove('is-open');
+        modal.setAttribute('aria-hidden', 'true');
+        if (!document.querySelector('.modal.is-open')) {
+          document.body.classList.remove('modal-open');
+        }
+      }
+
+      function openModal(modal) {
+        if (!modal) return;
+        modal.classList.add('is-open');
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('modal-open');
+      }
+
+      function openPlanModal(currentPlan) {
+        if (!planModal) return;
+        planStatus.textContent = '';
+        planStatus.classList.remove('modal-status--error');
+        var planKey = normalizePlanName(currentPlan);
+        planModal.querySelectorAll('.plan-card').forEach(function(card){
+          card.classList.toggle('is-current', card.dataset.planCard === planKey);
+        });
+        if (managePlanBtn && !managePlanBtn.classList.contains('hidden')) {
+          var btnText = planKey !== 'starter' ? ('Manage your ' + planKey + ' subscription') : 'Manage current subscription';
+          managePlanBtn.textContent = btnText;
+          managePlanBtn.setAttribute('aria-label', btnText);
+        }
+        openModal(planModal);
+      }
+
+      document.querySelectorAll('[data-close-modal]').forEach(function(btn){
+        btn.addEventListener('click', function(){
+          closeModal(this.closest('.modal'));
+        });
+      });
+
+      document.querySelectorAll('.modal').forEach(function(modal){
+        modal.addEventListener('click', function(evt){
+          if (evt.target.matches('.modal-backdrop')) {
+            closeModal(modal);
+          }
+        });
+      });
+
+      if (isLocalHarness && navSignIn) {
+        navSignIn.classList.add('hidden');
+      }
+      if (!isLocalHarness && navSignIn) {
+        navSignIn.dataset.mode = 'signin';
+        navSignIn.addEventListener('click', function(evt){
+          evt.preventDefault();
+          if (navSignIn.dataset.mode === 'signout') {
+            handleSignOut();
+          } else if (signInModal) {
+            openModal(signInModal);
+          }
+        });
+      }
+
+      if (navPlanLink) {
+        navPlanLink.addEventListener('click', function(evt){
+          evt.preventDefault();
+          openPlanModal(normalizePlanName(latestPlanName));
+        });
+      }
+
+      document.addEventListener('keydown', function(evt){
+        if (evt.key === 'Escape') {
+          closeModal(document.querySelector('.modal.is-open'));
         }
       });
-    });
-    var yearSpan = document.getElementById('year');
-    if (yearSpan) {
-      yearSpan.textContent = new Date().getFullYear();
+
+      async function fetchMe() {
+        if (!apiBase) return;
+        try {
+          var res = await fetch(apiBase + '/api/me', { credentials: 'include' });
+          if (!res.ok) {
+            renderAuth(null);
+            updatePortalButton(null);
+            return;
+          }
+          var data = await res.json();
+          renderUsage(data);
+          renderAuth(data);
+          updatePortalButton(data);
+        } catch (err) {
+          console.warn('Unable to fetch session info', err);
+          renderAuth(null);
+          updatePortalButton(null);
+        }
+      }
+
+      async function handleCheckout(plan) {
+        if (isLocalHarness || !planStatus || !apiBase) {
+          if (planStatus) {
+            planStatus.textContent = 'Available in hosted mode.';
+            planStatus.classList.add('modal-status--error');
+          }
+          return;
+        }
+        planStatus.textContent = 'Redirecting to checkout…';
+        planStatus.classList.remove('modal-status--error');
+        try {
+          var res = await fetch(apiBase + '/api/billing/checkout', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ plan: plan }),
+          });
+          if (res.status === 401) {
+            closeModal(planModal);
+                setStatus('Sign up or sign in to choose a plan.', 'warn');
+            openModal(signInModal);
+            return;
+          }
+          if (!res.ok) {
+            var errData = await res.json().catch(function(){ return {}; });
+            planStatus.textContent = errData.detail || 'Unable to create checkout session.';
+            planStatus.classList.add('modal-status--error');
+            return;
+          }
+          var payload = await res.json();
+          window.location.href = payload.checkout_url;
+        } catch (err) {
+          planStatus.textContent = 'Unable to reach billing service.';
+          planStatus.classList.add('modal-status--error');
+        }
+      }
+
+      async function handleManageSubscription() {
+        if (isLocalHarness || !planStatus || !apiBase) {
+          if (planStatus) {
+            planStatus.textContent = 'Self-service billing is only available in hosted mode.';
+            planStatus.classList.add('modal-status--error');
+          }
+          return;
+        }
+        planStatus.textContent = 'Opening billing portal…';
+        planStatus.classList.remove('modal-status--error');
+        try {
+          var res = await fetch(apiBase + '/api/billing/portal', {
+            method: 'POST',
+            credentials: 'include'
+          });
+          if (res.status === 401) {
+            closeModal(planModal);
+            setStatus('Sign up or sign in to manage your subscription.', 'warn');
+            openModal(signInModal);
+            return;
+          }
+          if (!res.ok) {
+            var errData = await res.json().catch(function(){ return {}; });
+            planStatus.textContent = errData.detail || 'Unable to open billing portal right now.';
+            planStatus.classList.add('modal-status--error');
+            return;
+          }
+          var payload = await res.json();
+          window.location.href = payload.portal_url;
+        } catch (err) {
+          planStatus.textContent = 'Unable to reach billing service.';
+          planStatus.classList.add('modal-status--error');
+        }
+      }
+
+      if (!isLocalHarness && planModal) {
+        planModal.querySelectorAll('[data-plan]').forEach(function(btn){
+          btn.addEventListener('click', function(){
+            handleCheckout(this.getAttribute('data-plan'));
+          });
+        });
+      }
+
+      if (!isLocalHarness && managePlanBtn) {
+        managePlanBtn.addEventListener('click', handleManageSubscription);
+      }
+
+      if (!isLocalHarness && signInForm) {
+        signInForm.addEventListener('submit', async function(evt){
+          evt.preventDefault();
+          var email = document.getElementById('signin-email').value.trim();
+          if (!email) {
+            signInStatus.textContent = 'Enter a valid email.';
+            signInStatus.classList.add('modal-status--error');
+            return;
+          }
+          signInStatus.textContent = 'Sending magic link…';
+          signInStatus.classList.remove('modal-status--error');
+          try {
+            var res = await fetch(apiBase + '/api/auth/magic-links', {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ email: email }),
+            });
+            if (!res.ok) {
+              signInStatus.textContent = 'Unable to send link. Try again later.';
+              signInStatus.classList.add('modal-status--error');
+              return;
+            }
+            signInStatus.textContent = 'Check your email to finish—your link signs you in or creates your account automatically.';
+          } catch (err) {
+            signInStatus.textContent = 'Unable to send link. Check your connection and retry.';
+            signInStatus.classList.add('modal-status--error');
+          }
+        });
+      }
+
+      if (magicSignedIn && !isLocalHarness) {
+        renderAuth({ authenticated: true });
+        setStatus('Signed in—welcome back!', 'info');
+        if (typeof window.history.replaceState === 'function') {
+          window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
+        }
+      }
+
+      if (claimForm && isLocalHarness) {
+        claimForm.setAttribute('action', '/run');
+        claimForm.setAttribute('method', 'post');
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Ask the model';
+        }
+        setStatus('', 'info');
+        if (usageEl) {
+          usageEl.classList.add('hidden');
+        }
+      }
+
+      function toggleLoading(show, claimText) {
+        if (!loadingOverlay) return;
+        if (show) {
+          loadingOverlay.classList.remove('hidden');
+          if (loadingClaim) {
+            loadingClaim.textContent = claimText ? '“' + claimText + '”' : '';
+          }
+        } else {
+          loadingOverlay.classList.add('hidden');
+          if (loadingClaim) {
+            loadingClaim.textContent = '';
+          }
+        }
+      }
+
+      function resetResultsView() {
+        document.body.classList.remove('results-mode');
+        if (resultCard) {
+          resultCard.classList.add('hidden');
+        }
+        if (resultExplainer) {
+          resultExplainer.classList.add('hidden');
+        }
+        if (resultReasons) {
+          resultReasons.innerHTML = '';
+          resultReasons.classList.add('hidden');
+        }
+        if (resultPercentage) {
+          resultPercentage.textContent = '--%';
+        }
+        if (resultProb) {
+          resultProb.textContent = '--';
+        }
+        if (resultSubtitle) {
+          resultSubtitle.textContent = 'Probability this claim is true';
+        }
+        if (resultClaimEl) {
+          resultClaimEl.textContent = '“—”';
+        }
+        if (resultInterpretationMain) {
+          resultInterpretationMain.textContent = '';
+        }
+        if (resultInterpretationDetail) {
+          resultInterpretationDetail.textContent = '';
+        }
+        if (resultCi) {
+          resultCi.textContent = '--';
+        }
+        if (resultStability) {
+          resultStability.textContent = '--';
+        }
+        if (resultBand) {
+          resultBand.textContent = '';
+        }
+        if (resultCompliance) {
+          resultCompliance.textContent = '--';
+        }
+        if (resultCopyButton) {
+          resultCopyButton.textContent = 'Copy summary';
+          resultCopyButton.dataset.summary = '';
+        }
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+
+      if (resultNewButton) {
+        resultNewButton.addEventListener('click', function(){
+          resetResultsView();
+          if (claimInput) {
+            claimInput.focus();
+            claimInput.select();
+          }
+        });
+      }
+
+      if (resultCopyButton) {
+        resultCopyButton.addEventListener('click', function(){
+          var summary = resultCopyButton.dataset.summary || '';
+          if (!summary) return;
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(summary).then(function(){
+              resultCopyButton.textContent = 'Summary copied!';
+              setTimeout(function(){ resultCopyButton.textContent = 'Copy summary'; }, 2000);
+            }).catch(function(){ fallbackCopy(summary); });
+          } else {
+            fallbackCopy(summary);
+          }
+        });
+      }
+
+      if (claimForm && !isLocalHarness) {
+        var originalBtnText = submitBtn ? submitBtn.textContent : '';
+        claimForm.addEventListener('submit', async function(evt){
+          evt.preventDefault();
+          if (!claimInput) return;
+          var value = claimInput.value.trim();
+          if (!value) {
+            setStatus('Enter a claim to evaluate.', 'warn');
+            return;
+          }
+          setStatus('Running evaluation…', 'info');
+          toggleLoading(true, value);
+          if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Checking…';
+          }
+          var response = null;
+          try {
+            var payload = { claim: value };
+            if (params.get('mock') === '1') {
+              payload.mock = true;
+            }
+            response = await fetch(apiBase + '/api/checks/run', {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify(payload),
+            });
+            if (response.ok) {
+              var data = await response.json();
+              renderResult(data);
+              renderUsage(data);
+              setStatus('All set! Scroll down to see the result.', 'info');
+            } else if (response.status === 402) {
+              var detail = await response.json().catch(function(){ return {}; });
+              var reason = detail.reason || (detail.detail && detail.detail.reason) || detail.detail || '';
+              if (reason === 'require_signin') {
+                setStatus('Sign up or sign in to keep reading new claims.', 'warn');
+                signInStatus.textContent = '';
+                openModal(signInModal);
+              } else if (reason === 'require_subscription' || reason === 'limit_reached') {
+                setStatus('You’ve used your free checks—choose a plan to continue.', 'warn');
+                openPlanModal(detail.plan || detail.usage_plan || 'starter');
+              } else {
+                setStatus('Usage limit reached. Try again later.', 'warn');
+              }
+              fetchMe();
+            } else {
+              var errPayload = await response.json().catch(function(){ return {}; });
+              var message = errPayload.detail || ('Request failed (' + response.status + ')');
+              setStatus(message, 'error');
+            }
+          } catch (err) {
+            console.error(err);
+            setStatus('Unable to reach the API. Check your connection and try again.', 'error');
+          } finally {
+            if (submitBtn) {
+              submitBtn.disabled = false;
+              submitBtn.textContent = originalBtnText;
+            }
+            toggleLoading(false);
+            if (response && !response.ok) {
+              resetResultsView();
+            }
+          }
+        });
+      }
+
+      document.querySelectorAll('.example-pill').forEach(function(btn){
+        btn.addEventListener('click', function(){
+          if (!claimInput) return;
+          var example = btn.getAttribute('data-example');
+          if (example) {
+            claimInput.value = example;
+            claimInput.focus();
+          }
+        });
+      });
+
+      var yearSpan = document.getElementById('year');
+      if (yearSpan) {
+        yearSpan.textContent = new Date().getFullYear();
+      }
+
+      if (!isLocalHarness) {
+        fetchMe();
+      }
+    })();
+
+    function buildVerdict(prob) {
+      var value = typeof prob === 'number' ? prob : 0.5;
+      if (value >= 0.6) {
+        return {
+          title: 'Likely true',
+          headline: 'Why it’s likely true',
+          text: 'GPT‑5 leans toward this claim being true based on its training data.'
+        };
+      }
+      if (value <= 0.4) {
+        return {
+          title: 'Likely false',
+          headline: 'Why it’s likely false',
+          text: 'GPT‑5 leans toward this claim being false based on its training data.'
+        };
+      }
+      return {
+        title: 'Uncertain',
+        headline: 'Why it’s uncertain',
+        text: 'GPT‑5 did not express a strong prior either way; responses were mixed.'
+      };
+    }
+
+    function buildReasons(probability) {
+      var value = typeof probability === 'number' ? probability : 0.5;
+      if (value >= 0.6) {
+        return [
+          'GPT‑5 has seen many supporting examples in its training data.',
+          'Typical definitions and historical references line up with the claim.',
+          'Counterexamples are rare compared to supporting evidence in its corpus.'
+        ];
+      }
+      if (value <= 0.4) {
+        return [
+          'GPT‑5’s training data contains many instances that contradict the claim.',
+          'Common usage and reference materials point the other way.',
+          'Supporting anecdotes are outweighed by counterexamples it has seen.'
+        ];
+      }
+      return [
+        'GPT‑5 finds mixed signals in its training data.',
+        'It depends on definitions or missing context.',
+        'Supporting and opposing examples appear in roughly equal measure.'
+      ];
+    }
+
+    function buildSummary(data) {
+      var parts = [];
+      if (data.claim) {
+        parts.push('Claim: "' + data.claim + '"');
+      }
+      if (data.verdict && data.percent) {
+        parts.push('Verdict: ' + data.verdict + ' (' + data.percent + ')');
+      }
+      var reasons = Array.isArray(data.reasons) ? data.reasons.filter(Boolean) : [];
+      if (reasons.length) {
+        parts.push('Reasons:');
+        reasons.forEach(function(r){ parts.push('- ' + r); });
+      }
+      if (data.modelText) {
+        parts.push('Model: ' + data.modelText);
+      }
+      return parts.join('\n');
+    }
+
+    function fallbackCopy(text) {
+      var textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'absolute';
+      textarea.style.left = '-9999px';
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        document.execCommand('copy');
+      } catch (err) {}
+      document.body.removeChild(textarea);
+      if (resultCopyButton) {
+        resultCopyButton.textContent = 'Summary copied!';
+        setTimeout(function(){ resultCopyButton.textContent = 'Copy summary'; }, 2000);
+      }
     }
   </script>
 </body>

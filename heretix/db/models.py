@@ -12,6 +12,8 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    BigInteger,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -36,6 +38,9 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(320), nullable=False, unique=True)
     plan: Mapped[str] = mapped_column(String(32), nullable=False, default="trial")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    stripe_customer_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    stripe_subscription_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    billing_anchor: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -107,13 +112,14 @@ class Check(Base):  # noqa: D401 - simple data container
     claim_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     model: Mapped[str] = mapped_column(String(64), nullable=False)
     prompt_version: Mapped[str] = mapped_column(String(64), nullable=False)
-    k: Mapped[int] = mapped_column("K", Integer, nullable=False)
-    r: Mapped[int] = mapped_column("R", Integer, nullable=False)
-    t: Mapped[Optional[int]] = mapped_column("T", Integer, nullable=True)
-    b: Mapped[Optional[int]] = mapped_column("B", Integer, nullable=True)
-    seed: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    bootstrap_seed: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    max_output_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    k: Mapped[int] = mapped_column("K", BigInteger, nullable=False)
+    r: Mapped[int] = mapped_column("R", BigInteger, nullable=False)
+    t: Mapped[Optional[int]] = mapped_column("T", BigInteger, nullable=True)
+    b: Mapped[Optional[int]] = mapped_column("B", BigInteger, nullable=True)
+    # Allow deterministic seeds that exceed signed 64-bit range
+    seed: Mapped[Optional[int]] = mapped_column(Numeric(20, 0), nullable=True)
+    bootstrap_seed: Mapped[Optional[int]] = mapped_column(Numeric(20, 0), nullable=True)
+    max_output_tokens: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     prob_true_rpl: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     ci_lo: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     ci_hi: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
@@ -135,6 +141,7 @@ class Check(Base):  # noqa: D401 - simple data container
     pqs_version: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     was_cached: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     provider_model_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    anon_token: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -146,6 +153,7 @@ class Check(Base):  # noqa: D401 - simple data container
         Index("ix_checks_user_id", "user_id"),
         Index("ix_checks_env", "env"),
         Index("ix_checks_claim_hash", "claim_hash"),
+        Index("ix_checks_env_anon_token", "env", "anon_token"),
     )
 
 
@@ -159,8 +167,8 @@ class UsageLedger(Base):
     period_start: Mapped[date] = mapped_column(Date, nullable=False)
     period_end: Mapped[date] = mapped_column(Date, nullable=False)
     plan: Mapped[str] = mapped_column(String(32), nullable=False)
-    checks_allowed: Mapped[int] = mapped_column(Integer, nullable=False)
-    checks_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    checks_allowed: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    checks_used: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
@@ -196,4 +204,15 @@ class ResultCache(Base):
     __table_args__ = (
         Index("ix_result_cache_env", "env"),
         Index("ix_result_cache_user", "user_id"),
+    )
+
+
+class AnonymousUsage(Base):
+    __tablename__ = "anonymous_usage"
+
+    token: Mapped[str] = mapped_column(String(64), primary_key=True)
+    checks_allowed: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    checks_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
