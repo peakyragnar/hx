@@ -885,6 +885,9 @@
 
       function resetResultsView() {
         document.body.classList.remove('results-mode');
+        if (claimInput) {
+          claimInput.value = '';
+        }
         if (resultCard) {
           resultCard.classList.add('hidden');
         }
@@ -936,8 +939,8 @@
         resultNewButton.addEventListener('click', function(){
           resetResultsView();
           if (claimInput) {
+            claimInput.value = '';
             claimInput.focus();
-            claimInput.select();
           }
         });
       }
