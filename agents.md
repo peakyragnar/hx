@@ -174,6 +174,7 @@ Notes & Known Gaps (Roadmap)
 - Future lenses (MEL/HEL/SEL) and telemetry (DE/HDI) are planned; do not stub them into the CLI until approved
 
 References
+- Documentation index: documentation/README.md
 - How to run (end‑to‑end): documentation/how-to-run.md
 - Configuration details: documentation/configuration.md
 - SQLite tips and queries: documentation/sqlite.md

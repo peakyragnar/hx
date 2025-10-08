@@ -1,3 +1,8 @@
+<!--
+ARCHIVAL NOTE:
+This document describes the legacy `heretix-rpl` CLI that shipped before the Phase-1 harness.
+Keep for historical reference only; the active commands live under `uv run heretix ...`.
+-->
 
 •	openai = official SDK (Responses API)
 •	pydantic = optional local validation
@@ -296,3 +301,8 @@ Clustered aggregation is the default (and statistically correct) method that fix
   5. CI Alignment: Same tests run locally and in CI
 
   The hooks ensure statistical correctness is verified at every stage without slowing down development!
+<!--
+ARCHIVAL NOTE:
+This document describes the legacy `heretix-rpl` CLI that shipped before the Phase-1 harness.
+Keep for historical reference only; the active commands live under `uv run heretix ...`.
+-->
