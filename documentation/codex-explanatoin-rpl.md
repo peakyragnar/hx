@@ -2,29 +2,19 @@ Here’s a concise, end-to-end map of the repo and how it all fits together.
 
 What It Does
 
-- Raw Prior Lens (RPL): Elicits a model’s belief P(true) for a claim using only internal knowledge (no retrieval), then aggregates K×R samples into a
-robust prior with CI and stability.
-- Robustness: Neutralizes paraphrase wording effects and decode stochasticity via equal-by-template weighting, trimmed center, and cluster bootstrap
-with deterministic seeding.
+- Raw Prior Lens (RPL): Elicits a model’s belief P(true) for a claim using only internal knowledge (no retrieval), then aggregates K×R samples into a robust prior with CI and stability.
+- Robustness: Neutralizes paraphrase wording effects and decode stochasticity via equal-by-template weighting, trimmed center, and cluster bootstrap with deterministic seeding.
 - Provenance: Logs prompt version and model IDs to handle provider drift; outputs full diagnostics.
 
-Key Files
+Key Files (Phase‑1 harness)
 
-- heretix_rpl/cli.py: Typer CLI. Validates env, runs evaluate_rpl, saves JSON, prints summary. Script entry: heretix-rpl.
-- heretix_rpl/rpl_eval.py: Core RPL engine (GPT‑5 Responses API).
-    - K paraphrases × R replicates; collects per-call prob_true.
-    - Clusters results by prompt_sha256 (template identity).
-    - Derives deterministic bootstrap_seed (or HERETIX_RPL_SEED override).
-    - Selects aggregator (clustered default; simple legacy).
-    - Computes CI (logit space), stability (IQR on template means), flags stability by CI width.
-- heretix_rpl/aggregation.py: Statistical core.
-    - aggregate_clustered: Equal-by-template, 20% trimmed center, cluster bootstrap, deterministic RNG.
-    - aggregate_simple: Mean + unclustered bootstrap (for comparison).
-- heretix_rpl/rpl_prompts.py: System rules, user template, 5 paraphrases, PROMPT_VERSION.
-- heretix_rpl/rpl_schema.py: Strict schema for JSON outputs: prob_true, confidence_self, arrays for reasoning and ambiguity.
-- heretix_rpl/seed.py: Deterministic 64‑bit seed from run config (claim, model, prompt_version, K, R, B, center, trim, template hashes).
-- heretix_rpl/metrics.py: Calibrated stability mapping from IQR (1/(1+(IQR/s)^α)) and categorical bands.
-- pyproject.toml: uv-based project; script heretix-rpl; deps include openai, numpy, typer, jsonschema.
+- heretix/cli.py: Typer CLI entry for `heretix run`/`heretix describe`; handles config loading, prompt overrides, artifact persistence.
+- heretix/rpl.py: End-to-end runner that orchestrates sampling, cache hits, aggregation, and DB writes.
+- heretix/sampler.py: Balanced rotation sampler for paraphrase templates (K, R, T planning).
+- heretix/aggregate.py: Statistical core implementing equal-by-template weighting, 20% trim (T≥5), cluster bootstrap.
+- heretix/prompts/rpl_g5_v2.yaml: System rules, schema, paraphrase bank, and `version` string for provenance.
+- heretix/seed.py, heretix/metrics.py, heretix/storage.py, heretix/cache.py: Seed derivation, stability metrics, SQLite schema helpers, and cache key utilities supporting the harness.
+- pyproject.toml: uv-based project definition; installs CLI as `heretix`.
 
 How RPL Works (GPT‑5)
 
@@ -44,18 +34,18 @@ How RPL Works (GPT‑5)
 
 CLI Usage
 
-- Example: uv run heretix-rpl --claim "tariffs don't cause inflation" --k 7 --r 3 --agg clustered
-- Env:
-    - OPENAI_API_KEY required.
-    - Optional HERETIX_RPL_SEED to fix bootstrap sequence.
-    - Configurable thresholds via:
-    - `HERETIX_RPL_MIN_SAMPLES`, `HERETIX_RPL_TRIM`, `HERETIX_RPL_B_CLUSTERED`, `HERETIX_RPL_B_SIMPLE`, `HERETIX_RPL_STABILITY_WIDTH`.
+- Example: `uv run heretix run --config runs/rpl_example.yaml --out runs/rpl.json`
+- Options:
+    - `--mock` enables the deterministic provider stub (no network).
+    - `--prompt-version` accepts one or many overrides for A/B runs.
+    - `--dry-run` prints the sampling plan without calling the provider or writing to the DB.
+- Environment:
+    - `OPENAI_API_KEY` required for live runs; skipped when `--mock` or `HERETIX_MOCK=1`.
+    - `HERETIX_RPL_SEED` fixes bootstrap order (deterministic CI widths).
+    - `HERETIX_CONCURRENCY` bounds parallel provider calls; `HERETIX_DB_PATH` overrides the SQLite location.
 - Output highlights:
-    - aggregates.prob_true_rpl: robust prior estimate.
-    - aggregates.ci95, ci_width, stability_score, stability_band, is_stable.
-    - aggregation: method, B, center, trim, bootstrap_seed, counts per template, imbalance ratio, template IQR.
-    - paraphrase_results: per-sample JSON + meta + indices.
-    - raw_logits: sample logits.
+    - `runs/<name>.json`: aggregates (prob_true_rpl, ci95, width, stability, compliance, cache).
+    - `runs/heretix.sqlite`: `runs`, `samples`, `executions`, and `execution_samples` tables keyed by deterministic `run_id`.
 
 Design Invariants
 
@@ -73,13 +63,13 @@ parsing required.
 
 Tests (comprehensive, fast + slow)
 
-- tests/… covers:
+- `heretix/tests` covers:
     - Transforms: _logit, _sigmoid invertibility, bounds, monotonicity.
     - Aggregation: equal-by-template invariance, trimming behavior, CI properties, deterministic RNG.
     - Seed: deterministic generation and propagation to bootstrap CIs.
     - Stability: calibrated mapping semantics and robustness to outliers.
-    - E2E: pipeline with mocked API; configuration propagation; agg selection; partial failure handling.
-- Runner: ./run_tests.sh (supports fast/slow/coverage), uv-aware.
+    - E2E: pipeline with mocked API; configuration propagation; aggregation selection; partial failure handling.
+- Runner: `uv run pytest -q` (or `./run_tests.sh` wrappers); defaults to Phase‑1 harness tests.
 
 Docs You Asked About
 

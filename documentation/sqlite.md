@@ -1,5 +1,30 @@
 SQLite basics
 
+DB Tables
+
+- runs: One row per unique run_id (claim+model+prompt_version+K/R digest). Stores aggregates (prob_true_rpl, ci_lo/hi, ci_width, stability_score), config
+JSON, sampler JSON, counts_by_template_json, bootstrap_seed, and artifact_json_path.
+- samples: One row per sample attempt (PRIMARY KEY cache_key). Includes run_id, prompt_sha256, paraphrase_idx, replicate_idx, prob_true, logit, provider
+ids, json_valid (1 if strict JSON and no URLs). Foreign key to runs.
+- executions: Immutable snapshot per invocation. Multiple executions can point to the same run_id (e.g., re-runs with cache). Duplicates the headline
+metrics at the moment of execution and records prompt_char_len_max.
+- execution_samples: Link table mapping an execution_id to the exact samples.cache_key rows used (valid/compliant only), giving full provenance for that
+invocation.
+
+Relations/Indexes
+
+- Keys: runs.run_id (PK), samples.cache_key (PK), executions.execution_id (PK), execution_samples (execution_id, cache_key) (PK).
+- FKs: samples.run_id → runs.run_id, executions.run_id → runs.run_id, execution_samples.cache_key → samples.cache_key.
+- Indexes: idx_runs_prompt_model, idx_samples_run, idx_exec_run for fast lookups.
+
+
+
+
+
+
+
+
+
 - Show 5 samples for the last run JSON file:
     - sqlite3 -header -column runs/heretix.sqlite "SELECT run_id,prompt_sha256,paraphrase_idx,replicate_idx,prob_true,logit,json_valid FROM samples WHERE
 run_id='$(jq -r '.runs[0].run_id' runs/k12_r3_mock_v2.json)' LIMIT 5;"
