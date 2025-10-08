@@ -90,7 +90,7 @@ def ensure_anon_token(request: Request, response: Response) -> str:
     return token
 
 
-@app.get("/healthz", tags=["system"])
+@app.api_route("/healthz", methods=["GET", "HEAD"], tags=["system"])
 def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
