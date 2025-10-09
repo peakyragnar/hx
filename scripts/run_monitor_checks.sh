@@ -30,4 +30,9 @@ if ! "${ROOT_DIR}/scripts/check_postmark.sh" >> "${LOG_FILE}" 2>&1; then
   exit 2
 fi
 
+if ! uv run python scripts/check_openai.py >> "${LOG_FILE}" 2>&1; then
+  log "OpenAI heartbeat FAILED"
+  exit 3
+fi
+
 log "Monitor checks passed"

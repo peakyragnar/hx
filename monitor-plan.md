@@ -48,6 +48,7 @@ We keep the Elon-style bias for minimal tooling: smallest surface that still tel
 
 - `scripts/check_db_health.py`: connects to Neon via `DATABASE_URL_PROD` (or `DATABASE_URL`) and prints counts for `checks`, `result_cache`, and `usage_ledger`.
 - `scripts/check_postmark.sh`: HEAD-style heartbeat against Postmark using `POSTMARK_TOKEN`.
+- `scripts/check_openai.py`: fetches OpenAI model metadata (default `gpt-5`) using `OPENAI_API_KEY`.
 - `scripts/run_monitor_checks.sh`: convenience wrapper that sources `.env.monitor` (if present), runs both checks, and appends output to `runs/monitoring/monitor.log`. Exit code is non-zero if either check fails—perfect for cron/UptimeRobot.
 
 ### Suggested Cron (macOS/Linux)
@@ -55,6 +56,8 @@ We keep the Elon-style bias for minimal tooling: smallest surface that still tel
    ```
    DATABASE_URL_PROD=postgresql://user:pass@host/db?sslmode=require
    POSTMARK_TOKEN=server-token
+   OPENAI_API_KEY=sk-live...
+   HERETIX_OPENAI_HEALTH_MODEL=gpt-5  # optional override
    ```
 2. Add cron entry (`crontab -e`):
    ```

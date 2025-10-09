@@ -16,7 +16,7 @@ This is the quick reference for what’s deployed, how we watch it, and how to v
 - **Verification:** `curl -s -o /dev/null -w "%{http_code}" https://api.heretix.ai/healthz`.
 
 ## 3. Provider Failure Signals
-- **OpenAI/GPT-5:** No automated probe; failures surface via CLI/UI logs. (Future: add provider health heartbeat if needed.)
+- **OpenAI/GPT-5:** `scripts/check_openai.py` hits `https://api.openai.com/v1/models/<model>` (default `gpt-5`) with `OPENAI_API_KEY`. Runs via cron wrapper; logs `openai_model=<id> status=ok`.
 - **Postmark (magic links):** 
   - Manual subscription to https://status.postmarkapp.com (email alerts).
   - Local heartbeat script `scripts/check_postmark.sh` (invoked via cron and wrapper).
@@ -53,6 +53,8 @@ This is the quick reference for what’s deployed, how we watch it, and how to v
   ```
   DATABASE_URL_PROD=postgresql://...
   POSTMARK_TOKEN=...
+  OPENAI_API_KEY=...
+  HERETIX_OPENAI_HEALTH_MODEL=gpt-5    # optional override
   ```
 - Permissions set to `chmod 600` (recommended).
 
@@ -61,6 +63,7 @@ This is the quick reference for what’s deployed, how we watch it, and how to v
 - `crontab -l`: confirm schedule exists.
 - `uv run python scripts/check_db_health.py`: ad-hoc DB health check.
 - `POSTMARK_TOKEN=... scripts/check_postmark.sh`: ad-hoc Postmark heartbeat.
+- `OPENAI_API_KEY=... uv run python scripts/check_openai.py`: ad-hoc OpenAI probe.
 
 ## 8. Next Monitoring Upgrades (optional)
 - Add notifier (mail/Slack) when `scripts/run_monitor_checks.sh` exits non-zero.
