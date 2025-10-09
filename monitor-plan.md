@@ -44,6 +44,24 @@ We keep the Elon-style bias for minimal tooling: smallest surface that still tel
    - Confirm GitHub branch protection (main requires PR + CI).
    - Add quarterly calendar reminder to rotate OPENAI_API_KEY, Neon credentials, and review Render audit logs.
 
+## Automation Helpers
+
+- `scripts/check_db_health.py`: connects to Neon via `DATABASE_URL_PROD` (or `DATABASE_URL`) and prints counts for `checks`, `result_cache`, and `usage_ledger`.
+- `scripts/check_postmark.sh`: HEAD-style heartbeat against Postmark using `POSTMARK_TOKEN`.
+- `scripts/run_monitor_checks.sh`: convenience wrapper that sources `.env.monitor` (if present), runs both checks, and appends output to `runs/monitoring/monitor.log`. Exit code is non-zero if either check fails—perfect for cron/UptimeRobot.
+
+### Suggested Cron (macOS/Linux)
+1. Create `.env.monitor` at repo root:
+   ```
+   DATABASE_URL_PROD=postgresql://user:pass@host/db?sslmode=require
+   POSTMARK_TOKEN=server-token
+   ```
+2. Add cron entry (`crontab -e`):
+   ```
+   */30 * * * * cd /Users/michael/Heretix && /Users/michael/Heretix/scripts/run_monitor_checks.sh || mail -s "Heretix monitor failure" you@example.com
+   ```
+   Adjust cadence, path, and notification channel as desired.
+
 ## Operating Cadence
 
 - **Daily** — Review any uptime or error alerts; scan Run database count from automated report.
