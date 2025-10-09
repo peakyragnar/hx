@@ -7,8 +7,10 @@ LOG_DIR="${ROOT_DIR}/runs/monitoring"
 TIMESTAMP="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 
 if [[ -f "${ENV_FILE}" ]]; then
-  # shellcheck disable=SC1090
+  # shellcheck disable=SC1090,SC2163
+  set -a
   source "${ENV_FILE}"
+  set +a
 fi
 
 mkdir -p "${LOG_DIR}"
