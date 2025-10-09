@@ -5,10 +5,13 @@ import sys
 from contextlib import closing
 from typing import Iterable, Tuple
 
-import psycopg
-
 
 def main() -> int:
+    try:
+        import psycopg  # type: ignore
+    except ModuleNotFoundError:
+        print("ERROR: psycopg not available (install dependency)", file=sys.stderr)
+        return 1
     url = os.getenv("DATABASE_URL_PROD") or os.getenv("DATABASE_URL")
     if not url:
         print("DATABASE_URL_PROD or DATABASE_URL must be set", file=sys.stderr)

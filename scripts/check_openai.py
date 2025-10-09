@@ -4,7 +4,10 @@ import json
 import os
 import sys
 
-import httpx
+try:
+    import httpx
+except ModuleNotFoundError:  # pragma: no cover
+    httpx = None  # type: ignore
 
 
 OPENAI_DEFAULT_MODEL = "gpt-5"
@@ -14,6 +17,10 @@ def main() -> int:
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         print("OPENAI_API_KEY not set", file=sys.stderr)
+        return 1
+
+    if httpx is None:
+        print("ERROR: httpx not installed (required for OpenAI health check)", file=sys.stderr)
         return 1
 
     model = os.getenv("HERETIX_OPENAI_HEALTH_MODEL", OPENAI_DEFAULT_MODEL)
