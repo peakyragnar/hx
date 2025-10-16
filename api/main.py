@@ -33,6 +33,10 @@ from .schemas import (
     RunRequest,
     RunResponse,
     SamplingInfo,
+    PriorBlock,
+    WebEvidence,
+    CombinedResult,
+    WeightInfo,
 )
 from heretix.db.models import Check, User
 from .usage import ANON_PLAN, get_usage_state, increment_usage
@@ -43,6 +47,7 @@ from .billing import (
     handle_subscription_deleted,
     handle_subscription_updated,
 )
+from heretix_api.routes_checks import evaluate_web_informed
 
 app = FastAPI(title="Heretix API", version="0.1.0")
 
@@ -107,6 +112,10 @@ def run_check(
     if not claim:
         raise HTTPException(status_code=422, detail="claim must not be empty")
 
+    mode = (payload.mode or "baseline").lower()
+    if mode not in {"baseline", "web_informed"}:
+        raise HTTPException(status_code=400, detail="mode must be 'baseline' or 'web_informed'")
+
     anon_token: str | None = None
     if not user:
         anon_token = ensure_anon_token(request, response)
@@ -155,6 +164,39 @@ def run_check(
 
     now = datetime.now(timezone.utc)
 
+    prior_p = float(aggregates.get("prob_true_rpl") or 0.0)
+    prior_ci = [
+        float(ci95[0]) if ci95 and ci95[0] is not None else 0.0,
+        float(ci95[1]) if ci95 and ci95[1] is not None else 0.0,
+    ]
+    prior_block_payload = {
+        "p": prior_p,
+        "ci95": prior_ci,
+        "stability": stability_score,
+    }
+    web_block_payload: dict[str, object] | None = None
+    combined_block_payload: dict[str, float] | None = None
+    weights_payload: dict[str, float] | None = None
+    wel_provenance: dict[str, object] | None = None
+
+    if mode == "web_informed":
+        try:
+            web_block_payload, combined_block_payload, weights_payload, wel_provenance = evaluate_web_informed(
+                claim=claim,
+                prior={"p": prior_p, "ci95": prior_ci},
+                provider=settings.wel_provider,
+                model=settings.wel_model,
+                k_docs=settings.wel_docs,
+                replicates=settings.wel_replicates,
+                per_domain_cap=settings.wel_per_domain_cap,
+                recency_days=settings.wel_recency_days,
+                seed=payload.seed,
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"web evaluation failed: {exc}") from exc
+
     counts_json = json.dumps(aggregation.get("counts_by_template", {}))
     config_json = json.dumps(
         {
@@ -169,6 +211,7 @@ def run_check(
             "max_output_tokens": cfg.max_output_tokens,
             "no_cache": cfg.no_cache,
             "prompt_file": str(prompt_file),
+            "mode": mode,
         }
     )
 
@@ -179,9 +222,11 @@ def run_check(
     claim_hash = hashlib.sha256(claim.encode("utf-8")).hexdigest()
 
     bootstrap_seed_val = aggregation.get("bootstrap_seed")
+    explanation_prob = combined_block_payload["p"] if combined_block_payload else prior_p
+
     verdict_label, verdict_text, explanation_headline, explanation_text, explanation_reasons = build_explanation(
         claim=claim,
-        prob=aggregates.get("prob_true_rpl"),
+        prob=explanation_prob,
         cfg=cfg,
         prompt_file=prompt_file,
         use_mock=use_mock,
@@ -234,6 +279,46 @@ def run_check(
         check.gate_stability_ok = gate_stability_ok
         check.gate_precision_ok = gate_precision_ok
         check.pqs_version = None
+        check.mode = mode
+        check.p_prior = prior_p
+        check.ci_prior_lo = prior_ci[0]
+        check.ci_prior_hi = prior_ci[1]
+        check.stability_prior = stability_score
+        if web_block_payload:
+            evidence = web_block_payload["evidence"]
+            check.p_web = float(web_block_payload["p"])
+            check.ci_web_lo = float(web_block_payload["ci95"][0])
+            check.ci_web_hi = float(web_block_payload["ci95"][1])
+            check.n_docs = int(evidence.get("n_docs", 0))
+            check.n_domains = int(evidence.get("n_domains", 0))
+            check.median_age_days = float(evidence.get("median_age_days", 0.0))
+            check.web_dispersion = float(evidence.get("dispersion", 0.0))
+            check.json_valid_rate = float(evidence.get("json_valid_rate", 0.0))
+        else:
+            check.p_web = None
+            check.ci_web_lo = None
+            check.ci_web_hi = None
+            check.n_docs = None
+            check.n_domains = None
+            check.median_age_days = None
+            check.web_dispersion = None
+            check.json_valid_rate = None
+        if combined_block_payload:
+            check.p_combined = float(combined_block_payload["p"])
+            check.ci_combined_lo = float(combined_block_payload["ci95"][0])
+            check.ci_combined_hi = float(combined_block_payload["ci95"][1])
+        else:
+            check.p_combined = None
+            check.ci_combined_lo = None
+            check.ci_combined_hi = None
+        if weights_payload:
+            check.w_web = float(weights_payload["w_web"])
+            check.recency_score = float(weights_payload["recency"])
+            check.strength_score = float(weights_payload["strength"])
+        else:
+            check.w_web = None
+            check.recency_score = None
+            check.strength_score = None
         check.was_cached = cache_hit_rate >= 0.999
         check.provider_model_id = result.get("model", cfg.model)
         check.anon_token = anon_token if not user else None
@@ -260,6 +345,19 @@ def run_check(
             session.rollback()
             used_after = usage_state.checks_used
             remaining_after = max(checks_allowed - used_after, 0) if checks_allowed else None
+
+    prior_block_model = PriorBlock(**prior_block_payload)
+    web_block_model = WebEvidence(**web_block_payload) if web_block_payload else None
+    combined_block_model = CombinedResult(**combined_block_payload) if combined_block_payload else None
+    weights_model = WeightInfo(**weights_payload) if weights_payload else None
+    provenance_payload: dict[str, object] = {
+        "rpl": {
+            "prompt_version": result.get("prompt_version", cfg.prompt_version),
+            "model": result.get("model", cfg.model),
+        }
+    }
+    if wel_provenance:
+        provenance_payload["wel"] = wel_provenance
 
     return RunResponse(
         execution_id=result.get("execution_id"),
@@ -291,6 +389,12 @@ def run_check(
         explanation_headline=explanation_headline,
         explanation_text=explanation_text,
         explanation_reasons=explanation_reasons,
+        mode=mode,
+        prior=prior_block_model,
+        web=web_block_model,
+        combined=combined_block_model,
+        weights=weights_model,
+        provenance=provenance_payload,
     )
 
 

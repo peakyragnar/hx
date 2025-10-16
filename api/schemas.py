@@ -7,6 +7,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 class RunRequest(BaseModel):
     claim: str = Field(..., min_length=1, description="The claim to evaluate")
+    mode: Optional[str] = Field("baseline", description="Evaluation mode: baseline or web_informed")
     model: Optional[str] = Field(None, description="Override model id")
     prompt_version: Optional[str] = Field(None, description="Override prompt version")
     K: Optional[int] = Field(None, ge=1)
@@ -48,6 +49,29 @@ class SamplingInfo(BaseModel):
     T: Optional[int]
 
 
+class PriorBlock(BaseModel):
+    p: float
+    ci95: List[float]
+    stability: Optional[float] = None
+
+
+class WebEvidence(BaseModel):
+    p: float
+    ci95: List[float]
+    evidence: Dict[str, float]
+
+
+class CombinedResult(BaseModel):
+    p: float
+    ci95: List[float]
+
+
+class WeightInfo(BaseModel):
+    w_web: float
+    recency: float
+    strength: float
+
+
 class RunResponse(BaseModel):
     execution_id: str
     run_id: str
@@ -67,6 +91,12 @@ class RunResponse(BaseModel):
     explanation_headline: Optional[str] = None
     explanation_text: Optional[str] = None
     explanation_reasons: Optional[List[str]] = None
+    mode: str = "baseline"
+    prior: Optional[PriorBlock] = None
+    web: Optional[WebEvidence] = None
+    combined: Optional[CombinedResult] = None
+    weights: Optional[WeightInfo] = None
+    provenance: Optional[Dict[str, object]] = None
 
 
 class MagicLinkPayload(BaseModel):

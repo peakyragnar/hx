@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     stripe_portal_config: Optional[str] = Field(None, alias="STRIPE_PORTAL_CONFIG")
     stripe_portal_return_path: str = Field("/", alias="STRIPE_PORTAL_RETURN_PATH")
     prompts_dir: Optional[Path] = Field(None, alias="RPL_PROMPTS_DIR")
+    wel_provider: str = Field("tavily", alias="WEL_PROVIDER")
+    wel_model: str = Field("gpt-5", alias="WEL_MODEL")
+    wel_docs: int = Field(16, alias="WEL_DOCS")
+    wel_replicates: int = Field(2, alias="WEL_REPLICATES")
+    wel_per_domain_cap: int = Field(3, alias="WEL_PER_DOMAIN_CAP")
+    wel_recency_days: Optional[int] = Field(14, alias="WEL_RECENCY_DAYS")
 
     class Config:
         env_file = ".env"

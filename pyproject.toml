@@ -7,6 +7,8 @@ requires-python = ">=3.10"
 dependencies = [
     "numpy>=1.26",
     "openai>=1.40",
+    "requests>=2.32",
+    "tldextract>=5.1",
     "pydantic>=2.6",
     "pydantic-settings>=2.5",
     "email-validator>=2.2",
@@ -40,7 +42,7 @@ dev = [
 heretix = "heretix.cli:app"
 
 [tool.setuptools.packages.find]
-include = ["heretix*"]
+include = ["heretix*", "heretix_wel*", "heretix_api*"]
 exclude = ["legacy*", "heretix_rpl*", "heretix_promptstudio*", "runs*", "tests*"]
 
 [tool.uv]
