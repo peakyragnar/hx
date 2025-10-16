@@ -19,7 +19,7 @@ WEL augments the Raw Prior Lens (RPL) by pulling web evidence, adjudicating each
 | Module | Purpose |
 |--------|---------|
 | `heretix_wel/providers/tavily.py` | Fetch top documents (URL, title, snippet). |
-| `heretix_wel/date_extract.py` | Download page HTML and extract publish dates (JSON-LD, OpenGraph, `<time>`, URL patterns, body heuristics, headers). Provides confidence scores. |
+| `heretix_wel/date_extract.py` | Download page HTML, extract publish dates (JSON-LD, OpenGraph, `<time>`, URL patterns, body heuristics, headers), and cache a trimmed article body (`Doc.page_text`) for downstream use. Provides confidence scores. |
 | `heretix_wel/claim_parse.py` | Lightweight parser to classify relation families (identity, event outcome, etc.) and detect time sensitivity. |
 | `heretix_wel/doc_verdict.py` | Runs a quote-required LLM prompt to classify each document’s stance and extract a supporting quote/value. |
 | `heretix_wel/resolved_engine.py` | Weights evidence and decides whether the claim is resolved. Returns truth, support/contradict scores, and citations. |
@@ -40,13 +40,13 @@ WEL augments the Raw Prior Lens (RPL) by pulling web evidence, adjudicating each
 
 2. **Enrich Publish Dates**  
    `enrich_docs_with_publish_dates` downloads each page, extracts timestamps (JSON-LD → OG → `<time>` → URL → body heuristics → headers).  
-   Stores `published_at`, detection method, confidence (0–1).
+   Stores `published_at`, detection method, confidence (0–1), and a trimmed `page_text` (used by the resolver).
 
 3. **Claim Classification**  
    `parse_claim` identifies relation family, explicit years, and time stance (future/past, present). Used by the resolver to decide if the claim should be resolvable today.
 
 4. **Attempt Resolution**  
-   - `try_resolve_fact` runs per-doc quote-required prompts (`evaluate_doc`).
+   - `try_resolve_fact` runs per-doc quote-required prompts (`evaluate_doc`) on the cached article text (`page_text` fallback to snippet/title).
    - Each doc returns `stance` (support/contradict/unclear), a verbatim quote, and field/value.
    - Votes are weighted (domain weight + recency + quote bonus).
    - If support ≥ 2.0, contradict ≤ 0.5, and ≥ 2 distinct domains → Resolved True.  
