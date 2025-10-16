@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Iterable, List, Optional, Union
 
 import requests
@@ -37,18 +38,35 @@ class TavilyRetriever:
         raw = value.strip()
         if not raw:
             return None
-        iso_guess = raw.replace("Z", "+00:00")
+        iso_guess = raw.replace("Z", "+00:00").replace("UTC", "+00:00")
         try:
             dt = datetime.fromisoformat(iso_guess)
             return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
         except ValueError:
             pass
+        try:
+            dt = parsedate_to_datetime(raw)
+            if dt.tzinfo:
+                return dt.astimezone(timezone.utc)
+            return dt.replace(tzinfo=timezone.utc)
+        except (TypeError, ValueError):
+            pass
         known_formats = [
+            "%Y-%m-%dT%H:%M:%S.%f%z",
+            "%Y-%m-%dT%H:%M:%S%z",
+            "%Y-%m-%dT%H:%M:%S.%f",
+            "%Y-%m-%d %H:%M:%S%z",
             "%Y-%m-%d %H:%M:%S",
             "%Y-%m-%d",
             "%Y/%m/%d",
             "%a, %d %b %Y %H:%M:%S %Z",
             "%a, %d %b %Y %H:%M:%S %z",
+            "%b %d, %Y",
+            "%B %d, %Y",
+            "%b %d %Y",
+            "%B %d %Y",
+            "%d %b %Y",
+            "%d %B %Y",
         ]
         for fmt in known_formats:
             try:
