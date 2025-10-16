@@ -120,6 +120,12 @@ class TavilyRetriever:
             snippet_raw = item.get("content") or item.get("snippet") or ""
             snippet = normalize_snippet_text(snippet_raw)[:1200]
             published_at = self._extract_timestamp(item)
+            if published_at:
+                published_method = "retriever"
+                published_confidence = 0.8
+            else:
+                published_method = None
+                published_confidence = 0.0
             results.append(
                 Doc(
                     url=url,
@@ -127,6 +133,8 @@ class TavilyRetriever:
                     snippet=snippet,
                     domain=self._domain(url),
                     published_at=published_at,
+                    published_method=published_method,
+                    published_confidence=published_confidence,
                 )
             )
         return results

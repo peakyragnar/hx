@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Dict, List
@@ -33,15 +34,15 @@ def cap_per_domain(docs: List[Doc], max_per_domain: int = 3) -> List[Doc]:
     return result
 
 
-def median_age_days(docs: List[Doc]) -> float:
+def median_age_days(docs: List[Doc], min_confidence: float = 0.0) -> float:
     now = datetime.now(timezone.utc)
     ages = []
     for doc in docs:
-        if doc.published_at:
+        if doc.published_at and doc.published_confidence >= min_confidence:
             delta = (now - doc.published_at).total_seconds() / 86400.0
             ages.append(max(delta, 0.0))
     if not ages:
-        return 365.0
+        return math.nan
     ages.sort()
     mid = len(ages) // 2
     if len(ages) % 2 == 1:

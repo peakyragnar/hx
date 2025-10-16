@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 import random
 from typing import Dict, List, Optional
 
 from .aggregate import combine_replicates_ps
+from .date_extract import enrich_docs_with_publish_dates
 from .retriever import make_retriever
 from .scoring import call_wel_once
 from .snippets import (
     cap_per_domain,
     dedupe_by_url,
     evidence_metrics,
+    median_age_days,
     pack_snippets_for_llm,
 )
 from .types import Doc, WELReplicate
@@ -55,6 +58,9 @@ def evaluate_wel(
     docs = cap_per_domain(dedupe_by_url(fetched), max_per_domain=per_domain_cap)[:k_docs]
     if not docs:
         raise RuntimeError("No documents retrieved for Web-Informed evaluation")
+
+    fetch_timeout = float(os.getenv("WEL_FETCH_TIMEOUT", "6"))
+    enrich_docs_with_publish_dates(docs, timeout=fetch_timeout, max_docs=k_docs)
 
     seed_val = seed if seed is not None else _deterministic_seed(claim, provider, model, k_docs, replicates)
     rng = random.Random(seed_val)
@@ -103,8 +109,19 @@ def evaluate_wel(
         "dispersion": dispersion,
         "json_valid_rate": json_valid / max(1, len(replicates_out)),
     }
-    if recency_days is not None and not any(doc.published_at for doc in docs):
-        metrics["median_age_days"] = float(recency_days)
+    median_confident = median_age_days(docs, min_confidence=0.5)
+    if math.isnan(median_confident):
+        fallback_median = float(recency_days) if recency_days is not None else 365.0
+        metrics["median_age_days"] = fallback_median
+        metrics["date_confident_rate"] = 0.0
+        metrics["n_confident_dates"] = 0.0
+    else:
+        metrics["median_age_days"] = float(median_confident)
+        confident_count = sum(
+            1 for doc in docs if doc.published_at and doc.published_confidence >= 0.5
+        )
+        metrics["n_confident_dates"] = float(confident_count)
+        metrics["date_confident_rate"] = float(confident_count) / float(len(docs) or 1)
 
     return {
         "p": p_hat,

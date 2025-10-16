@@ -14,6 +14,8 @@ class Doc:
     snippet: str
     domain: str
     published_at: Optional[datetime]
+    published_method: Optional[str] = None
+    published_confidence: float = 0.0
 
 
 @dataclass
