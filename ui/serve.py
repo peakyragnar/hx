@@ -146,6 +146,22 @@ class Handler(BaseHTTPRequestHandler):
         (TMP_DIR / f"job_{job_id}.json").write_text(json.dumps(job), encoding="utf-8")
 
         # Return a running page with meta refresh to /wait
+        is_web_mode = ui_mode_val == "internet-search"
+        loading_headline = (
+            "Synthesizing GPT‑5’s web-informed view of this claim…"
+            if is_web_mode
+            else "Measuring how GPT‑5’s training data anchors this claim…"
+        )
+        step2_text = (
+            "Gathering and filtering fresh web snippets."
+            if is_web_mode
+            else "Asking GPT‑5 with internal knowledge only."
+        )
+        step3_text = (
+            "Preparing the web-informed verdict."
+            if is_web_mode
+            else "Preparing the explanation for the verdict."
+        )
         # Prefer user-provided image at ui/assets/running_bg.(png|jpg|jpeg); otherwise fallback SVG scene
         bg = None
         for name in ("running_bg.png", "running_bg.jpg", "running_bg.jpeg"):
@@ -179,12 +195,12 @@ class Handler(BaseHTTPRequestHandler):
               .muted {{ color:#8ea88e; margin-top:12px; }}
             </style>
             <div class='wrap'>
-              <h1>Measuring how GPT‑5’s training data anchors this claim…</h1>
+              <h1>{loading_headline}</h1>
               <div class='claim'>{escaped_claim}</div>
               <ol class='steps'>
                 <li class='active'>Planning the different phrasings.</li>
-                <li>Asking GPT-5 with internal knowledge only.</li>
-                <li>Preparing the explanation for the verdict.</li>
+                <li>{step2_text}</li>
+                <li>{step3_text}</li>
               </ol>
               <div class='hero'>
                 <div class='mask'></div>
@@ -215,12 +231,12 @@ class Handler(BaseHTTPRequestHandler):
               .muted {{ color:#8ea88e; margin-top:12px; }}
             </style>
             <div class='wrap'>
-              <h1>Measuring how GPT‑5’s training data anchors this claim…</h1>
+              <h1>{loading_headline}</h1>
               <div class='claim'>{escaped_claim}</div>
               <ol class='steps'>
                 <li class='active'>Planning the different phrasings.</li>
-                <li>Asking GPT‑5 with internal knowledge only.</li>
-                <li>Summarizing why it leans that way.</li>
+                <li>{step2_text}</li>
+                <li>{step3_text}</li>
               </ol>
               <div class='scene'>
               <svg width='360' height='220' viewBox='0 0 360 220' xmlns='http://www.w3.org/2000/svg' role='img' aria-label='matrix silhouette with levitating red pill'>

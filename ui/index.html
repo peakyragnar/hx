@@ -172,12 +172,12 @@
 <body>
   <div class="loading-overlay hidden" id="loading-overlay" aria-live="polite">
     <div class="loading-content">
-      <h2>Measuring how GPT‑5’s training data anchors this claim…</h2>
+      <h2 id="loading-headline">Measuring how GPT‑5’s training data anchors this claim…</h2>
       <div class="loading-claim" id="loading-claim"></div>
       <ol class="loading-steps">
-        <li class="active">Planning the different phrasings.</li>
-        <li>Asking GPT‑5 with internal knowledge only.</li>
-        <li>Preparing the explanation for the verdict.</li>
+        <li class="active" id="loading-step-1">Planning the different phrasings.</li>
+        <li id="loading-step-2">Asking GPT‑5 with internal knowledge only.</li>
+        <li id="loading-step-3">Preparing the explanation for the verdict.</li>
       </ol>
       <div class="loading-hero">
         <div class="loading-mask"></div>
@@ -424,6 +424,7 @@
       var claimForm = document.getElementById('claim-form');
       var claimInput = document.getElementById('claim');
       var submitBtn = claimForm ? claimForm.querySelector('button.primary') : null;
+      var modeSelect = claimForm ? claimForm.querySelector('select[name="ui_mode"]') : null;
       var statusEl = claimForm ? claimForm.querySelector('.footnote') : null;
       var usageEl = document.getElementById('usage-meter');
       var resultCard = document.getElementById('result-card');
@@ -443,6 +444,9 @@
       var resultReasons = document.getElementById('result-reasons');
       var loadingOverlay = document.getElementById('loading-overlay');
       var loadingClaim = document.getElementById('loading-claim');
+      var loadingHeadline = document.getElementById('loading-headline');
+      var loadingStep2 = document.getElementById('loading-step-2');
+      var loadingStep3 = document.getElementById('loading-step-3');
       var resultNewButton = document.getElementById('result-new');
       var resultCopyButton = document.getElementById('result-copy');
 
@@ -868,8 +872,25 @@
         }
       }
 
-      function toggleLoading(show, claimText) {
+      function toggleLoading(show, claimText, modeValue) {
         if (!loadingOverlay) return;
+        var mode = modeValue || (modeSelect ? modeSelect.value : 'prior');
+        var isWeb = mode === 'internet-search' || mode === 'web_informed';
+        if (loadingHeadline) {
+          loadingHeadline.textContent = isWeb
+            ? "Synthesizing GPT‑5’s web-informed view of this claim…"
+            : "Measuring how GPT‑5’s training data anchors this claim…";
+        }
+        if (loadingStep2) {
+          loadingStep2.textContent = isWeb
+            ? "Gathering and filtering fresh web snippets."
+            : "Asking GPT‑5 with internal knowledge only.";
+        }
+        if (loadingStep3) {
+          loadingStep3.textContent = isWeb
+            ? "Preparing the web-informed verdict."
+            : "Preparing the explanation for the verdict.";
+        }
         if (show) {
           loadingOverlay.classList.remove('hidden');
           if (loadingClaim) {
@@ -971,7 +992,8 @@
             return;
           }
           setStatus('Running evaluation…', 'info');
-          toggleLoading(true, value);
+          var modeValue = modeSelect ? modeSelect.value : 'prior';
+          toggleLoading(true, value, modeValue);
           if (submitBtn) {
             submitBtn.disabled = true;
             submitBtn.textContent = 'Checking…';
@@ -979,6 +1001,7 @@
           var response = null;
           try {
             var payload = { claim: value };
+            payload.mode = modeValue === 'internet-search' ? 'web_informed' : 'baseline';
             if (params.get('mock') === '1') {
               payload.mock = true;
             }
@@ -1015,12 +1038,12 @@
           } catch (err) {
             console.error(err);
             setStatus('Unable to reach the API. Check your connection and try again.', 'error');
-          } finally {
-            if (submitBtn) {
-              submitBtn.disabled = false;
-              submitBtn.textContent = originalBtnText;
-            }
-            toggleLoading(false);
+        } finally {
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = originalBtnText;
+          }
+          toggleLoading(false, null, modeValue);
             if (response && !response.ok) {
               resetResultsView();
             }
