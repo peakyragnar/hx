@@ -7,8 +7,10 @@ import random
 from typing import Dict, List, Optional
 
 from .aggregate import combine_replicates_ps
+from .claim_parse import parse_claim
 from .date_extract import enrich_docs_with_publish_dates
 from .retriever import make_retriever
+from .resolved_engine import try_resolve_fact
 from .scoring import call_wel_once
 from .snippets import (
     cap_per_domain,
@@ -62,10 +64,43 @@ def evaluate_wel(
     fetch_timeout = float(os.getenv("WEL_FETCH_TIMEOUT", "6"))
     enrich_docs_with_publish_dates(docs, timeout=fetch_timeout, max_docs=k_docs)
 
+    claim_info = parse_claim(claim)
     seed_val = seed if seed is not None else _deterministic_seed(claim, provider, model, k_docs, replicates)
     rng = random.Random(seed_val)
     rng.shuffle(docs)
     doc_chunks = _chunk_docs(docs, replicates=replicates)
+
+    resolved_payload = try_resolve_fact(claim, docs, info=claim_info)
+    if resolved_payload.get("resolved"):
+        truth = bool(resolved_payload.get("truth"))
+        prob = 0.999 if truth else 0.001
+        metrics = {
+            **evidence_metrics(docs),
+            "dispersion": 0.0,
+            "json_valid_rate": 1.0,
+            "resolved": True,
+            "resolved_truth": truth,
+            "resolved_reason": resolved_payload.get("reason"),
+            "resolved_support": resolved_payload.get("support"),
+            "resolved_contradict": resolved_payload.get("contradict"),
+            "resolved_domains": resolved_payload.get("domains"),
+            "resolved_citations": resolved_payload.get("citations"),
+        }
+        return {
+            "p": prob,
+            "ci95": (prob, prob),
+            "replicates": [],
+            "metrics": metrics,
+            "provenance": {
+                "provider": provider,
+                "model": model,
+                "k_docs": k_docs,
+                "replicates": 0,
+                "recency_days": recency_days,
+                "seed": seed_val,
+                "resolved": True,
+            },
+        }
 
     replicates_out: List[WELReplicate] = []
     replicate_ps: List[float] = []
@@ -108,6 +143,7 @@ def evaluate_wel(
         **evidence_metrics(docs),
         "dispersion": dispersion,
         "json_valid_rate": json_valid / max(1, len(replicates_out)),
+        "resolved": False,
     }
     median_confident = median_age_days(docs, min_confidence=0.5)
     if math.isnan(median_confident):
