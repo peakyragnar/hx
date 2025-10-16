@@ -32,6 +32,9 @@
     .card h2 { margin:0 0 12px; font-size:20px; }
     .card ul { margin:0; padding-left:22px; color:var(--muted); line-height:1.6; }
     .pill { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:999px; font-size:12px; letter-spacing:1px; text-transform:uppercase; border:1px solid rgba(0,255,65,0.4); color:var(--bright); background:rgba(0,255,65,0.1); margin-bottom:16px; }
+    .pill.resolved { background:rgba(0,255,65,0.18); }
+    .resolved-card { margin-top:28px; padding:24px; border-radius:18px; border:1px solid rgba(0,255,65,0.35); background:rgba(0,255,65,0.08); box-shadow:0 0 28px rgba(0,255,65,0.22); }
+    .resolved-card ul { margin:12px 0 0; padding-left:22px; color:var(--muted); line-height:1.6; }
 
     details { border:1px solid rgba(0,255,65,0.2); border-radius:16px; padding:20px 24px; background:rgba(0,0,0,0.35); margin-top:28px; }
     summary { cursor:pointer; font-weight:600; font-size:16px; }
@@ -85,6 +88,8 @@
         <p class="note">{INFO_NOTE_B}</p>
       </div>
     </div>
+
+    {RESOLVED_BLOCK}
 
     <details>
       <summary>Advanced details</summary>

@@ -12,6 +12,22 @@ from heretix_wel.weights import (
 
 
 def fuse_prior_web(claim: str, prior: Dict[str, float], web: Dict[str, float]) -> Tuple[Dict[str, float], Dict[str, float]]:
+    if web.get("resolved"):
+        return (
+            {
+                "p": web["p"],
+                "ci95": list(web["ci95"]),
+                "resolved": True,
+                "resolved_truth": web.get("resolved_truth"),
+                "resolved_reason": web.get("resolved_reason"),
+                "resolved_citations": web.get("resolved_citations", []),
+                "support": web.get("support"),
+                "contradict": web.get("contradict"),
+                "domains": web.get("domains"),
+            },
+            {"w_web": 1.0, "recency": 1.0, "strength": 1.0},
+        )
+
     recency = recency_score(
         claim_is_timely=heuristic_is_timely(claim),
         median_age_days=float(web["evidence"].get("median_age_days", 365.0)),

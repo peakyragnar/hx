@@ -55,15 +55,40 @@ class PriorBlock(BaseModel):
     stability: Optional[float] = None
 
 
+class WebCitation(BaseModel):
+    url: str
+    domain: Optional[str] = None
+    quote: Optional[str] = None
+    stance: Optional[str] = None
+    field: Optional[str] = None
+    value: Optional[str] = None
+    weight: Optional[float] = None
+    published_at: Optional[str] = None
+
+
 class WebEvidence(BaseModel):
     p: float
     ci95: List[float]
     evidence: Dict[str, float]
+    resolved: bool = False
+    resolved_truth: Optional[bool] = None
+    resolved_reason: Optional[str] = None
+    resolved_citations: List[WebCitation] = []
+    support: Optional[float] = None
+    contradict: Optional[float] = None
+    domains: Optional[int] = None
 
 
 class CombinedResult(BaseModel):
     p: float
     ci95: List[float]
+    resolved: bool = False
+    resolved_truth: Optional[bool] = None
+    resolved_reason: Optional[str] = None
+    resolved_citations: List[WebCitation] = []
+    support: Optional[float] = None
+    contradict: Optional[float] = None
+    domains: Optional[int] = None
 
 
 class WeightInfo(BaseModel):

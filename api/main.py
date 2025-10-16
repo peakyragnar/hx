@@ -294,6 +294,12 @@ def run_check(
             check.median_age_days = float(evidence.get("median_age_days", 0.0))
             check.web_dispersion = float(evidence.get("dispersion", 0.0))
             check.json_valid_rate = float(evidence.get("json_valid_rate", 0.0))
+            date_confident = evidence.get("date_confident_rate")
+            confident_count = evidence.get("n_confident_dates")
+            if date_confident is not None:
+                check.date_confident_rate = float(date_confident)
+            if confident_count is not None:
+                check.n_confident_dates = float(confident_count)
         else:
             check.p_web = None
             check.ci_web_lo = None
@@ -303,6 +309,8 @@ def run_check(
             check.median_age_days = None
             check.web_dispersion = None
             check.json_valid_rate = None
+            check.date_confident_rate = None
+            check.n_confident_dates = None
         if combined_block_payload:
             check.p_combined = float(combined_block_payload["p"])
             check.ci_combined_lo = float(combined_block_payload["ci95"][0])
@@ -319,6 +327,25 @@ def run_check(
             check.w_web = None
             check.recency_score = None
             check.strength_score = None
+        if combined_block_payload and combined_block_payload.get("resolved"):
+            check.resolved_flag = True
+            resolved_truth = combined_block_payload.get("resolved_truth")
+            check.resolved_truth = bool(resolved_truth) if resolved_truth is not None else None
+            check.resolved_reason = combined_block_payload.get("resolved_reason")
+            check.resolved_support = combined_block_payload.get("support")
+            check.resolved_contradict = combined_block_payload.get("contradict")
+            domains_val = combined_block_payload.get("domains")
+            check.resolved_domains = int(domains_val) if domains_val is not None else None
+            citations_val = combined_block_payload.get("resolved_citations")
+            check.resolved_citations = json.dumps(citations_val) if citations_val is not None else None
+        else:
+            check.resolved_flag = False if mode == "web_informed" else None
+            check.resolved_truth = None
+            check.resolved_reason = None
+            check.resolved_support = None
+            check.resolved_contradict = None
+            check.resolved_domains = None
+            check.resolved_citations = None
         check.was_cached = cache_hit_rate >= 0.999
         check.provider_model_id = result.get("model", cfg.model)
         check.anon_token = anon_token if not user else None

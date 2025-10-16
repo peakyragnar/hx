@@ -1,0 +1,10 @@
+ALTER TABLE checks
+    ADD COLUMN IF NOT EXISTS resolved_flag BOOLEAN,
+    ADD COLUMN IF NOT EXISTS resolved_truth BOOLEAN,
+    ADD COLUMN IF NOT EXISTS resolved_reason TEXT,
+    ADD COLUMN IF NOT EXISTS resolved_support DOUBLE PRECISION,
+    ADD COLUMN IF NOT EXISTS resolved_contradict DOUBLE PRECISION,
+    ADD COLUMN IF NOT EXISTS resolved_domains INTEGER,
+    ADD COLUMN IF NOT EXISTS resolved_citations TEXT,
+    ADD COLUMN IF NOT EXISTS date_confident_rate DOUBLE PRECISION,
+    ADD COLUMN IF NOT EXISTS n_confident_dates DOUBLE PRECISION;

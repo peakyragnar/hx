@@ -64,6 +64,17 @@ def evaluate_wel(
     fetch_timeout = float(os.getenv("WEL_FETCH_TIMEOUT", "6"))
     enrich_docs_with_publish_dates(docs, timeout=fetch_timeout, max_docs=k_docs)
 
+    total_docs = len(docs) or 1
+    confident_count = sum(1 for doc in docs if doc.published_at and doc.published_confidence >= 0.5)
+    median_confident = median_age_days(docs, min_confidence=0.5)
+    if math.isnan(median_confident):
+        fallback_median = float(recency_days) if recency_days is not None else 365.0
+        median_value = fallback_median
+        confident_rate = 0.0
+    else:
+        median_value = float(median_confident)
+        confident_rate = float(confident_count) / float(total_docs)
+
     claim_info = parse_claim(claim)
     seed_val = seed if seed is not None else _deterministic_seed(claim, provider, model, k_docs, replicates)
     rng = random.Random(seed_val)
@@ -76,6 +87,9 @@ def evaluate_wel(
         prob = 0.999 if truth else 0.001
         metrics = {
             **evidence_metrics(docs),
+            "median_age_days": median_value,
+            "n_confident_dates": float(confident_count),
+            "date_confident_rate": confident_rate,
             "dispersion": 0.0,
             "json_valid_rate": 1.0,
             "resolved": True,
@@ -141,23 +155,19 @@ def evaluate_wel(
     p_hat, ci95, dispersion = combine_replicates_ps(replicate_ps)
     metrics = {
         **evidence_metrics(docs),
+        "median_age_days": median_value,
+        "n_confident_dates": float(confident_count),
+        "date_confident_rate": confident_rate,
         "dispersion": dispersion,
         "json_valid_rate": json_valid / max(1, len(replicates_out)),
         "resolved": False,
+        "resolved_truth": None,
+        "resolved_reason": None,
+        "resolved_support": None,
+        "resolved_contradict": None,
+        "resolved_domains": None,
+        "resolved_citations": [],
     }
-    median_confident = median_age_days(docs, min_confidence=0.5)
-    if math.isnan(median_confident):
-        fallback_median = float(recency_days) if recency_days is not None else 365.0
-        metrics["median_age_days"] = fallback_median
-        metrics["date_confident_rate"] = 0.0
-        metrics["n_confident_dates"] = 0.0
-    else:
-        metrics["median_age_days"] = float(median_confident)
-        confident_count = sum(
-            1 for doc in docs if doc.published_at and doc.published_confidence >= 0.5
-        )
-        metrics["n_confident_dates"] = float(confident_count)
-        metrics["date_confident_rate"] = float(confident_count) / float(len(docs) or 1)
 
     return {
         "p": p_hat,

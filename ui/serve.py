@@ -399,6 +399,13 @@ class Handler(BaseHTTPRequestHandler):
                 median_age = float(metrics_dict.get("median_age_days", 365.0))
                 dispersion = float(metrics_dict.get("dispersion", 0.0))
                 json_valid_rate = float(metrics_dict.get("json_valid_rate", 1.0))
+                resolved_flag = bool(metrics_dict.get("resolved"))
+                resolved_truth = metrics_dict.get("resolved_truth")
+                resolved_reason = metrics_dict.get("resolved_reason")
+                resolved_citations = metrics_dict.get("resolved_citations") or []
+                resolved_support = metrics_dict.get("resolved_support")
+                resolved_contradict = metrics_dict.get("resolved_contradict")
+                resolved_domains = metrics_dict.get("resolved_domains")
                 recency = recency_score(
                     claim_is_timely=heuristic_is_timely(claim),
                     median_age_days=median_age,
@@ -409,14 +416,18 @@ class Handler(BaseHTTPRequestHandler):
                     dispersion=dispersion,
                     json_valid_rate=json_valid_rate,
                 )
-                weight = web_weight(recency, strength)
-                combined_p, combined_ci = fuse_probabilities(
-                    prior_p,
-                    (prior_ci_lo, prior_ci_hi),
-                    web_p,
-                    web_ci,
-                    weight,
-                )
+                if resolved_flag:
+                    weight = 1.0
+                    combined_p, combined_ci = web_p, web_ci
+                else:
+                    weight = web_weight(recency, strength)
+                    combined_p, combined_ci = fuse_probabilities(
+                        prior_p,
+                        (prior_ci_lo, prior_ci_hi),
+                        web_p,
+                        web_ci,
+                        weight,
+                    )
                 combined_width = combined_ci[1] - combined_ci[0]
                 ui_mode_label = "Internet Search (Web-Informed)"
                 web_summary = {
@@ -428,11 +439,20 @@ class Handler(BaseHTTPRequestHandler):
                         "median_age_days": median_age,
                         "dispersion": dispersion,
                         "json_valid_rate": json_valid_rate,
+                        "date_confident_rate": metrics_dict.get("date_confident_rate"),
+                        "n_confident_dates": metrics_dict.get("n_confident_dates"),
                     },
                     "weight": weight,
                     "recency": recency,
                     "strength": strength,
                     "replicates": wel_result["replicates"],
+                    "resolved": resolved_flag,
+                    "resolved_truth": resolved_truth,
+                    "resolved_reason": resolved_reason,
+                    "resolved_citations": resolved_citations,
+                    "resolved_support": resolved_support,
+                    "resolved_contradict": resolved_contradict,
+                    "resolved_domains": resolved_domains,
                 }
             except Exception as exc:
                 web_error = str(exc)
@@ -443,47 +463,62 @@ class Handler(BaseHTTPRequestHandler):
         percent = f"{p*100:.1f}%" if p == p else "?"
         prior_percent = f"{prior_p*100:.1f}%"
         web_percent = f"{web_summary['p']*100:.1f}%" if web_summary else None
+        resolved_flag = bool(web_summary and web_summary.get("resolved"))
+        resolved_block_html = ""
+        resolved_truth = bool(web_summary.get("resolved_truth")) if resolved_flag else None
+        resolved_reason = web_summary.get("resolved_reason") if resolved_flag else None
+        resolved_citations = web_summary.get("resolved_citations") if resolved_flag else []
 
-        if p == p:
-            if p >= 0.60:
-                verdict = "LIKELY TRUE"
-            elif p <= 0.40:
-                verdict = "LIKELY FALSE"
-            else:
-                verdict = "UNCERTAIN"
+        if resolved_flag:
+            verdict = "RESOLVED TRUE" if resolved_truth else "RESOLVED FALSE"
+            interpretation = (
+                "Resolved by web consensus: multiple independent sources provided matching quotes."  # noqa: E501
+            )
+            if resolved_reason:
+                interpretation = (
+                    f"Resolved ({resolved_reason}): web consensus confirms this claim."  # noqa: E501
+                )
         else:
-            verdict = "UNAVAILABLE"
+            if p == p:
+                if p >= 0.60:
+                    verdict = "LIKELY TRUE"
+                elif p <= 0.40:
+                    verdict = "LIKELY FALSE"
+                else:
+                    verdict = "UNCERTAIN"
+            else:
+                verdict = "UNAVAILABLE"
 
-        if p == p:
-            if web_summary:
-                if p >= 0.60:
-                    interpretation = (
-                        f"Combining GPT‑5’s prior ({prior_percent}) with the web snippets "
-                        f"({web_percent}) makes this likely true ({percent})."
-                    )
-                elif p <= 0.40:
-                    interpretation = (
-                        f"The web snippets ({web_percent}) reinforce GPT‑5’s prior ({prior_percent}), "
-                        f"leaving only {percent} chance the claim is true."
-                    )
+            if p == p:
+                if web_summary:
+                    if p >= 0.60:
+                        interpretation = (
+                            f"Combining GPT‑5’s prior ({prior_percent}) with the web snippets "
+                            f"({web_percent}) makes this likely true ({percent})."
+                        )
+                    elif p <= 0.40:
+                        interpretation = (
+                            f"The web snippets ({web_percent}) reinforce GPT‑5’s prior ({prior_percent}), "
+                            f"leaving only {percent} chance the claim is true."
+                        )
+                    else:
+                        interpretation = (
+                            f"GPT‑5’s prior ({prior_percent}) and the web snippets ({web_percent}) disagree; "
+                            f"together they settle near {percent}."
+                        )
                 else:
-                    interpretation = (
-                        f"GPT‑5’s prior ({prior_percent}) and the web snippets ({web_percent}) disagree; "
-                        f"together they settle near {percent}."
-                    )
+                    pct = percent
+                    if p >= 0.60:
+                        interpretation = f"{ui_model_label} leans true and gives this claim about {pct} chance of being correct."
+                    elif p <= 0.40:
+                        interpretation = f"{ui_model_label} leans false and estimates just {pct} probability that the claim is true."
+                    else:
+                        interpretation = f"{ui_model_label} is unsure—it assigns roughly {pct} chance the claim is true."
             else:
-                pct = percent
-                if p >= 0.60:
-                    interpretation = f"{ui_model_label} leans true and gives this claim about {pct} chance of being correct."
-                elif p <= 0.40:
-                    interpretation = f"{ui_model_label} leans false and estimates just {pct} probability that the claim is true."
+                if web_error and ui_mode_value == "internet-search":
+                    interpretation = "Web-Informed mode failed; showing the baseline prior instead."
                 else:
-                    interpretation = f"{ui_model_label} is unsure—it assigns roughly {pct} chance the claim is true."
-        else:
-            if web_error and ui_mode_value == "internet-search":
-                interpretation = "Web-Informed mode failed; showing the baseline prior instead."
-            else:
-                interpretation = "We couldn’t calculate the model’s prior for this claim."
+                    interpretation = "We couldn’t calculate the model’s prior for this claim."
 
         adv_width = f"{width:.3f}" if width == width else "—"
         adv_stability = f"{stability:.2f}" if stability == stability else "—"
@@ -494,6 +529,25 @@ class Handler(BaseHTTPRequestHandler):
         info_note_b = "Use it to understand where the model already leans before you add new facts or arguments."
         adv_note = "Narrower confidence widths mean the model gave consistent answers. Stability reflects paraphrase agreement; compliance shows adherence to Raw Prior rules."
         adv_extra_html = ""
+        if resolved_flag:
+            info_title = "How to read this consensus"
+            info_note_a = "Web evidence conclusively resolves this claim."
+            info_note_b = "Raw Prior is shown for bias awareness but did not influence the verdict."
+            adv_note = "Resolved facts bypass the bootstrap estimator; the verdict comes from quote-backed sources."
+            citations_items = []
+            for cite in resolved_citations[:3]:
+                url = cite.get("url") or ""
+                domain = cite.get("domain") or url
+                quote = cite.get("quote") or ""
+                citations_items.append(
+                    f"<li><strong>{html.escape(domain, quote=True)}</strong>: {html.escape(quote[:180], quote=True)}</li>"
+                )
+            resolved_block_html = (
+                "<div class=\"resolved-card\"><div class=\"pill resolved\">Resolved Fact</div>"
+                + (f"<p>{html.escape(info_note_a, quote=True)}</p>" if info_note_a else "")
+                + ("<ul>" + "".join(citations_items) + "</ul>" if citations_items else "")
+                + "</div>"
+            )
 
         summary_lines = [
             f'Claim: "{claim}"',
@@ -502,31 +556,54 @@ class Handler(BaseHTTPRequestHandler):
 
         if web_summary:
             metrics = web_summary["metrics"]
-            weight = float(web_summary["weight"])
-            n_docs = int(metrics.get("n_docs", 0))
-            n_domains = int(metrics.get("n_domains", 0))
-            median_age = float(metrics.get("median_age_days", 0.0))
+            if resolved_flag:
+                support_score = web_summary.get("resolved_support")
+                contradict_score = web_summary.get("resolved_contradict")
+                domains_count = web_summary.get("resolved_domains")
+                summary_lines.append(f"Prior (no web): {prior_percent}")
+                entries = [
+                    ("Prior width", f"{prior_width:.3f}" if prior_width == prior_width else "—"),
+                    ("Web docs", f"{metrics.get('n_docs', 0)} docs / {metrics.get('n_domains', 0)} domains"),
+                    ("Consensus support", f"{support_score:.2f}" if support_score else "—"),
+                    ("Contradict weight", f"{contradict_score:.2f}" if contradict_score else "—"),
+                    ("Domains cited", str(domains_count) if domains_count is not None else "—"),
+                ]
+                adv_extra_html = "".join(
+                    f'<div><div class="metric-label">{html.escape(title, quote=True)}</div>'
+                    f'<div class="metric-value">{html.escape(value, quote=True)}</div></div>'
+                    for title, value in entries
+                )
+                summary_lines.append(f"Web consensus: {'true' if resolved_truth else 'false'}")
+                if support_score is not None:
+                    summary_lines.append(f"Support weight: {support_score:.2f}")
+                if contradict_score is not None:
+                    summary_lines.append(f"Contradict weight: {contradict_score:.2f}")
+            else:
+                weight = float(web_summary["weight"])
+                n_docs = int(metrics.get("n_docs", 0))
+                n_domains = int(metrics.get("n_domains", 0))
+                median_age = float(metrics.get("median_age_days", 0.0))
 
-            entries = [
-                ("Prior width", f"{prior_width:.3f}" if prior_width == prior_width else "—"),
-                ("Web docs", f"{n_docs} docs / {n_domains} domains"),
-                ("Web recency", f"{median_age:.1f} days"),
-                ("Web weight", f"{weight:.2f}"),
-            ]
-            adv_extra_html = "".join(
-                f'<div><div class="metric-label">{html.escape(title, quote=True)}</div>'
-                f'<div class="metric-value">{html.escape(value, quote=True)}</div></div>'
-                for title, value in entries
-            )
+                entries = [
+                    ("Prior width", f"{prior_width:.3f}" if prior_width == prior_width else "—"),
+                    ("Web docs", f"{n_docs} docs / {n_domains} domains"),
+                    ("Web recency", f"{median_age:.1f} days"),
+                    ("Web weight", f"{weight:.2f}"),
+                ]
+                adv_extra_html = "".join(
+                    f'<div><div class="metric-label">{html.escape(title, quote=True)}</div>'
+                    f'<div class="metric-value">{html.escape(value, quote=True)}</div></div>'
+                    for title, value in entries
+                )
 
-            info_title = "How to read this blend"
-            info_note_a = "Combined probability blends GPT‑5’s Raw Prior with fresh web snippets."
-            info_note_b = f"Prior (no web) was {prior_percent}. Web snippets alone gave {web_percent}. Weight={weight:.2f} determines how much the web shifts the prior."
-            adv_note = "Confidence width reflects the combined estimate; template stability and compliance still come from the Raw Prior Lens."
+                info_title = "How to read this blend"
+                info_note_a = "Combined probability blends GPT‑5’s Raw Prior with fresh web snippets."
+                info_note_b = f"Prior (no web) was {prior_percent}. Web snippets alone gave {web_percent}. Weight={weight:.2f} determines how much the web shifts the prior."
+                adv_note = "Confidence width reflects the combined estimate; template stability and compliance still come from the Raw Prior Lens."
 
-            summary_lines.append(f"Prior (no web): {prior_percent}")
-            summary_lines.append(f"Web evidence: {web_percent} (docs={n_docs}, domains={n_domains})")
-            summary_lines.append(f"Combined (weight {weight:.2f}): {percent}")
+                summary_lines.append(f"Prior (no web): {prior_percent}")
+                summary_lines.append(f"Web evidence: {web_percent} (docs={n_docs}, domains={n_domains})")
+                summary_lines.append(f"Combined (weight {weight:.2f}): {percent}")
         elif web_error and ui_mode_value == "internet-search":
             safe_err = web_error.splitlines()[0][:120] if web_error else "unknown error"
             info_note_a = "Web search was requested but failed, so only the Raw Prior result is shown."
@@ -708,7 +785,20 @@ class Handler(BaseHTTPRequestHandler):
             return reasons
 
         reasons: List[str] = []
-        if web_summary:
+        if resolved_flag:
+            for cite in resolved_citations[:3]:
+                quote = cite.get("quote")
+                domain = cite.get("domain")
+                if quote:
+                    text = quote.strip()
+                    if domain:
+                        text = f"{quote.strip()} ({domain})"
+                    if text[-1] not in ".!?":
+                        text += "."
+                    reasons.append(text)
+            if not reasons:
+                reasons.append("Consensus sources agree on this claim.")
+        elif web_summary:
             seen: set[str] = set()
 
             def _add_items(items: List[str]) -> bool:
@@ -778,6 +868,7 @@ class Handler(BaseHTTPRequestHandler):
                 "INFO_NOTE_B": html.escape(info_note_b, quote=True),
                 "ADV_NOTE": html.escape(adv_note, quote=True),
                 "ADV_EXTRA": adv_extra_html,
+                "RESOLVED_BLOCK": resolved_block_html,
                 "ADV_WIDTH": adv_width,
                 "ADV_STABILITY": adv_stability,
                 "ADV_COMPLIANCE": adv_compliance,
