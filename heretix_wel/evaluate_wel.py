@@ -103,6 +103,8 @@ def evaluate_wel(
         "dispersion": dispersion,
         "json_valid_rate": json_valid / max(1, len(replicates_out)),
     }
+    if recency_days is not None and not any(doc.published_at for doc in docs):
+        metrics["median_age_days"] = float(recency_days)
 
     return {
         "p": p_hat,
