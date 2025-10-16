@@ -80,9 +80,9 @@
         </ul>
       </div>
       <div class="card">
-        <h2>How to read this</h2>
-        <p class="note">This is GPT‑5’s belief using the Raw Prior Lens—no web search, no outside evidence.</p>
-        <p class="note">Use it to understand where the model already leans before you add new facts or arguments.</p>
+        <h2>{INFO_TITLE}</h2>
+        <p class="note">{INFO_NOTE_A}</p>
+        <p class="note">{INFO_NOTE_B}</p>
       </div>
     </div>
 
@@ -101,8 +101,9 @@
           <div class="metric-label">Policy compliance</div>
           <div class="metric-value">{ADV_COMPLIANCE}</div>
         </div>
+        {ADV_EXTRA}
       </div>
-      <p class="note">Narrower confidence widths mean the model gave consistent answers. Stability reflects how similar the paraphrased prompts were. Compliance shows how often responses followed the Raw Prior rules.</p>
+      <p class="note">{ADV_NOTE}</p>
     </details>
 
     <div class="actions">

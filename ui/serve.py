@@ -19,6 +19,15 @@ from heretix.provider.openai_gpt5 import score_claim as _score_claim_live
 from heretix.provider.mock import score_claim_mock as _score_claim_mock
 from openai import OpenAI
 
+from heretix_wel.evaluate_wel import evaluate_wel
+from heretix_wel.timeliness import heuristic_is_timely
+from heretix_wel.weights import (
+    fuse_probabilities,
+    recency_score,
+    strength_score,
+    web_weight,
+)
+
 
 ROOT = Path(__file__).parent
 TMP_DIR = Path("runs/ui_tmp")
@@ -132,6 +141,7 @@ class Handler(BaseHTTPRequestHandler):
             "prompt_version": prompt_version,
             "ui_model": ui_model_label,
             "ui_mode": ui_mode_label,
+            "ui_mode_value": ui_mode_val,
         }
         (TMP_DIR / f"job_{job_id}.json").write_text(json.dumps(job), encoding="utf-8")
 
@@ -263,6 +273,7 @@ class Handler(BaseHTTPRequestHandler):
         prompt_version = str(job.get("prompt_version") or "rpl_g5_v4")
         ui_model_label = str(job.get("ui_model") or "GPT‑5")
         ui_mode_label = str(job.get("ui_mode") or "Internal Knowledge Only (no retrieval)")
+        ui_mode_value = str(job.get("ui_mode_value") or "prior")
 
         # Re-validate that the job still points to files under runs/ui_tmp before invoking CLI.
         try:
@@ -320,7 +331,103 @@ class Handler(BaseHTTPRequestHandler):
             logging.error("UI parse error: %s", e)
             self._err("We couldn’t read the run output."); return
 
-        percent = f"{p*100:.1f}" if p == p else "?"
+        prior_p = p
+        prior_ci = aggregates.get("ci95") or [None, None]
+
+        def _safe_float(val: object) -> float:
+            try:
+                return float(val)
+            except (TypeError, ValueError):
+                return float("nan")
+
+        prior_ci_lo = _safe_float(prior_ci[0] if isinstance(prior_ci, (list, tuple)) else None)
+        prior_ci_hi = _safe_float(prior_ci[1] if isinstance(prior_ci, (list, tuple)) else None)
+        if prior_ci_lo != prior_ci_lo or prior_ci_hi != prior_ci_hi:
+            prior_ci_lo = max(0.0, prior_p - 0.05)
+            prior_ci_hi = min(1.0, prior_p + 0.05)
+        prior_width = prior_ci_hi - prior_ci_lo
+        if prior_width != prior_width:
+            prior_width = width
+
+        combined_p = prior_p
+        combined_ci = (prior_ci_lo, prior_ci_hi)
+        combined_width = prior_width
+        web_summary: dict[str, object] | None = None
+        web_error: str | None = None
+
+        if ui_mode_value == "internet-search":
+            try:
+                wel_provider = os.getenv("WEL_PROVIDER", "tavily")
+                wel_model = os.getenv("WEL_MODEL", model)
+                wel_docs = int(os.getenv("WEL_DOCS", "16"))
+                wel_replicates = int(os.getenv("WEL_REPLICATES", "2"))
+                wel_per_domain = int(os.getenv("WEL_PER_DOMAIN_CAP", "3"))
+                recency_env = os.getenv("WEL_RECENCY_DAYS")
+                wel_recency = int(recency_env) if recency_env and recency_env.lower() != "none" else None
+
+                wel_result = evaluate_wel(
+                    claim=claim,
+                    provider=wel_provider,
+                    model=wel_model,
+                    k_docs=wel_docs,
+                    replicates=wel_replicates,
+                    per_domain_cap=wel_per_domain,
+                    recency_days=wel_recency,
+                )
+                web_p = float(wel_result["p"])
+                web_ci_tuple = wel_result["ci95"]
+                web_ci = (float(web_ci_tuple[0]), float(web_ci_tuple[1]))
+                metrics_dict = wel_result["metrics"]
+                n_docs = int(metrics_dict.get("n_docs", 0))
+                n_domains = int(metrics_dict.get("n_domains", 0))
+                median_age = float(metrics_dict.get("median_age_days", 365.0))
+                dispersion = float(metrics_dict.get("dispersion", 0.0))
+                json_valid_rate = float(metrics_dict.get("json_valid_rate", 1.0))
+                recency = recency_score(
+                    claim_is_timely=heuristic_is_timely(claim),
+                    median_age_days=median_age,
+                )
+                strength = strength_score(
+                    n_docs=n_docs,
+                    n_domains=n_domains,
+                    dispersion=dispersion,
+                    json_valid_rate=json_valid_rate,
+                )
+                weight = web_weight(recency, strength)
+                combined_p, combined_ci = fuse_probabilities(
+                    prior_p,
+                    (prior_ci_lo, prior_ci_hi),
+                    web_p,
+                    web_ci,
+                    weight,
+                )
+                combined_width = combined_ci[1] - combined_ci[0]
+                ui_mode_label = "Internet Search (Web-Informed)"
+                web_summary = {
+                    "p": web_p,
+                    "ci": web_ci,
+                    "metrics": {
+                        "n_docs": n_docs,
+                        "n_domains": n_domains,
+                        "median_age_days": median_age,
+                        "dispersion": dispersion,
+                        "json_valid_rate": json_valid_rate,
+                    },
+                    "weight": weight,
+                    "recency": recency,
+                    "strength": strength,
+                    "replicates": wel_result["replicates"],
+                }
+            except Exception as exc:
+                web_error = str(exc)
+                logging.error("UI web-informed error: %s", exc)
+
+        p = combined_p
+        width = combined_width if combined_width == combined_width else width
+        percent = f"{p*100:.1f}%" if p == p else "?"
+        prior_percent = f"{prior_p*100:.1f}%"
+        web_percent = f"{web_summary['p']*100:.1f}%" if web_summary else None
+
         if p == p:
             if p >= 0.60:
                 verdict = "LIKELY TRUE"
@@ -332,19 +439,86 @@ class Handler(BaseHTTPRequestHandler):
             verdict = "UNAVAILABLE"
 
         if p == p:
-            pct = f"{p*100:.1f}%"
-            if p >= 0.60:
-                interpretation = f"{ui_model_label} leans true and gives this claim about {pct} chance of being correct."
-            elif p <= 0.40:
-                interpretation = f"{ui_model_label} leans false and estimates just {pct} probability that the claim is true."
+            if web_summary:
+                if p >= 0.60:
+                    interpretation = (
+                        f"Combining GPT‑5’s prior ({prior_percent}) with the web snippets "
+                        f"({web_percent}) makes this likely true ({percent})."
+                    )
+                elif p <= 0.40:
+                    interpretation = (
+                        f"The web snippets ({web_percent}) reinforce GPT‑5’s prior ({prior_percent}), "
+                        f"leaving only {percent} chance the claim is true."
+                    )
+                else:
+                    interpretation = (
+                        f"GPT‑5’s prior ({prior_percent}) and the web snippets ({web_percent}) disagree; "
+                        f"together they settle near {percent}."
+                    )
             else:
-                interpretation = f"{ui_model_label} is unsure—it assigns roughly {pct} chance the claim is true."
+                pct = percent
+                if p >= 0.60:
+                    interpretation = f"{ui_model_label} leans true and gives this claim about {pct} chance of being correct."
+                elif p <= 0.40:
+                    interpretation = f"{ui_model_label} leans false and estimates just {pct} probability that the claim is true."
+                else:
+                    interpretation = f"{ui_model_label} is unsure—it assigns roughly {pct} chance the claim is true."
         else:
-            interpretation = "We couldn’t calculate the model’s prior for this claim."
+            if web_error and ui_mode_value == "internet-search":
+                interpretation = "Web-Informed mode failed; showing the baseline prior instead."
+            else:
+                interpretation = "We couldn’t calculate the model’s prior for this claim."
 
         adv_width = f"{width:.3f}" if width == width else "—"
         adv_stability = f"{stability:.2f}" if stability == stability else "—"
         adv_compliance = f"{compliance*100:.0f}%" if compliance == compliance else "—"
+
+        info_title = "How to read this"
+        info_note_a = "This is GPT‑5’s belief using the Raw Prior Lens—no web search, no outside evidence."
+        info_note_b = "Use it to understand where the model already leans before you add new facts or arguments."
+        adv_note = "Narrower confidence widths mean the model gave consistent answers. Stability reflects paraphrase agreement; compliance shows adherence to Raw Prior rules."
+        adv_extra_html = ""
+
+        summary_lines = [
+            f'Claim: "{claim}"',
+            f'Verdict: {verdict} ({percent})',
+        ]
+
+        if web_summary:
+            metrics = web_summary["metrics"]
+            weight = float(web_summary["weight"])
+            n_docs = int(metrics.get("n_docs", 0))
+            n_domains = int(metrics.get("n_domains", 0))
+            median_age = float(metrics.get("median_age_days", 0.0))
+
+            entries = [
+                ("Prior width", f"{prior_width:.3f}" if prior_width == prior_width else "—"),
+                ("Web docs", f"{n_docs} docs / {n_domains} domains"),
+                ("Web recency", f"{median_age:.1f} days"),
+                ("Web weight", f"{weight:.2f}"),
+            ]
+            adv_extra_html = "".join(
+                f'<div><div class="metric-label">{html.escape(title, quote=True)}</div>'
+                f'<div class="metric-value">{html.escape(value, quote=True)}</div></div>'
+                for title, value in entries
+            )
+
+            info_title = "How to read this blend"
+            info_note_a = "Combined probability blends GPT‑5’s Raw Prior with fresh web snippets."
+            info_note_b = f"Prior (no web) was {prior_percent}. Web snippets alone gave {web_percent}. Weight={weight:.2f} determines how much the web shifts the prior."
+            adv_note = "Confidence width reflects the combined estimate; template stability and compliance still come from the Raw Prior Lens."
+
+            summary_lines.append(f"Prior (no web): {prior_percent}")
+            summary_lines.append(f"Web evidence: {web_percent} (docs={n_docs}, domains={n_domains})")
+            summary_lines.append(f"Combined (weight {weight:.2f}): {percent}")
+        elif web_error and ui_mode_value == "internet-search":
+            safe_err = web_error.splitlines()[0][:120] if web_error else "unknown error"
+            info_note_a = "Web search was requested but failed, so only the Raw Prior result is shown."
+            info_note_b = f"Error: {safe_err}"
+            adv_note = "Confidence, stability, and compliance all reflect the Raw Prior run because web search was unavailable."
+            summary_lines.append("Web search failed; showing baseline prior only.")
+
+        summary_lines.append(f'Model: {ui_model_label} · {ui_mode_label}')
 
         # Generate a brief model explanation via one provider call (same prompt version)
         def _load_prompt(prompts_file: Optional[str], version: str) -> tuple[str, str, List[str]]:
@@ -517,7 +691,40 @@ class Handler(BaseHTTPRequestHandler):
                 print("[ui] explanation final-fallback used")
             return reasons
 
-        reasons = _generate_explanation()
+        reasons: List[str] = []
+        if web_summary:
+            seen: set[str] = set()
+
+            def _add_items(items: List[str]) -> bool:
+                for item in items or []:
+                    if not isinstance(item, str):
+                        continue
+                    text = item.strip()
+                    if not text:
+                        continue
+                    if text[-1] not in ".!?":
+                        text = text + "."
+                    if text not in seen:
+                        seen.add(text)
+                        reasons.append(text)
+                    if len(reasons) >= 4:
+                        return True
+                return False
+
+            for rep in web_summary["replicates"]:
+                if _add_items(getattr(rep, "support_bullets", [])):
+                    break
+            if len(reasons) < 2:
+                for rep in web_summary["replicates"]:
+                    if _add_items(getattr(rep, "oppose_bullets", [])):
+                        break
+            if len(reasons) < 2:
+                for rep in web_summary["replicates"]:
+                    if _add_items(getattr(rep, "notes", [])):
+                        break
+
+        if not reasons:
+            reasons = _generate_explanation()
         # Build display pieces
         if p >= 0.60:
             why_head = "Why it’s likely true"
@@ -529,16 +736,11 @@ class Handler(BaseHTTPRequestHandler):
             why_head = "Why it’s uncertain"
             why_kind = "uncertain"
 
-        summary_lines = [
-            f'Claim: "{claim}"',
-            f'Verdict: {verdict} ({percent}%)',
-        ]
         if reasons:
             summary_lines.append('Reasons:')
             summary_lines.extend(f'- {r}' for r in reasons)
         else:
             summary_lines.append('Reasons: (none)')
-        summary_lines.append(f'Model: {ui_model_label} · {ui_mode_label}')
         summary_attr = html.escape("\n".join(summary_lines), quote=True)
 
         # Escape for HTML but preserve Unicode characters (avoid JSON string escapes like \u201c)
@@ -555,6 +757,11 @@ class Handler(BaseHTTPRequestHandler):
                 "WHY_HEAD": why_head,
                 "WHY_ITEMS": why_items_html,
                 "WHY_KIND": why_kind,
+                "INFO_TITLE": html.escape(info_title, quote=True),
+                "INFO_NOTE_A": html.escape(info_note_a, quote=True),
+                "INFO_NOTE_B": html.escape(info_note_b, quote=True),
+                "ADV_NOTE": html.escape(adv_note, quote=True),
+                "ADV_EXTRA": adv_extra_html,
                 "ADV_WIDTH": adv_width,
                 "ADV_STABILITY": adv_stability,
                 "ADV_COMPLIANCE": adv_compliance,
