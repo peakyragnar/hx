@@ -87,7 +87,7 @@ def try_resolve_fact(
     citations: List[Dict[str, object]] = []
 
     for doc in docs:
-        excerpt = doc.snippet or doc.title or ""
+        excerpt = (doc.page_text or doc.snippet or doc.title or "").strip()
         verdict = evaluate_doc(claim_text, excerpt, model=model)
         if verdict.stance == "unclear":
             continue

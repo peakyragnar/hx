@@ -119,8 +119,18 @@ def extract_publish_signal(
     url: str,
     html: str,
     headers: Optional[requests.structures.CaseInsensitiveDict] = None,
-) -> PublishSignal:
+) -> Tuple[PublishSignal, str]:
     soup = BeautifulSoup(html, "html.parser")
+    body_text = soup.get_text(separator=" ", strip=True)
+    signal = _extract_publish_signal_from_soup(url, soup, headers)
+    return signal, body_text
+
+
+def _extract_publish_signal_from_soup(
+    url: str,
+    soup: BeautifulSoup,
+    headers: Optional[requests.structures.CaseInsensitiveDict] = None,
+) -> PublishSignal:
     # JSON-LD
     for candidate in _extract_jsonld_dates(soup):
         dt = _parse_date(candidate)
@@ -180,8 +190,10 @@ def enrich_docs_with_publish_dates(
             response.raise_for_status()
         except requests.RequestException:
             continue
-        signal = extract_publish_signal(doc.url, response.text, response.headers)
+        signal, page_text = extract_publish_signal(doc.url, response.text, response.headers)
         if signal.published_at:
             doc.published_at = signal.published_at
             doc.published_method = signal.method
             doc.published_confidence = signal.confidence
+        if page_text:
+            doc.page_text = page_text[:4000]

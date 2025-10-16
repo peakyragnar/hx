@@ -16,6 +16,7 @@ class Doc:
     published_at: Optional[datetime]
     published_method: Optional[str] = None
     published_confidence: float = 0.0
+    page_text: Optional[str] = None
 
 
 @dataclass
