@@ -18,7 +18,7 @@ class TavilyRetriever:
     def __init__(self, api_key: Optional[str] = None, timeout: float = 15.0):
         self.api_key = api_key or os.getenv("TAVILY_API_KEY")
         if not self.api_key:
-            raise RuntimeError("TAVILY_API_KEY is required for Tavily retrieval")
+            raise RuntimeError("Tavily API key not configured; set it before using the web retriever.")
         self.timeout = timeout
 
     def _domain(self, url: str) -> str:

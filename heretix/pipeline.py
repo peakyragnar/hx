@@ -195,121 +195,139 @@ def perform_run(
     if not run_id:
         raise RuntimeError("run_id missing from RPL result")
 
-    check = session.scalar(select(Check).where(Check.run_id == run_id))
-    if check is None:
-        check = Check(run_id=run_id, env=options.app_env)
-        session.add(check)
+    check = _get_or_create_check(session, run_id, options.app_env)
+    check_updates: Dict[str, Any] = {}
 
-    check.env = options.app_env
-    check.user_id = user_id
-    check.claim = cfg.claim
-    check.claim_hash = hashlib.sha256((cfg.claim or "").encode("utf-8")).hexdigest() if cfg.claim else None
-    check.model = result.get("model", cfg.model)
-    check.prompt_version = result.get("prompt_version", cfg.prompt_version)
-    check.k = int(cfg.K)
-    check.r = int(cfg.R)
-    check.t = sampling.get("T")
-    check.b = cfg.B
-    check.seed = cfg.seed
+    _assign(check, check_updates, "env", options.app_env)
+    _assign(check, check_updates, "user_id", user_id)
+    _assign(check, check_updates, "claim", cfg.claim)
+    _assign(
+        check,
+        check_updates,
+        "claim_hash",
+        hashlib.sha256((cfg.claim or "").encode("utf-8")).hexdigest() if cfg.claim else None,
+    )
+    _assign(check, check_updates, "model", result.get("model", cfg.model))
+    _assign(check, check_updates, "prompt_version", result.get("prompt_version", cfg.prompt_version))
+    _assign(check, check_updates, "k", int(cfg.K))
+    _assign(check, check_updates, "r", int(cfg.R))
+    _assign(check, check_updates, "t", sampling.get("T"))
+    _assign(check, check_updates, "b", cfg.B)
+    _assign(check, check_updates, "seed", cfg.seed)
     bootstrap_seed_val = aggregation.get("bootstrap_seed")
-    check.bootstrap_seed = int(bootstrap_seed_val) if bootstrap_seed_val is not None else None
-    check.max_output_tokens = cfg.max_output_tokens
-    check.prob_true_rpl = float(aggregates.get("prob_true_rpl"))
-    check.ci_lo = float(ci95[0]) if ci95 and ci95[0] is not None else None
-    check.ci_hi = float(ci95[1]) if ci95 and ci95[1] is not None else None
-    check.ci_width = ci_width
-    check.template_iqr_logit = aggregation.get("template_iqr_logit")
-    check.stability_score = stability_score
-    check.imbalance_ratio = aggregation.get("imbalance_ratio")
-    check.rpl_compliance_rate = rpl_compliance_rate
-    check.cache_hit_rate = cache_hit_rate
-    check.config_json = config_json
-    check.sampler_json = json.dumps({"K": cfg.K, "R": cfg.R, "T": sampling.get("T")})
-    check.counts_by_template_json = json.dumps(aggregation_counts)
-    check.artifact_json_path = None
-    check.prompt_char_len_max = aggregation.get("prompt_char_len_max")
-    check.pqs = None
-    check.gate_compliance_ok = rpl_compliance_rate >= 0.98
-    check.gate_stability_ok = stability_score >= 0.25
-    check.gate_precision_ok = ci_width <= 0.30
-    check.pqs_version = None
-    check.mode = mode
-    check.p_prior = prior_p
-    check.ci_prior_lo = prior_ci[0]
-    check.ci_prior_hi = prior_ci[1]
-    check.stability_prior = stability_score
+    _assign(
+        check,
+        check_updates,
+        "bootstrap_seed",
+        int(bootstrap_seed_val) if bootstrap_seed_val is not None else None,
+    )
+    _assign(check, check_updates, "max_output_tokens", cfg.max_output_tokens)
+    _assign(check, check_updates, "prob_true_rpl", float(aggregates.get("prob_true_rpl")))
+    _assign(check, check_updates, "ci_lo", float(ci95[0]) if ci95 and ci95[0] is not None else None)
+    _assign(check, check_updates, "ci_hi", float(ci95[1]) if ci95 and ci95[1] is not None else None)
+    _assign(check, check_updates, "ci_width", ci_width)
+    _assign(check, check_updates, "template_iqr_logit", aggregation.get("template_iqr_logit"))
+    _assign(check, check_updates, "stability_score", stability_score)
+    _assign(check, check_updates, "imbalance_ratio", aggregation.get("imbalance_ratio"))
+    _assign(check, check_updates, "rpl_compliance_rate", rpl_compliance_rate)
+    _assign(check, check_updates, "cache_hit_rate", cache_hit_rate)
+    _assign(check, check_updates, "config_json", config_json)
+    _assign(check, check_updates, "sampler_json", json.dumps({"K": cfg.K, "R": cfg.R, "T": sampling.get("T")}))
+    _assign(check, check_updates, "counts_by_template_json", json.dumps(aggregation_counts))
+    _assign(check, check_updates, "artifact_json_path", None)
+    _assign(check, check_updates, "prompt_char_len_max", aggregation.get("prompt_char_len_max"))
+    _assign(check, check_updates, "pqs", None)
+    _assign(check, check_updates, "gate_compliance_ok", rpl_compliance_rate >= 0.98)
+    _assign(check, check_updates, "gate_stability_ok", stability_score >= 0.25)
+    _assign(check, check_updates, "gate_precision_ok", ci_width <= 0.30)
+    _assign(check, check_updates, "pqs_version", None)
+    _assign(check, check_updates, "mode", mode)
+    _assign(check, check_updates, "p_prior", prior_p)
+    _assign(check, check_updates, "ci_prior_lo", prior_ci[0])
+    _assign(check, check_updates, "ci_prior_hi", prior_ci[1])
+    _assign(check, check_updates, "stability_prior", stability_score)
 
     if web_block_payload:
         evidence = web_block_payload.get("evidence", {})
-        check.p_web = float(web_block_payload["p"])
-        check.ci_web_lo = float(web_block_payload["ci95"][0])
-        check.ci_web_hi = float(web_block_payload["ci95"][1])
-        check.n_docs = int(evidence.get("n_docs", 0))
-        check.n_domains = int(evidence.get("n_domains", 0))
-        check.median_age_days = float(evidence.get("median_age_days", 0.0))
-        check.web_dispersion = float(evidence.get("dispersion", 0.0))
-        check.json_valid_rate = float(evidence.get("json_valid_rate", 0.0))
+        _assign(check, check_updates, "p_web", float(web_block_payload["p"]))
+        _assign(check, check_updates, "ci_web_lo", float(web_block_payload["ci95"][0]))
+        _assign(check, check_updates, "ci_web_hi", float(web_block_payload["ci95"][1]))
+        _assign(check, check_updates, "n_docs", int(evidence.get("n_docs", 0)))
+        _assign(check, check_updates, "n_domains", int(evidence.get("n_domains", 0)))
+        _assign(check, check_updates, "median_age_days", float(evidence.get("median_age_days", 0.0)))
+        _assign(check, check_updates, "web_dispersion", float(evidence.get("dispersion", 0.0)))
+        _assign(check, check_updates, "json_valid_rate", float(evidence.get("json_valid_rate", 0.0)))
         date_confident = evidence.get("date_confident_rate")
         confident_count = evidence.get("n_confident_dates")
         if date_confident is not None:
-            check.date_confident_rate = float(date_confident)
+            _assign(check, check_updates, "date_confident_rate", float(date_confident))
         if confident_count is not None:
-            check.n_confident_dates = float(confident_count)
+            _assign(check, check_updates, "n_confident_dates", float(confident_count))
     else:
-        check.p_web = None
-        check.ci_web_lo = None
-        check.ci_web_hi = None
-        check.n_docs = None
-        check.n_domains = None
-        check.median_age_days = None
-        check.web_dispersion = None
-        check.json_valid_rate = None
-        check.date_confident_rate = None
-        check.n_confident_dates = None
+        _assign(check, check_updates, "p_web", None)
+        _assign(check, check_updates, "ci_web_lo", None)
+        _assign(check, check_updates, "ci_web_hi", None)
+        _assign(check, check_updates, "n_docs", None)
+        _assign(check, check_updates, "n_domains", None)
+        _assign(check, check_updates, "median_age_days", None)
+        _assign(check, check_updates, "web_dispersion", None)
+        _assign(check, check_updates, "json_valid_rate", None)
+        _assign(check, check_updates, "date_confident_rate", None)
+        _assign(check, check_updates, "n_confident_dates", None)
 
     if combined_block_payload:
-        check.p_combined = float(combined_block_payload["p"])
-        check.ci_combined_lo = float(combined_block_payload["ci95"][0])
-        check.ci_combined_hi = float(combined_block_payload["ci95"][1])
+        _assign(check, check_updates, "p_combined", float(combined_block_payload["p"]))
+        _assign(check, check_updates, "ci_combined_lo", float(combined_block_payload["ci95"][0]))
+        _assign(check, check_updates, "ci_combined_hi", float(combined_block_payload["ci95"][1]))
     else:
-        check.p_combined = None
-        check.ci_combined_lo = None
-        check.ci_combined_hi = None
+        _assign(check, check_updates, "p_combined", None)
+        _assign(check, check_updates, "ci_combined_lo", None)
+        _assign(check, check_updates, "ci_combined_hi", None)
 
     if weights_payload:
-        check.w_web = float(weights_payload.get("w_web", 0.0))
-        check.recency_score = float(weights_payload.get("recency", 0.0))
-        check.strength_score = float(weights_payload.get("strength", 0.0))
+        _assign(check, check_updates, "w_web", float(weights_payload.get("w_web", 0.0)))
+        _assign(check, check_updates, "recency_score", float(weights_payload.get("recency", 0.0)))
+        _assign(check, check_updates, "strength_score", float(weights_payload.get("strength", 0.0)))
     else:
-        check.w_web = None
-        check.recency_score = None
-        check.strength_score = None
+        _assign(check, check_updates, "w_web", None)
+        _assign(check, check_updates, "recency_score", None)
+        _assign(check, check_updates, "strength_score", None)
 
     if combined_block_payload and combined_block_payload.get("resolved"):
-        check.resolved_flag = True
+        _assign(check, check_updates, "resolved_flag", True)
         resolved_truth = combined_block_payload.get("resolved_truth")
-        check.resolved_truth = bool(resolved_truth) if resolved_truth is not None else None
-        check.resolved_reason = combined_block_payload.get("resolved_reason")
-        check.resolved_support = combined_block_payload.get("support")
-        check.resolved_contradict = combined_block_payload.get("contradict")
+        _assign(
+            check,
+            check_updates,
+            "resolved_truth",
+            bool(resolved_truth) if resolved_truth is not None else None,
+        )
+        _assign(check, check_updates, "resolved_reason", combined_block_payload.get("resolved_reason"))
+        _assign(check, check_updates, "resolved_support", combined_block_payload.get("support"))
+        _assign(check, check_updates, "resolved_contradict", combined_block_payload.get("contradict"))
         domains_val = combined_block_payload.get("domains")
-        check.resolved_domains = int(domains_val) if domains_val is not None else None
+        _assign(
+            check,
+            check_updates,
+            "resolved_domains",
+            int(domains_val) if domains_val is not None else None,
+        )
         citations_val = combined_block_payload.get("resolved_citations")
-        check.resolved_citations = json.dumps(citations_val) if citations_val is not None else None
+        _assign(check, check_updates, "resolved_citations", json.dumps(citations_val) if citations_val is not None else None)
     else:
-        check.resolved_flag = False if mode == "web_informed" else None
-        check.resolved_truth = None
-        check.resolved_reason = None
-        check.resolved_support = None
-        check.resolved_contradict = None
-        check.resolved_domains = None
-        check.resolved_citations = None
+        _assign(check, check_updates, "resolved_flag", False if mode == "web_informed" else None)
+        _assign(check, check_updates, "resolved_truth", None)
+        _assign(check, check_updates, "resolved_reason", None)
+        _assign(check, check_updates, "resolved_support", None)
+        _assign(check, check_updates, "resolved_contradict", None)
+        _assign(check, check_updates, "resolved_domains", None)
+        _assign(check, check_updates, "resolved_citations", None)
 
-    check.was_cached = cache_hit_rate >= 0.999
-    check.provider_model_id = result.get("model", cfg.model)
-    check.anon_token = anon_token if user_id is None else None
-    check.created_at = now
-    check.finished_at = now
+    _assign(check, check_updates, "was_cached", cache_hit_rate >= 0.999)
+    _assign(check, check_updates, "provider_model_id", result.get("model", cfg.model))
+    _assign(check, check_updates, "anon_token", anon_token if user_id is None else None)
+    _assign(check, check_updates, "created_at", now)
+    _assign(check, check_updates, "finished_at", now)
 
     if mode == "web_informed" and web_block_payload:
         try:
@@ -331,7 +349,7 @@ def perform_run(
             artifact_record = None
 
     if artifact_record:
-        check.artifact_json_path = artifact_record.manifest_uri
+        _assign(check, check_updates, "artifact_json_path", artifact_record.manifest_uri)
 
     normalized_reps = [_normalize_replica(rep) for rep in raw_replicates]
 
@@ -379,3 +397,14 @@ def _normalize_replica(rep: Any) -> Dict[str, Any]:
         "notes": [str(x) for x in notes],
         "json_valid": bool(json_valid) if json_valid is not None else None,
     }
+def _get_or_create_check(session: Session, run_id: str, env: str) -> Check:
+    check = session.scalar(select(Check).where(Check.run_id == run_id))
+    if check is None:
+        check = Check(run_id=run_id, env=env)
+        session.add(check)
+    return check
+
+
+def _assign(check: Check, updates: Dict[str, Any], field: str, value: Any) -> None:
+    updates[field] = value
+    setattr(check, field, value)
