@@ -1,5 +1,7 @@
 # Heretix — Raw Prior Lens (RPL)
 
+<!-- Test change for Devin verification -->
+
 ![Estimator](https://img.shields.io/badge/Estimator-Frozen-green)
 ![Auto–RPL](https://img.shields.io/badge/Auto–RPL-Enabled-blue)
 ![Prompt%20Version](https://img.shields.io/badge/PROMPT__VERSION-rpl__g5__v2__2025--08--21-purple)
