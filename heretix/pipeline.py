@@ -115,6 +115,7 @@ def perform_run(
     raw_replicates: list[Any] = []
     debug_votes: Optional[list[Dict[str, Any]]] = None
     artifact_record: Optional[ArtifactRecord] = None
+    sanitized_web_block: Optional[Dict[str, Any]] = None
 
     if mode == "web_informed":
         web_block_payload, combined_block_payload, weights_payload, wel_provenance = evaluate_web_informed(
@@ -131,6 +132,11 @@ def perform_run(
         if web_block_payload:
             raw_replicates = web_block_payload.get("replicates", []) or []
             debug_votes = web_block_payload.get("resolved_debug_votes")
+            sanitized_web_block = dict(web_block_payload)
+            sanitized_web_block.pop("replicates", None)
+            sanitized_web_block.pop("resolved_debug_votes", None)
+            if debug_votes is not None:
+                sanitized_web_block["resolved_debug_votes"] = debug_votes
 
     aggregation_counts = aggregation.get("counts_by_template", {})
     config_json = json.dumps(
@@ -279,7 +285,7 @@ def perform_run(
                 mode=mode,
                 store=store,
                 prior_block=prior_block_payload,
-                web_block=web_block_payload,
+                web_block=sanitized_web_block or web_block_payload,
                 combined_block=combined_block_payload,
                 wel_provenance=wel_provenance,
                 replicates=raw_replicates,
@@ -293,15 +299,11 @@ def perform_run(
         check.artifact_json_path = artifact_record.manifest_uri
 
     normalized_reps = [_normalize_replica(rep) for rep in raw_replicates]
-    if web_block_payload is not None:
-        web_block_payload["replicates"] = normalized_reps
-        if debug_votes is not None:
-            web_block_payload["resolved_debug_votes"] = debug_votes
 
     return PipelineArtifacts(
         result=result,
         prior_block=prior_block_payload,
-        web_block=web_block_payload,
+        web_block=sanitized_web_block,
         combined_block=combined_block_payload,
         weights=weights_payload,
         wel_provenance=wel_provenance,
