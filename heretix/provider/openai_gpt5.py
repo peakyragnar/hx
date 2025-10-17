@@ -5,6 +5,9 @@ import time
 import hashlib
 from typing import Dict, Any
 
+import os
+from heretix.ratelimit import RateLimiter
+
 from openai import OpenAI
 
 
@@ -35,6 +38,7 @@ def score_claim(
     prompt_sha256 = hashlib.sha256((full_instructions + "\n\n" + user_text).encode("utf-8")).hexdigest()
 
     t0 = time.time()
+    _OPENAI_RATE_LIMITER.acquire()
     # Create a fresh client per call for thread-safety under concurrency
     client = OpenAI()
     try:
@@ -104,3 +108,7 @@ def score_claim(
             "latency_ms": latency_ms,
         },
     }
+_OPENAI_RATE_LIMITER = RateLimiter(
+    rate_per_sec=float(os.getenv("HERETIX_OPENAI_RPS", "2")),
+    burst=int(os.getenv("HERETIX_OPENAI_BURST", "2")),
+)

@@ -4,6 +4,7 @@ import hashlib
 import math
 import os
 import random
+import os
 from typing import Dict, List, Optional
 
 from .aggregate import combine_replicates_ps
@@ -20,6 +21,13 @@ from .snippets import (
     pack_snippets_for_llm,
 )
 from .types import Doc, WELReplicate
+from heretix.ratelimit import RateLimiter
+
+
+_TAVILY_RATE_LIMITER = RateLimiter(
+    rate_per_sec=float(os.getenv("HERETIX_TAVILY_RPS", "4")),
+    burst=int(os.getenv("HERETIX_TAVILY_BURST", "4")),
+)
 
 
 def _deterministic_seed(claim: str, provider: str, model: str, k_docs: int, replicates: int) -> int:
@@ -60,6 +68,7 @@ def evaluate_wel(
     """
     retriever = make_retriever(provider=provider)
     query = f"Latest reliable reporting about: {claim}"
+    _TAVILY_RATE_LIMITER.acquire()
     fetched = retriever.search(query=query, k=k_docs * 2, recency_days=recency_days)
 
     docs = cap_per_domain(dedupe_by_url(fetched), max_per_domain=per_domain_cap)[:k_docs]
@@ -130,6 +139,7 @@ def evaluate_wel(
     for idx, chunk in enumerate(doc_chunks):
         bundle = pack_snippets_for_llm(claim, chunk, max_chars=max_chars)
         try:
+            # Scoring call hits OpenAI; call_wel_once enforces its own rate limit.
             payload, prompt_hash = call_wel_once(bundle, model=model)
             p = float(payload.get("p_true"))
             support = [str(x) for x in (payload.get("support_bullets") or [])][:4]

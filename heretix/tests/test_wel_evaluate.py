@@ -73,8 +73,19 @@ def test_evaluate_wel_error(monkeypatch: pytest.MonkeyPatch):
     assert rep.json_valid is False
 
 
-def test_chunk_docs_balances_remainder(monkeypatch: pytest.MonkeyPatch):
+def test_chunk_docs_balances_remainder():
     docs = [FakeDoc(url=f"https://example.com/{i}", title=f"Doc {i}") for i in range(5)]
     chunks = _chunk_docs(docs, replicates=3)
     seen = {doc.url for chunk in chunks for doc in chunk}
     assert seen == {f"https://example.com/{i}" for i in range(5)}
+
+
+def test_tavily_rate_limiter_invoked(monkeypatch: pytest.MonkeyPatch, _patch_call):
+    called = {"count": 0}
+
+    def fake_acquire():
+        called["count"] += 1
+
+    monkeypatch.setattr("heretix_wel.evaluate_wel._TAVILY_RATE_LIMITER.acquire", fake_acquire)
+    evaluate_wel.evaluate_wel(claim="rate limit test", k_docs=2, replicates=1, seed=4)
+    assert called["count"] == 1

@@ -108,59 +108,63 @@ def ensure_schema(database_url: str) -> None:
                     for row in conn.exec_driver_sql("PRAGMA table_info(checks)").fetchall()
                 }
 
-                column_defs = {
-                    "env": "TEXT",
-                    "user_id": "TEXT",
-                    "claim_hash": "TEXT",
-                    "prompt_char_len_max": "INTEGER",
-                    "pqs": "REAL",
-                    "gate_compliance_ok": "INTEGER",
-                    "gate_stability_ok": "INTEGER",
-                    "gate_precision_ok": "INTEGER",
-                    "pqs_version": "TEXT",
-                    "cache_hit_rate": "REAL",
-                    "config_json": "TEXT",
-                    "sampler_json": "TEXT",
-                    "counts_by_template_json": "TEXT",
-                    "artifact_json_path": "TEXT",
-                    "mode": "TEXT",
-                    "p_prior": "REAL",
-                    "ci_prior_lo": "REAL",
-                    "ci_prior_hi": "REAL",
-                    "stability_prior": "REAL",
-                    "p_web": "REAL",
-                    "ci_web_lo": "REAL",
-                    "ci_web_hi": "REAL",
-                    "n_docs": "INTEGER",
-                    "n_domains": "INTEGER",
-                    "median_age_days": "REAL",
-                    "web_dispersion": "REAL",
-                    "json_valid_rate": "REAL",
-                    "date_confident_rate": "REAL",
-                    "n_confident_dates": "REAL",
-                    "p_combined": "REAL",
-                    "ci_combined_lo": "REAL",
-                    "ci_combined_hi": "REAL",
-                    "w_web": "REAL",
-                    "recency_score": "REAL",
-                    "strength_score": "REAL",
-                    "resolved_flag": "INTEGER",
-                    "resolved_truth": "INTEGER",
-                    "resolved_reason": "TEXT",
-                    "resolved_support": "REAL",
-                    "resolved_contradict": "REAL",
-                    "resolved_domains": "INTEGER",
-                    "resolved_citations": "TEXT",
-                    "was_cached": "INTEGER",
-                    "provider_model_id": "TEXT",
-                    "anon_token": "TEXT",
-                    "created_at": "TEXT",
-                    "finished_at": "TEXT",
-                }
+                column_defs = [
+                    ("env", "TEXT"),
+                    ("user_id", "TEXT"),
+                    ("claim_hash", "TEXT"),
+                    ("prompt_char_len_max", "INTEGER"),
+                    ("pqs", "REAL"),
+                    ("gate_compliance_ok", "INTEGER"),
+                    ("gate_stability_ok", "INTEGER"),
+                    ("gate_precision_ok", "INTEGER"),
+                    ("pqs_version", "TEXT"),
+                    ("cache_hit_rate", "REAL"),
+                    ("config_json", "TEXT"),
+                    ("sampler_json", "TEXT"),
+                    ("counts_by_template_json", "TEXT"),
+                    ("artifact_json_path", "TEXT"),
+                    ("mode", "TEXT"),
+                    ("p_prior", "REAL"),
+                    ("ci_prior_lo", "REAL"),
+                    ("ci_prior_hi", "REAL"),
+                    ("stability_prior", "REAL"),
+                    ("p_web", "REAL"),
+                    ("ci_web_lo", "REAL"),
+                    ("ci_web_hi", "REAL"),
+                    ("n_docs", "INTEGER"),
+                    ("n_domains", "INTEGER"),
+                    ("median_age_days", "REAL"),
+                    ("web_dispersion", "REAL"),
+                    ("json_valid_rate", "REAL"),
+                    ("date_confident_rate", "REAL"),
+                    ("n_confident_dates", "REAL"),
+                    ("p_combined", "REAL"),
+                    ("ci_combined_lo", "REAL"),
+                    ("ci_combined_hi", "REAL"),
+                    ("w_web", "REAL"),
+                    ("recency_score", "REAL"),
+                    ("strength_score", "REAL"),
+                    ("resolved_flag", "INTEGER"),
+                    ("resolved_truth", "INTEGER"),
+                    ("resolved_reason", "TEXT"),
+                    ("resolved_support", "REAL"),
+                    ("resolved_contradict", "REAL"),
+                    ("resolved_domains", "INTEGER"),
+                    ("resolved_citations", "TEXT"),
+                    ("was_cached", "INTEGER"),
+                    ("provider_model_id", "TEXT"),
+                    ("anon_token", "TEXT"),
+                    ("created_at", "TEXT"),
+                    ("finished_at", "TEXT"),
+                ]
 
-                for column, ddl in column_defs.items():
+                known_columns = {name for name, _ in column_defs}
+
+                for column, ddl in column_defs:
                     if column not in existing_cols:
-                        conn.exec_driver_sql(f"ALTER TABLE checks ADD COLUMN {column} {ddl}")
+                        conn.exec_driver_sql(
+                            'ALTER TABLE checks ADD COLUMN "{}" {}'.format(column, ddl)
+                        )
                         existing_cols.add(column)
 
                 if "mode" in existing_cols:
@@ -180,7 +184,7 @@ def ensure_schema(database_url: str) -> None:
                 for index_name, cols in index_defs.items():
                     if all(col in existing_cols for col in cols):
                         conn.exec_driver_sql(
-                            f"CREATE INDEX IF NOT EXISTS {index_name} ON checks({','.join(cols)})"
+                            f"CREATE INDEX IF NOT EXISTS {index_name} ON checks({','.join(f'"{col}"' for col in cols)})"
                         )
             _MIGRATED_URLS.add(database_url)
             return
