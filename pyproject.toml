@@ -45,3 +45,9 @@ exclude = ["legacy*", "heretix_rpl*", "heretix_promptstudio*", "runs*", "tests*"
 
 [tool.uv]
 package = true
+
+[dependency-groups]
+dev = [
+    "black>=25.9.0",
+    "isort>=7.0.0",
+]
