@@ -26,12 +26,13 @@ def test_cli_smoke_single_version(tmp_path: Path):
         ])
     )
     out_path = tmp_path / "out.json"
+    env = {"DATABASE_URL": f"sqlite:///{tmp_path / 'smoke_single.sqlite'}"}
     result = runner.invoke(app, [
         "run",
         "--config", str(cfg_path),
         "--out", str(out_path),
         "--mock",
-    ])
+    ], env=env)
     assert result.exit_code == 0, result.output
     doc = json.loads(out_path.read_text())
     assert isinstance(doc.get("runs"), list) and len(doc["runs"]) == 1
@@ -53,6 +54,7 @@ def test_cli_smoke_multi_version(tmp_path: Path):
         ])
     )
     out_path = tmp_path / "out.json"
+    env = {"DATABASE_URL": f"sqlite:///{tmp_path / 'smoke_multi.sqlite'}"}
     result = runner.invoke(app, [
         "run",
         "--config", str(cfg_path),
@@ -60,7 +62,7 @@ def test_cli_smoke_multi_version(tmp_path: Path):
         "--mock",
         "--prompt-version", "rpl_g5_v2",
         "--prompt-version", "rpl_g5_v2",
-    ])
+    ], env=env)
     assert result.exit_code == 0, result.output
     doc = json.loads(out_path.read_text())
     assert isinstance(doc.get("runs"), list) and len(doc["runs"]) == 2

@@ -100,7 +100,7 @@ def cmd_run(
         typer.echo(json.dumps({"mode": "single", "plan": plan}, indent=2))
         return
 
-    effective_db_url = database_url or "sqlite:///runs/heretix.sqlite"
+    effective_db_url = database_url or os.getenv("DATABASE_URL", "sqlite:///runs/heretix.sqlite")
     os.environ["DATABASE_URL"] = effective_db_url
 
     from heretix.db.migrate import ensure_schema

@@ -27,7 +27,8 @@ def test_cli_seed_from_config_file(tmp_path: Path):
     )
 
     # Describe should show effective bootstrap seed = 12345
-    result_desc = runner.invoke(app, ["describe", "--config", str(cfg_path)])
+    env = {"DATABASE_URL": f"sqlite:///{tmp_path / 'seed.sqlite'}"}
+    result_desc = runner.invoke(app, ["describe", "--config", str(cfg_path)], env=env)
     assert result_desc.exit_code == 0, result_desc.output
     desc = json.loads(result_desc.stdout)
     assert desc["plan"]["bootstrap_seed_effective"] == 12345
@@ -39,8 +40,7 @@ def test_cli_seed_from_config_file(tmp_path: Path):
         "--config", str(cfg_path),
         "--out", str(out_path),
         "--mock",
-    ])
+    ], env=env)
     assert result_run.exit_code == 0, result_run.output
     doc = json.loads(out_path.read_text())
     assert doc["runs"][0]["aggregation"]["bootstrap_seed"] == 12345
-
