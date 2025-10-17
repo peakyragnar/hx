@@ -27,7 +27,7 @@ This note walks through how the Web-Informed Lens (WEL) evidence is now captured
 
 Notes:
 - `local` backend writes to the current machine (dev laptops, single-node prod); files live under `{HERETIX_ARTIFACT_PATH}/artifacts/{run_id}/{artifact_id}/`.
-- `gcs` backend streams directly to Google Cloud Storage using `google-cloud-storage`. Ensure service credentials are available to the process.
+- `gcs` backend streams directly to Google Cloud Storage (requires the `google-cloud-storage` package and service credentials via `GOOGLE_APPLICATION_CREDENTIALS` or workload identity).
 - `disabled` backend skips artifact creation entirely (rare; use only if storage is unavailable).
 
 ---
@@ -82,6 +82,10 @@ export HERETIX_ARTIFACT_PREFIX=prod   # optional
 The files will appear under `gs://heretix-web-artifacts/prod/artifacts/<run_id>/<artifact_id>/...`.
 
 Make sure the service account running the API/worker has write access to the bucket.
+Typical steps:
+- Create a dedicated bucket (e.g., `gsutil mb gs://heretix-web-artifacts`).
+- Grant a service account `Storage Object Admin` (or tighter scoped) permissions.
+- Provide credentials via `GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json` or workload identity.
 
 ---
 
@@ -154,5 +158,24 @@ Set `HERETIX_ARTIFACT_BACKEND=disabled` before the process starts. Useful for qu
 - **Remote export**: enhance `export_web_artifacts.py` to download `gs://` URIs, then run in prod to generate Parquet directly in the bucket.
 - **UI link**: front-end can read `web_artifact.manifest` to add a “View evidence” link per run.
 - **RL/Analytics**: point DuckDB/Polars/BigQuery at the Parquet output for model improvement and reporting.
+
+---
+
+## 10. Production Checklist Before Merge
+
+1. **Dependencies**  
+   - Ensure the runtime image includes `google-cloud-storage` (already added to `pyproject.toml`).
+2. **Bucket & Credentials**  
+   - Create/select a GCS bucket and grant write access to the app’s service account.  
+   - Configure `GOOGLE_APPLICATION_CREDENTIALS` (JSON key) or workload identity for the deployment.
+3. **Environment Variables**  
+   - Set `HERETIX_ARTIFACT_BACKEND=gcs`, `HERETIX_ARTIFACT_BUCKET=<bucket>`, and optional `HERETIX_ARTIFACT_PREFIX`.  
+   - Leave local dev on `local` (default) if desired.
+4. **Redeploy**  
+   - Build and deploy the updated application so the pipeline includes artifact capture.  
+   - Verify by running a web-informed claim in staging/production and checking for the manifest in the bucket.
+5. **Post-Deploy Tests**  
+   - Use `uv run heretix artifact --run-id <run_id>` on a staging box (with access to the bucket or downloaded files) to spot-check evidence.  
+   - Optionally schedule the export script (with remote download support) for analytics jobs.
 
 With these pieces, we now have a clean separation: lightweight DB summaries for the product, full evidence bundles in artifact storage, and tooling to convert them into datasets whenever analysis or RL needs arise.

@@ -214,7 +214,7 @@ Use gates to accept/reject; use PQS to choose among passes.
   export HERETIX_ARTIFACT_PATH=/custom/path
   ```
 - To disable capture entirely, set `HERETIX_ARTIFACT_BACKEND=disabled`.
-- For Google Cloud Storage, set `HERETIX_ARTIFACT_BACKEND=gcs`, `HERETIX_ARTIFACT_BUCKET=<bucket>`, and optionally `HERETIX_ARTIFACT_PREFIX`.
+- For Google Cloud Storage, set `HERETIX_ARTIFACT_BACKEND=gcs`, `HERETIX_ARTIFACT_BUCKET=<bucket>`, optional `HERETIX_ARTIFACT_PREFIX`, and ensure credentials via `GOOGLE_APPLICATION_CREDENTIALS`.
 - The manifest URI is stored on the `checks` row and returned in CLI/API payloads under `web_artifact`.
 - To materialize analytics tables from local artifacts:
   ```

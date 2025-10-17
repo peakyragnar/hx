@@ -117,7 +117,7 @@ CONCURRENCY (ENV VAR)
 - ARTIFACT CAPTURE (ENV VAR)
   - `HERETIX_ARTIFACT_BACKEND`: `local` (default), `gcs`, or `disabled`.
     - `local`: writes manifests + compressed payloads under `HERETIX_ARTIFACT_PATH` (defaults to `runs/artifacts`).
-    - `gcs`: upload to Google Cloud Storage; requires `HERETIX_ARTIFACT_BUCKET` and optional `HERETIX_ARTIFACT_PREFIX`.
+    - `gcs`: upload to Google Cloud Storage; requires `HERETIX_ARTIFACT_BUCKET`, optional `HERETIX_ARTIFACT_PREFIX`, and `GOOGLE_APPLICATION_CREDENTIALS` or workload identity.
     - `disabled`: skips artifact creation.
   - `HERETIX_ARTIFACT_PATH`: filesystem root for the local backend (auto-created).
 - CLI/API responses include `web_artifact.manifest` when capture is enabled.
