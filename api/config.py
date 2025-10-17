@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     wel_replicates: int = Field(2, alias="WEL_REPLICATES")
     wel_per_domain_cap: int = Field(3, alias="WEL_PER_DOMAIN_CAP")
     wel_recency_days: Optional[int] = Field(14, alias="WEL_RECENCY_DAYS")
+    openai_api_key: Optional[str] = Field(None, alias="OPENAI_API_KEY")
+    tavily_api_key: Optional[str] = Field(None, alias="TAVILY_API_KEY")
+    database_url_prod: Optional[str] = Field(None, alias="DATABASE_URL_PROD")
+    kalshi_api_key: Optional[str] = Field(None, alias="KALSHI_API_KEY")
+    kalshi_private_key: Optional[str] = Field(None, alias="KALSHI_PRIVATE_KEY")
 
     class Config:
         env_file = ".env"

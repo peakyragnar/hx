@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Optional
 
 from openai import OpenAI
+
+from .json_utils import load_json_obj
 
 
 @dataclass
@@ -34,7 +35,9 @@ Return STRICT JSON with:
   "value": "<the value extracted from the quote (e.g., actual winner, date, number)>"
 }}
 
-If you cannot provide a verbatim quote, return stance "unclear".
+Only answer "contradict" when the excerpt explicitly states the claim is false or names a different outcome/winner.
+If the excerpt describes in-progress events, future odds, partial progress, or anything that does not directly refute the claim,
+answer "unclear". If you cannot provide a verbatim quote, return stance "unclear".
 """
 
 
@@ -78,8 +81,8 @@ def evaluate_doc(claim: str, context: str, model: str = "gpt-5") -> DocVerdict:
         return DocVerdict("unclear", None, None, None)
 
     try:
-        payload = json.loads(text_output)
-    except json.JSONDecodeError:
+        payload = load_json_obj(text_output)
+    except ValueError:
         return DocVerdict("unclear", None, None, None)
 
     stance = str(payload.get("stance") or "").lower()

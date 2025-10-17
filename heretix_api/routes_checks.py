@@ -34,6 +34,7 @@ def evaluate_web_informed(
     for key, value in metrics.items():
         if isinstance(value, (int, float)) and not math.isnan(float(value)):
             evidence[key] = float(value)
+    replicates = wel.get("replicates", [])
     web_block: Dict[str, Any] = {
         "p": float(wel["p"]),
         "ci95": [float(wel["ci95"][0]), float(wel["ci95"][1])],
@@ -45,7 +46,10 @@ def evaluate_web_informed(
         "support": metrics.get("resolved_support"),
         "contradict": metrics.get("resolved_contradict"),
         "domains": metrics.get("resolved_domains"),
+        "replicates": replicates,
     }
+    if metrics.get("resolved_debug_votes") is not None:
+        web_block["resolved_debug_votes"] = metrics.get("resolved_debug_votes")
     combined, weights = fuse_prior_web(claim, prior, web_block)
     if web_block["resolved"]:
         combined.update(

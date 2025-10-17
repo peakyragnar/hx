@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import os
 from collections import defaultdict
 from datetime import datetime
 from typing import Dict, Iterable, List, Optional, Tuple
@@ -33,6 +34,9 @@ THRESH_SUPPORT = 2.0
 THRESH_OPPOSE = 0.5
 MIN_DISTINCT_DOMAINS = 2
 RECENCY_TAU_DAYS = 14.0
+EVENT_RECENCY_SOFT_FLOOR = 0.35
+EVENT_RECENCY_EXTENDED_FLOOR = 0.2
+EVENT_RECENCY_WINDOW_DAYS = 210.0
 
 
 class ResolvedResult(Dict[str, object]):
@@ -54,13 +58,6 @@ def _recency_weight(doc: Doc) -> float:
         return 1.0
     age_days = max((datetime.utcnow() - doc.published_at.replace(tzinfo=None)).total_seconds() / 86400.0, 0.0)
     return math.exp(-age_days / RECENCY_TAU_DAYS)
-
-
-def _score_doc(doc: Doc, verdict: DocVerdict) -> float:
-    base = _domain_weight(doc.domain)
-    recency = _recency_weight(doc)
-    quote_bonus = 1.1 if verdict.quote else 1.0
-    return base * recency * quote_bonus
 
 
 def _should_attempt_resolution(info: ClaimInfo) -> bool:
@@ -85,13 +82,23 @@ def try_resolve_fact(
     contradict = 0.0
     domain_votes = defaultdict(float)
     citations: List[Dict[str, object]] = []
+    debug_votes: List[Dict[str, object]] = []
+    debug_enabled = bool(os.getenv("WEL_DEBUG"))
 
     for doc in docs:
         excerpt = (doc.page_text or doc.snippet or doc.title or "").strip()
         verdict = evaluate_doc(claim_text, excerpt, model=model)
         if verdict.stance == "unclear":
             continue
-        weight = _score_doc(doc, verdict)
+        domain_w = _domain_weight(doc.domain)
+        recency_w = _recency_weight(doc)
+        if doc.published_at and info.relation_family in {"event_outcome", "identity_role", "membership"}:
+            age_days = max((datetime.utcnow() - doc.published_at.replace(tzinfo=None)).total_seconds() / 86400.0, 0.0)
+            if age_days <= EVENT_RECENCY_WINDOW_DAYS:
+                recency_w = max(recency_w, EVENT_RECENCY_SOFT_FLOOR)
+            else:
+                recency_w = max(recency_w, EVENT_RECENCY_EXTENDED_FLOOR)
+        weight = domain_w * recency_w * (1.1 if verdict.quote else 1.0)
         if verdict.stance == "support":
             support += weight
         elif verdict.stance == "contradict":
@@ -109,6 +116,19 @@ def try_resolve_fact(
                 "published_at": doc.published_at.isoformat() if doc.published_at else None,
             }
         )
+        if debug_enabled:
+            debug_votes.append(
+                {
+                    "url": doc.url,
+                    "domain": doc.domain,
+                    "stance": verdict.stance,
+                    "domain_w": domain_w,
+                    "recency_w": recency_w,
+                    "quote_bonus": 1.1 if verdict.quote else 1.0,
+                    "weight": weight,
+                    "published_at": doc.published_at.isoformat() if doc.published_at else None,
+                }
+            )
 
     distinct_domains = sum(1 for d, w in domain_votes.items() if w > 0.0)
 
@@ -122,6 +142,7 @@ def try_resolve_fact(
                 "contradict": contradict,
                 "domains": distinct_domains,
                 "citations": citations,
+                "debug_votes": debug_votes if debug_enabled else None,
             }
         )
     if contradict >= THRESH_SUPPORT and support <= THRESH_OPPOSE and distinct_domains >= MIN_DISTINCT_DOMAINS:
@@ -134,6 +155,7 @@ def try_resolve_fact(
                 "contradict": contradict,
                 "domains": distinct_domains,
                 "citations": citations,
+                "debug_votes": debug_votes if debug_enabled else None,
             }
         )
 
@@ -144,5 +166,6 @@ def try_resolve_fact(
             "contradict": contradict,
             "domains": distinct_domains,
             "citations": citations,
+            "debug_votes": debug_votes if debug_enabled else None,
         }
     )

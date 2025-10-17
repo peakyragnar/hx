@@ -6,7 +6,7 @@ _TIMELY_PATTERNS = re.compile(
     r"\b("
     r"today|tonight|tomorrow|yesterday|this (?:week|month|quarter|year)|"
     r"live|breaking|earnings|poll|primary|debate|game|match|vs\.?|odds|line|"
-    r"forecast|update"
+    r"forecast|update|recent|latest|current|reigning|defending"
     r")\b",
     flags=re.IGNORECASE,
 )

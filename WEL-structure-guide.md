@@ -48,7 +48,7 @@ WEL augments the Raw Prior Lens (RPL) by pulling web evidence, adjudicating each
 4. **Attempt Resolution**  
    - `try_resolve_fact` runs per-doc quote-required prompts (`evaluate_doc`) on the cached article text (`page_text` fallback to snippet/title).
    - Each doc returns `stance` (support/contradict/unclear), a verbatim quote, and field/value.
-   - Votes are weighted (domain weight + recency + quote bonus).
+  - Votes are weighted as the product of domain weight, recency decay, and a quote bonus (`weight = domain_weight × recency × quote_bonus`).
    - If support ≥ 2.0, contradict ≤ 0.5, and ≥ 2 distinct domains → Resolved True.  
      If contradict ≥ 2.0, support ≤ 0.5, and ≥ 2 distinct domains → Resolved False.  
      Else unresolved (falls back).
@@ -74,7 +74,7 @@ WEL augments the Raw Prior Lens (RPL) by pulling web evidence, adjudicating each
 8. **API Response**  
    - `web` block: probability, CI, evidence metrics, resolved metadata.
    - `combined` block: probability & CI; if resolved, contains citations and reason.
-   - `weights`: If resolved → `{w_web:1}`; else standard recency/strength weight.
+  - `weights`: If resolved → `{w_web:1, recency:1, strength:1}`; else standard recency/strength weight.
    - `provenance`: includes WEL seed & config.
 
 9. **UI Rendering**  
@@ -96,7 +96,7 @@ WEL augments the Raw Prior Lens (RPL) by pulling web evidence, adjudicating each
 | `w_web`, `recency_score`, `strength_score` | Fusion diagnostics. |
 | `resolved_flag`, `resolved_truth`, `resolved_reason` | Resolution state. |
 | `resolved_support`, `resolved_contradict`, `resolved_domains` | Consensus weights. |
-| `resolved_citations` | JSON array of citations (URL, domain, quote, stance, value, weight, published_at). |
+| `resolved_citations` | JSON array (stored as text) of citations (URL, domain, quote, stance, value, weight, published_at). |
 
 SQLite UI DB mirrors the relevant fields.
 
@@ -109,6 +109,7 @@ SQLite UI DB mirrors the relevant fields.
 - **Resolution thresholds**: set in `heretix_wel/resolved_engine.py` (`THRESH_SUPPORT = 2.0`, `THRESH_OPPOSE = 0.5`, `MIN_DISTINCT_DOMAINS = 2`). Adjust there if you need stricter consensus.
 - **Unresolved fallback**: WEL still returns probabilistic estimates when evidence is mixed or insufficient. Fusion weight falls back to recency/strength blend.
 - **UI**: When resolved, the prior is still shown for context, but the top-line verdict is derived entirely from the consensus.
+- **CLI parity**: `uv run heretix run --mode web_informed` now drives the same pipeline as the API and writes results into the `checks` table.
 
 ---
 

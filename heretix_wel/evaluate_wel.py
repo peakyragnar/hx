@@ -99,6 +99,7 @@ def evaluate_wel(
             "resolved_contradict": resolved_payload.get("contradict"),
             "resolved_domains": resolved_payload.get("domains"),
             "resolved_citations": resolved_payload.get("citations"),
+            "resolved_debug_votes": resolved_payload.get("debug_votes"),
         }
         return {
             "p": prob,
@@ -164,10 +165,11 @@ def evaluate_wel(
         "resolved_truth": None,
         "resolved_reason": None,
         "resolved_support": None,
-        "resolved_contradict": None,
-        "resolved_domains": None,
-        "resolved_citations": [],
-    }
+            "resolved_contradict": None,
+            "resolved_domains": None,
+            "resolved_citations": [],
+            "resolved_debug_votes": resolved_payload.get("debug_votes"),
+        }
 
     return {
         "p": p_hat,

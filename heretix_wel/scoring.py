@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from typing import Dict, Tuple
 
 from openai import OpenAI
+
+from .json_utils import load_json_obj
 
 WEL_SYSTEM = """You are the Web Evidence Lens (WEL).
 Estimate P(true) for the claim using only the provided snippets.
@@ -55,7 +56,7 @@ def call_wel_once(bundle_text: str, model: str = "gpt-5") -> Tuple[Dict[str, obj
         raise RuntimeError("No response payload received from GPT-5")
 
     try:
-        parsed = json.loads(payload)
-    except json.JSONDecodeError as exc:
+        parsed = load_json_obj(payload)
+    except ValueError as exc:
         raise ValueError(f"Invalid JSON from WEL model: {exc}") from exc
     return parsed, prompt_hash

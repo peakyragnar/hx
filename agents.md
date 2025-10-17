@@ -26,6 +26,7 @@ Quickstart (Phase‑1)
 - Live run (requires OPENAI_API_KEY):
   - export OPENAI_API_KEY=sk-...
   - uv run heretix run --config runs/rpl_example.yaml --out runs/rpl.json
+  - Add `--mode web_informed` to blend in the Web-Informed Lens when you want prior + web
 - Deterministic CI for CI width and decisions (does not fix model outputs):
   - HERETIX_RPL_SEED=42 uv run heretix run --config runs/rpl_example.yaml
 
@@ -72,13 +73,13 @@ Testing Instructions (Phase‑1)
   - uv run pytest heretix/tests/test_smoke_db.py -q
 - Expectations:
   - Tests pass with --mock (no network)
-  - SQLite database created at runs/heretix.sqlite (runs and samples tables)
+  - SQLite database created at runs/heretix.sqlite (legacy runs/samples plus new checks rows)
   - JSON artifact written to the path passed via --out
 
 CLI (Current)
 - Entrypoints:
   - `uv run heretix describe --config <file>`: print effective config and sampling plan (no network)
-  - `uv run heretix run --config <file> [--out <file>] [--mock] [--dry-run]`
+  - `uv run heretix run --config <file> [--out <file>] [--mock] [--dry-run] [--mode baseline|web_informed] [--database-url <db>]`
 - Config file keys (YAML/JSON):
   - claim (str)
   - model (str): gpt-5
@@ -112,7 +113,7 @@ Outputs & Interpretation
   - Seeds: runs row stores both configured `seed` (if any) and effective `bootstrap_seed` for auditability
 
 Repository Map (Active)
-- heretix/cli.py: Typer CLI (heretix run)
+- heretix/cli.py: Typer CLI (heretix run) feeding the shared RPL/WEL pipeline (persists into `checks`)
 - heretix/rpl.py: end‑to‑end RPL runner (sampling, cache, aggregation, persistence)
 - heretix/aggregate.py: equal‑by‑template weighting, 20% trimmed center (T>=5), cluster bootstrap (B=5000)
 - heretix/seed.py: deterministic bootstrap seed derivation

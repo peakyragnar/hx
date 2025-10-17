@@ -19,14 +19,6 @@ from heretix.provider.openai_gpt5 import score_claim as _score_claim_live
 from heretix.provider.mock import score_claim_mock as _score_claim_mock
 from openai import OpenAI
 
-from heretix_wel.evaluate_wel import evaluate_wel
-from heretix_wel.timeliness import heuristic_is_timely
-from heretix_wel.weights import (
-    fuse_probabilities,
-    recency_score,
-    strength_score,
-    web_weight,
-)
 
 
 ROOT = Path(__file__).parent
@@ -308,10 +300,11 @@ class Handler(BaseHTTPRequestHandler):
             self._err("This run expired. Please try again."); return
 
         env = os.environ.copy()
-        env.setdefault("HERETIX_DB_PATH", str(Path("runs/heretix_ui.sqlite")))
+        env.setdefault("DATABASE_URL", f"sqlite:///{Path('runs/heretix_ui.sqlite').resolve()}")
         env.setdefault("HERETIX_RPL_SEED", "42")
 
-        cmd = ["uv","run","heretix","run","--config",str(cfg_path),"--out",str(out_path)]
+        mode_flag = "web_informed" if ui_mode_value == "internet-search" else "baseline"
+        cmd = ["uv", "run", "heretix", "run", "--config", str(cfg_path), "--out", str(out_path), "--mode", mode_flag]
         timeout = min(RUN_TIMEOUT_SEC, 600)
         try:
             start = time.time()
@@ -347,8 +340,15 @@ class Handler(BaseHTTPRequestHandler):
             logging.error("UI parse error: %s", e)
             self._err("We couldn’t read the run output."); return
 
-        prior_p = p
-        prior_ci = aggregates.get("ci95") or [None, None]
+        prior_block = run.get("prior") or {}
+        combined_block_data = run.get("combined") or {}
+        web_block = run.get("web")
+        weights_block = run.get("weights") or {}
+        wel_replicates = run.get("wel_replicates") or []
+        wel_debug_votes = run.get("wel_debug_votes") or []
+
+        prior_p = float(prior_block.get("p", p))
+        prior_ci = prior_block.get("ci95") or aggregates.get("ci95") or [None, None]
 
         def _safe_float(val: object) -> float:
             try:
@@ -365,98 +365,36 @@ class Handler(BaseHTTPRequestHandler):
         if prior_width != prior_width:
             prior_width = width
 
-        combined_p = prior_p
-        combined_ci = (prior_ci_lo, prior_ci_hi)
-        combined_width = prior_width
+        combined_p = float(combined_block_data.get("p", prior_p))
+        combined_ci_values = combined_block_data.get("ci95") or [prior_ci_lo, prior_ci_hi]
+        combined_ci = (_safe_float(combined_ci_values[0]), _safe_float(combined_ci_values[1]))
+        combined_width = combined_ci[1] - combined_ci[0]
+
         web_summary: dict[str, object] | None = None
         web_error: str | None = None
 
-        if ui_mode_value == "internet-search":
-            try:
-                wel_provider = os.getenv("WEL_PROVIDER", "tavily")
-                wel_model = os.getenv("WEL_MODEL", model)
-                wel_docs = int(os.getenv("WEL_DOCS", "16"))
-                wel_replicates = int(os.getenv("WEL_REPLICATES", "2"))
-                wel_per_domain = int(os.getenv("WEL_PER_DOMAIN_CAP", "3"))
-                recency_env = os.getenv("WEL_RECENCY_DAYS")
-                wel_recency = int(recency_env) if recency_env and recency_env.lower() != "none" else None
-
-                wel_result = evaluate_wel(
-                    claim=claim,
-                    provider=wel_provider,
-                    model=wel_model,
-                    k_docs=wel_docs,
-                    replicates=wel_replicates,
-                    per_domain_cap=wel_per_domain,
-                    recency_days=wel_recency,
-                )
-                web_p = float(wel_result["p"])
-                web_ci_tuple = wel_result["ci95"]
-                web_ci = (float(web_ci_tuple[0]), float(web_ci_tuple[1]))
-                metrics_dict = wel_result["metrics"]
-                n_docs = int(metrics_dict.get("n_docs", 0))
-                n_domains = int(metrics_dict.get("n_domains", 0))
-                median_age = float(metrics_dict.get("median_age_days", 365.0))
-                dispersion = float(metrics_dict.get("dispersion", 0.0))
-                json_valid_rate = float(metrics_dict.get("json_valid_rate", 1.0))
-                resolved_flag = bool(metrics_dict.get("resolved"))
-                resolved_truth = metrics_dict.get("resolved_truth")
-                resolved_reason = metrics_dict.get("resolved_reason")
-                resolved_citations = metrics_dict.get("resolved_citations") or []
-                resolved_support = metrics_dict.get("resolved_support")
-                resolved_contradict = metrics_dict.get("resolved_contradict")
-                resolved_domains = metrics_dict.get("resolved_domains")
-                recency = recency_score(
-                    claim_is_timely=heuristic_is_timely(claim),
-                    median_age_days=median_age,
-                )
-                strength = strength_score(
-                    n_docs=n_docs,
-                    n_domains=n_domains,
-                    dispersion=dispersion,
-                    json_valid_rate=json_valid_rate,
-                )
-                if resolved_flag:
-                    weight = 1.0
-                    combined_p, combined_ci = web_p, web_ci
-                else:
-                    weight = web_weight(recency, strength)
-                    combined_p, combined_ci = fuse_probabilities(
-                        prior_p,
-                        (prior_ci_lo, prior_ci_hi),
-                        web_p,
-                        web_ci,
-                        weight,
-                    )
-                combined_width = combined_ci[1] - combined_ci[0]
-                ui_mode_label = "Internet Search (Web-Informed)"
-                web_summary = {
-                    "p": web_p,
-                    "ci": web_ci,
-                    "metrics": {
-                        "n_docs": n_docs,
-                        "n_domains": n_domains,
-                        "median_age_days": median_age,
-                        "dispersion": dispersion,
-                        "json_valid_rate": json_valid_rate,
-                        "date_confident_rate": metrics_dict.get("date_confident_rate"),
-                        "n_confident_dates": metrics_dict.get("n_confident_dates"),
-                    },
-                    "weight": weight,
-                    "recency": recency,
-                    "strength": strength,
-                    "replicates": wel_result["replicates"],
-                    "resolved": resolved_flag,
-                    "resolved_truth": resolved_truth,
-                    "resolved_reason": resolved_reason,
-                    "resolved_citations": resolved_citations,
-                    "resolved_support": resolved_support,
-                    "resolved_contradict": resolved_contradict,
-                    "resolved_domains": resolved_domains,
-                }
-            except Exception as exc:
-                web_error = str(exc)
-                logging.error("UI web-informed error: %s", exc)
+        if web_block:
+            evidence = web_block.get("evidence", {})
+            web_ci_values = web_block.get("ci95") or combined_ci
+            web_summary = {
+                "p": float(web_block.get("p", combined_p)),
+                "ci": (_safe_float(web_ci_values[0]), _safe_float(web_ci_values[1])),
+                "metrics": evidence,
+                "weight": weights_block.get("w_web"),
+                "recency": weights_block.get("recency"),
+                "strength": weights_block.get("strength"),
+                "replicates": wel_replicates,
+                "debug_votes": wel_debug_votes,
+                "resolved": bool(web_block.get("resolved")),
+                "resolved_truth": web_block.get("resolved_truth"),
+                "resolved_reason": web_block.get("resolved_reason"),
+                "resolved_citations": web_block.get("resolved_citations") or [],
+                "resolved_support": web_block.get("support"),
+                "resolved_contradict": web_block.get("contradict"),
+                "resolved_domains": web_block.get("domains"),
+            }
+        elif ui_mode_value == "internet-search":
+            web_error = "web block unavailable"
 
         p = combined_p
         width = combined_width if combined_width == combined_width else width
@@ -579,7 +517,8 @@ class Handler(BaseHTTPRequestHandler):
                 if contradict_score is not None:
                     summary_lines.append(f"Contradict weight: {contradict_score:.2f}")
             else:
-                weight = float(web_summary["weight"])
+                weight_val = web_summary.get("weight")
+                weight = float(weight_val) if weight_val is not None else 0.0
                 n_docs = int(metrics.get("n_docs", 0))
                 n_domains = int(metrics.get("n_domains", 0))
                 median_age = float(metrics.get("median_age_days", 0.0))
@@ -818,15 +757,27 @@ class Handler(BaseHTTPRequestHandler):
                 return False
 
             for rep in web_summary["replicates"]:
-                if _add_items(getattr(rep, "support_bullets", [])):
+                if isinstance(rep, dict):
+                    items = rep.get("support_bullets", [])
+                else:
+                    items = getattr(rep, "support_bullets", [])
+                if _add_items(items):
                     break
             if len(reasons) < 2:
                 for rep in web_summary["replicates"]:
-                    if _add_items(getattr(rep, "oppose_bullets", [])):
+                    if isinstance(rep, dict):
+                        items = rep.get("oppose_bullets", [])
+                    else:
+                        items = getattr(rep, "oppose_bullets", [])
+                    if _add_items(items):
                         break
             if len(reasons) < 2:
                 for rep in web_summary["replicates"]:
-                    if _add_items(getattr(rep, "notes", [])):
+                    if isinstance(rep, dict):
+                        items = rep.get("notes", [])
+                    else:
+                        items = getattr(rep, "notes", [])
+                    if _add_items(items):
                         break
 
         if not reasons:

@@ -48,6 +48,12 @@ uv run heretix run --config runs/rpl_example.yaml --out runs/rpl.json
 ```
 Stdout shows a compact line with p_RPL, CI95, width, stability, compliance, and cache. The JSON file contains full aggregates and diagnostics.
 
+To include the Web-Informed Lens, add `--mode web_informed` (requires network access and provider credentials):
+```
+uv run heretix run --config runs/rpl_example.yaml --out runs/rpl_web.json --mode web_informed
+```
+The resulting JSON now contains `prior`, `web`, `combined`, and `weights` blocks aligned with the API.
+
 ## 6) Smoke run (no network)
 For quick iteration without calling the provider:
 ```
