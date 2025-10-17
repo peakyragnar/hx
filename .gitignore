@@ -26,6 +26,7 @@ env/
 runs/*
 !runs/rpl_example.yaml
 *.json
+heretix-artifacts-key.json
 
 # IDE
 .vscode/
