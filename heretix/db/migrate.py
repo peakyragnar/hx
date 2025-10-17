@@ -115,6 +115,67 @@ def ensure_schema(database_url: str) -> None:
                 conn.exec_driver_sql(
                     "CREATE INDEX IF NOT EXISTS ix_checks_env_anon_token ON checks(env, anon_token)"
                 )
+                existing_cols = {
+                    row[1]
+                    for row in conn.exec_driver_sql("PRAGMA table_info(checks)").fetchall()
+                }
+
+                column_defs = {
+                    "prompt_char_len_max": "INTEGER",
+                    "pqs": "REAL",
+                    "gate_compliance_ok": "INTEGER",
+                    "gate_stability_ok": "INTEGER",
+                    "gate_precision_ok": "INTEGER",
+                    "pqs_version": "TEXT",
+                    "cache_hit_rate": "REAL",
+                    "config_json": "TEXT",
+                    "sampler_json": "TEXT",
+                    "counts_by_template_json": "TEXT",
+                    "artifact_json_path": "TEXT",
+                    "mode": "TEXT",
+                    "p_prior": "REAL",
+                    "ci_prior_lo": "REAL",
+                    "ci_prior_hi": "REAL",
+                    "stability_prior": "REAL",
+                    "p_web": "REAL",
+                    "ci_web_lo": "REAL",
+                    "ci_web_hi": "REAL",
+                    "n_docs": "INTEGER",
+                    "n_domains": "INTEGER",
+                    "median_age_days": "REAL",
+                    "web_dispersion": "REAL",
+                    "json_valid_rate": "REAL",
+                    "date_confident_rate": "REAL",
+                    "n_confident_dates": "REAL",
+                    "p_combined": "REAL",
+                    "ci_combined_lo": "REAL",
+                    "ci_combined_hi": "REAL",
+                    "w_web": "REAL",
+                    "recency_score": "REAL",
+                    "strength_score": "REAL",
+                    "resolved_flag": "INTEGER",
+                    "resolved_truth": "INTEGER",
+                    "resolved_reason": "TEXT",
+                    "resolved_support": "REAL",
+                    "resolved_contradict": "REAL",
+                    "resolved_domains": "INTEGER",
+                    "resolved_citations": "TEXT",
+                    "was_cached": "INTEGER",
+                    "provider_model_id": "TEXT",
+                    "anon_token": "TEXT",
+                    "created_at": "TEXT",
+                    "finished_at": "TEXT",
+                }
+
+                for column, ddl in column_defs.items():
+                    if column not in existing_cols:
+                        conn.exec_driver_sql(f"ALTER TABLE checks ADD COLUMN {column} {ddl}")
+                        existing_cols.add(column)
+
+                if "mode" in existing_cols:
+                    conn.exec_driver_sql("UPDATE checks SET mode='baseline' WHERE mode IS NULL")
+                if "was_cached" in existing_cols:
+                    conn.exec_driver_sql("UPDATE checks SET was_cached=0 WHERE was_cached IS NULL")
             _MIGRATED_URLS.add(database_url)
             return
         alembic_cfg = Config(str(repo_root / "alembic.ini"))
