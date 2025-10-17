@@ -94,3 +94,82 @@ def test_write_web_artifact_disabled(monkeypatch: pytest.MonkeyPatch):
         debug_votes=None,
     )
     assert record is None
+
+
+def test_gcs_store_upload_private(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    get_artifact_store.cache_clear()  # type: ignore[attr-defined]
+
+    class FakeBlob:
+        def __init__(self):
+            self.calls: list[str | None] = []
+
+        def upload_from_string(self, payload, content_type=None, predefined_acl=None):
+            self.calls.append(predefined_acl)
+
+    fake_blob = FakeBlob()
+
+    class FakeBucket:
+        def __init__(self):
+            self.name = "test-bucket"
+
+        def blob(self, name):  # pragma: no cover - simple proxy
+            fake_blob.name = name
+            return fake_blob
+
+    class FakeClient:
+        def bucket(self, name):  # pragma: no cover - simple proxy
+            assert name == "test-bucket"
+            return FakeBucket()
+
+    monkeypatch.setenv("HERETIX_ARTIFACT_BACKEND", "gcs")
+    monkeypatch.setenv("HERETIX_ARTIFACT_BUCKET", "test-bucket")
+    monkeypatch.delenv("HERETIX_ARTIFACT_PREFIX", raising=False)
+    monkeypatch.setattr("google.cloud.storage.Client", lambda: FakeClient())
+
+    store = get_artifact_store()
+    uri = store.write_bytes("foo/bar.json", b"data", content_type="application/json")
+    assert uri == "gs://test-bucket/foo/bar.json"
+    assert fake_blob.calls == ["private"]
+
+    get_artifact_store.cache_clear()  # type: ignore[attr-defined]
+
+
+def test_gcs_store_upload_fallback(monkeypatch: pytest.MonkeyPatch):
+    get_artifact_store.cache_clear()  # type: ignore[attr-defined]
+
+    from google.api_core import exceptions as gcloud_exceptions
+
+    class FakeBlob:
+        def __init__(self):
+            self.calls: list[str | None] = []
+            self._failed = False
+
+        def upload_from_string(self, payload, content_type=None, predefined_acl=None):
+            self.calls.append(predefined_acl)
+            if predefined_acl == "private" and not self._failed:
+                self._failed = True
+                raise gcloud_exceptions.BadRequest("uniform bucket access enabled")
+
+    fake_blob = FakeBlob()
+
+    class FakeBucket:
+        def __init__(self):
+            self.name = "test-bucket"
+
+        def blob(self, name):
+            return fake_blob
+
+    class FakeClient:
+        def bucket(self, name):
+            return FakeBucket()
+
+    monkeypatch.setenv("HERETIX_ARTIFACT_BACKEND", "gcs")
+    monkeypatch.setenv("HERETIX_ARTIFACT_BUCKET", "test-bucket")
+    monkeypatch.setattr("google.cloud.storage.Client", lambda: FakeClient())
+
+    store = get_artifact_store()
+    uri = store.write_bytes("foo.txt", b"data", content_type="text/plain")
+    assert uri == "gs://test-bucket/foo.txt"
+    assert fake_blob.calls == ["private", None]
+
+    get_artifact_store.cache_clear()  # type: ignore[attr-defined]

@@ -103,24 +103,15 @@ def ensure_schema(database_url: str) -> None:
                     )
                     """
                 )
-                conn.exec_driver_sql(
-                    "CREATE INDEX IF NOT EXISTS ix_checks_user_id ON checks(user_id)"
-                )
-                conn.exec_driver_sql(
-                    "CREATE INDEX IF NOT EXISTS ix_checks_env ON checks(env)"
-                )
-                conn.exec_driver_sql(
-                    "CREATE INDEX IF NOT EXISTS ix_checks_claim_hash ON checks(claim_hash)"
-                )
-                conn.exec_driver_sql(
-                    "CREATE INDEX IF NOT EXISTS ix_checks_env_anon_token ON checks(env, anon_token)"
-                )
                 existing_cols = {
                     row[1]
                     for row in conn.exec_driver_sql("PRAGMA table_info(checks)").fetchall()
                 }
 
                 column_defs = {
+                    "env": "TEXT",
+                    "user_id": "TEXT",
+                    "claim_hash": "TEXT",
                     "prompt_char_len_max": "INTEGER",
                     "pqs": "REAL",
                     "gate_compliance_ok": "INTEGER",
@@ -173,9 +164,24 @@ def ensure_schema(database_url: str) -> None:
                         existing_cols.add(column)
 
                 if "mode" in existing_cols:
-                    conn.exec_driver_sql("UPDATE checks SET mode='baseline' WHERE mode IS NULL")
+                    conn.exec_driver_sql(
+                        "UPDATE checks SET mode='baseline' WHERE mode IS NULL OR TRIM(mode) = ''"
+                    )
                 if "was_cached" in existing_cols:
                     conn.exec_driver_sql("UPDATE checks SET was_cached=0 WHERE was_cached IS NULL")
+
+                index_defs = {
+                    "ix_checks_user_id": ("user_id",),
+                    "ix_checks_env": ("env",),
+                    "ix_checks_claim_hash": ("claim_hash",),
+                    "ix_checks_env_anon_token": ("env", "anon_token"),
+                }
+
+                for index_name, cols in index_defs.items():
+                    if all(col in existing_cols for col in cols):
+                        conn.exec_driver_sql(
+                            f"CREATE INDEX IF NOT EXISTS {index_name} ON checks({','.join(cols)})"
+                        )
             _MIGRATED_URLS.add(database_url)
             return
         alembic_cfg = Config(str(repo_root / "alembic.ini"))

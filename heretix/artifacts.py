@@ -98,7 +98,20 @@ class _GCSStore:
     def write_bytes(self, relative_path: str, payload: bytes, content_type: str | None = None) -> str:
         blob_name = self._blob_path(relative_path)
         blob = self._bucket.blob(blob_name)
-        blob.upload_from_string(payload, content_type=content_type)
+        try:
+            blob.upload_from_string(payload, content_type=content_type, predefined_acl="private")
+        except TypeError:
+            blob.upload_from_string(payload, content_type=content_type)
+        except Exception as exc:
+            try:
+                from google.api_core import exceptions as gcloud_exceptions  # type: ignore
+
+                if isinstance(exc, gcloud_exceptions.BadRequest):
+                    blob.upload_from_string(payload, content_type=content_type)
+                else:  # pragma: no cover - unexpected error; re-raise
+                    raise
+            except ImportError:  # pragma: no cover - optional dependency already loaded
+                blob.upload_from_string(payload, content_type=content_type)
         return f"gs://{self._bucket.name}/{blob_name}"
 
 
