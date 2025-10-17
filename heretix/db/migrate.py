@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import threading
 from pathlib import Path
 
@@ -158,10 +159,17 @@ def ensure_schema(database_url: str) -> None:
                     ("finished_at", "TEXT"),
                 ]
 
-                known_columns = {name for name, _ in column_defs}
+                _valid_ident = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+                _valid_types = {"TEXT", "INTEGER", "REAL"}
 
                 for column, ddl in column_defs:
                     if column not in existing_cols:
+                        if column not in {name for name, _ in column_defs}:
+                            raise ValueError(f"Unexpected column name {column}")
+                        if not _valid_ident.match(column):
+                            raise ValueError(f"Invalid column identifier {column}")
+                        if ddl.upper() not in _valid_types:
+                            raise ValueError(f"Unsupported column type {ddl}")
                         conn.exec_driver_sql(
                             'ALTER TABLE checks ADD COLUMN "{}" {}'.format(column, ddl)
                         )
