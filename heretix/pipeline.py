@@ -118,25 +118,60 @@ def perform_run(
     sanitized_web_block: Optional[Dict[str, Any]] = None
 
     if mode == "web_informed":
-        web_block_payload, combined_block_payload, weights_payload, wel_provenance = evaluate_web_informed(
-            claim=cfg.claim or "",
-            prior={"p": prior_p, "ci95": prior_ci},
-            provider=options.wel_provider,
-            model=options.wel_model,
-            k_docs=options.wel_docs,
-            replicates=options.wel_replicates,
-            per_domain_cap=options.wel_per_domain_cap,
-            recency_days=options.wel_recency_days,
-            seed=cfg.seed,
-        )
-        if web_block_payload:
-            raw_replicates = web_block_payload.get("replicates", []) or []
-            debug_votes = web_block_payload.get("resolved_debug_votes")
+        if use_mock:
+            web_block_payload = {
+                "p": prior_p,
+                "ci95": list(prior_ci),
+                "evidence": {
+                    "n_docs": 0.0,
+                    "n_domains": 0.0,
+                    "median_age_days": 0.0,
+                    "n_confident_dates": 0.0,
+                    "date_confident_rate": 0.0,
+                    "dispersion": 0.0,
+                    "json_valid_rate": 1.0,
+                },
+                "resolved": False,
+                "resolved_truth": None,
+                "resolved_reason": None,
+                "resolved_citations": [],
+                "support": None,
+                "contradict": None,
+                "domains": None,
+            }
+            combined_block_payload = {"p": prior_p, "ci95": list(prior_ci), "resolved": False}
+            weights_payload = {"w_web": 0.0, "recency": 0.0, "strength": 0.0}
+            wel_provenance = {
+                "provider": options.wel_provider,
+                "model": options.wel_model,
+                "mock": True,
+                "k_docs": options.wel_docs,
+                "replicates": 0,
+                "recency_days": options.wel_recency_days,
+                "seed": cfg.seed,
+            }
             sanitized_web_block = dict(web_block_payload)
             sanitized_web_block.pop("replicates", None)
-            sanitized_web_block.pop("resolved_debug_votes", None)
-            if debug_votes is not None:
-                sanitized_web_block["resolved_debug_votes"] = debug_votes
+        else:
+            web_block_payload, combined_block_payload, weights_payload, wel_provenance = evaluate_web_informed(
+                claim=cfg.claim or "",
+                prior={"p": prior_p, "ci95": prior_ci},
+                provider=options.wel_provider,
+                model=options.wel_model,
+                k_docs=options.wel_docs,
+                replicates=options.wel_replicates,
+                per_domain_cap=options.wel_per_domain_cap,
+                recency_days=options.wel_recency_days,
+                seed=cfg.seed,
+            )
+            if web_block_payload:
+                raw_replicates = web_block_payload.get("replicates", []) or []
+                debug_votes = web_block_payload.get("resolved_debug_votes")
+                sanitized_web_block = dict(web_block_payload)
+                sanitized_web_block.pop("replicates", None)
+                sanitized_web_block.pop("resolved_debug_votes", None)
+                if debug_votes is not None:
+                    sanitized_web_block["resolved_debug_votes"] = debug_votes
 
     aggregation_counts = aggregation.get("counts_by_template", {})
     config_json = json.dumps(
