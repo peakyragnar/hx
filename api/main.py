@@ -35,6 +35,7 @@ from .schemas import (
     WebEvidence,
     CombinedResult,
     WeightInfo,
+    WebArtifactPointer,
 )
 from heretix.db.models import Check, User
 from .usage import ANON_PLAN, get_usage_state, increment_usage
@@ -253,6 +254,14 @@ def run_check(
     if wel_provenance:
         provenance_payload["wel"] = wel_provenance
 
+    web_artifact_pointer: WebArtifactPointer | None = None
+    if artifacts.artifact_manifest_uri:
+        web_artifact_pointer = WebArtifactPointer(
+            manifest=artifacts.artifact_manifest_uri,
+            replicates_uri=artifacts.artifact_replicates_uri,
+            docs_uri=artifacts.artifact_docs_uri,
+        )
+
     return RunResponse(
         execution_id=result.get("execution_id"),
         run_id=run_id,
@@ -289,6 +298,7 @@ def run_check(
         combined=combined_block_model,
         weights=weights_model,
         provenance=provenance_payload,
+        web_artifact=web_artifact_pointer,
     )
 @app.post(
     "/api/auth/magic-links",

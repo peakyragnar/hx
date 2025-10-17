@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import logging
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -14,6 +15,7 @@ from heretix.rpl import run_single_version
 from heretix.db.models import Check
 from heretix_api.routes_checks import evaluate_web_informed
 import hashlib
+from heretix.artifacts import ArtifactRecord, get_artifact_store, write_web_artifact
 
 
 @dataclass
@@ -44,6 +46,12 @@ class PipelineArtifacts:
     check: Check
     wel_replicates: list[Dict[str, Any]]
     wel_debug_votes: Optional[list[Dict[str, Any]]]
+    artifact_manifest_uri: Optional[str] = None
+    artifact_replicates_uri: Optional[str] = None
+    artifact_docs_uri: Optional[str] = None
+
+
+logger = logging.getLogger(__name__)
 
 
 def resolve_prompt_file(cfg: RunConfig, options: PipelineOptions) -> Path:
@@ -106,6 +114,7 @@ def perform_run(
     wel_provenance: Optional[Dict[str, Any]] = None
     raw_replicates: list[Any] = []
     debug_votes: Optional[list[Dict[str, Any]]] = None
+    artifact_record: Optional[ArtifactRecord] = None
 
     if mode == "web_informed":
         web_block_payload, combined_block_payload, weights_payload, wel_provenance = evaluate_web_informed(
@@ -261,6 +270,28 @@ def perform_run(
     check.created_at = now
     check.finished_at = now
 
+    if mode == "web_informed" and web_block_payload:
+        try:
+            store = get_artifact_store()
+            artifact_record = write_web_artifact(
+                run_id=run_id,
+                claim=cfg.claim,
+                mode=mode,
+                store=store,
+                prior_block=prior_block_payload,
+                web_block=web_block_payload,
+                combined_block=combined_block_payload,
+                wel_provenance=wel_provenance,
+                replicates=raw_replicates,
+                debug_votes=debug_votes,
+            )
+        except Exception as exc:  # pragma: no cover
+            logger.exception("Failed to write web artifact for run %s: %s", run_id, exc)
+            artifact_record = None
+
+    if artifact_record:
+        check.artifact_json_path = artifact_record.manifest_uri
+
     normalized_reps = [_normalize_replica(rep) for rep in raw_replicates]
     if web_block_payload is not None:
         web_block_payload["replicates"] = normalized_reps
@@ -278,6 +309,9 @@ def perform_run(
         check=check,
         wel_replicates=normalized_reps,
         wel_debug_votes=debug_votes,
+        artifact_manifest_uri=artifact_record.manifest_uri if artifact_record else None,
+        artifact_replicates_uri=artifact_record.verdicts_uri if artifact_record else None,
+        artifact_docs_uri=artifact_record.docs_uri if artifact_record else None,
     )
 
 

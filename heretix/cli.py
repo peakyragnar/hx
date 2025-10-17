@@ -5,6 +5,7 @@ from typing import Any, List, Optional
 import json
 import os
 import hashlib
+import gzip
 
 import typer
 from dotenv import load_dotenv
@@ -16,6 +17,7 @@ from .sampler import rotation_offset, balanced_indices_with_rotation, planned_co
 from .seed import make_bootstrap_seed
 import yaml
 from heretix.pipeline import PipelineOptions, perform_run
+from heretix.db.models import Check
 
 
 app = typer.Typer(help="Heretix (new) RPL harness")
@@ -197,7 +199,125 @@ def _build_run_entry(cfg: RunConfig, mode: str, mock: bool, artifacts) -> dict:
         run_data["wel_replicates"] = artifacts.wel_replicates
     if artifacts.wel_debug_votes:
         run_data["wel_debug_votes"] = artifacts.wel_debug_votes
+    if artifacts.artifact_manifest_uri:
+        run_data["web_artifact"] = {
+            "manifest": artifacts.artifact_manifest_uri,
+            "replicates_uri": artifacts.artifact_replicates_uri,
+            "docs_uri": artifacts.artifact_docs_uri,
+        }
     return run_data
+
+
+def _load_local_json(path: str) -> dict:
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"Artifact file not found: {path}")
+    return json.loads(p.read_text(encoding="utf-8"))
+
+
+def _load_local_gzip_json(path: str) -> list[dict]:
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"Artifact file not found: {path}")
+    return json.loads(gzip.decompress(p.read_bytes()).decode("utf-8"))
+
+
+@app.command("artifact")
+def cmd_artifact(
+    run_id: Optional[str] = typer.Option(None, help="Run ID to inspect"),
+    claim: Optional[str] = typer.Option(None, help="Claim text; shows most recent run"),
+    database_url: Optional[str] = typer.Option(
+        None, help="Database URL (defaults to sqlite:///runs/heretix.sqlite)"
+    ),
+    max_docs: int = typer.Option(5, help="Number of documents to show"),
+    max_support: int = typer.Option(3, help="Support bullets per replicate to show"),
+):
+    """Pretty-print stored web artifacts (docs & replicate summaries)."""
+    if not run_id and not claim:
+        typer.echo("Provide --run-id or --claim", err=True)
+        raise typer.Exit(1)
+
+    effective_db_url = database_url or "sqlite:///runs/heretix.sqlite"
+    os.environ["DATABASE_URL"] = effective_db_url
+
+    from heretix.db.migrate import ensure_schema
+
+    ensure_schema(effective_db_url)
+
+    engine = create_engine(effective_db_url, future=True)
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+
+    with SessionLocal() as session:
+        query = session.query(Check)
+        if run_id:
+            query = query.filter(Check.run_id == run_id)
+        if claim:
+            query = query.filter(Check.claim == claim)
+        row = query.order_by(Check.created_at.desc()).first()
+        if row is None:
+            text = run_id or claim or "criteria"
+            typer.echo(f"No run found for {text}", err=True)
+            raise typer.Exit(1)
+        manifest_path = row.artifact_json_path
+        if not manifest_path:
+            typer.echo("Run has no stored artifact; enable HERETIX_ARTIFACT_BACKEND", err=True)
+            raise typer.Exit(1)
+
+    if manifest_path.startswith("gs://"):
+        typer.echo(
+            f"Artifact stored remotely ({manifest_path}); download it first or run export script.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    manifest = _load_local_json(manifest_path)
+    typer.echo(f"Run ID: {manifest.get('run_id')}")
+    typer.echo(f"Claim : {manifest.get('claim')}")
+    typer.echo(f"Mode  : {manifest.get('mode')}")
+    web = manifest.get("web") or {}
+    typer.echo(f"Web p : {web.get('p'):.3f}  CI95={web.get('ci95')}")
+    evidence = web.get("evidence") or {}
+    typer.echo(
+        f"Docs={int(evidence.get('n_docs', 0))} Domains={int(evidence.get('n_domains', 0))} "
+        f"Median age≈{evidence.get('median_age_days')}"
+    )
+
+    docs_uri = manifest.get("docs_uri")
+    if docs_uri and docs_uri.startswith("runs/"):
+        docs = _load_local_gzip_json(docs_uri)
+        typer.echo("\nTop documents:")
+        for doc in docs[:max_docs]:
+            typer.echo(f"- {doc.get('domain')} :: {doc.get('title')}")
+            typer.echo(f"  {doc.get('url')}")
+            snippet = (doc.get("snippet") or "").strip()
+            if snippet:
+                typer.echo(f"  Snippet: {snippet[:240]}{'…' if len(snippet) > 240 else ''}")
+            published = doc.get("published_at")
+            if published:
+                typer.echo(f"  Published: {published} (confidence {doc.get('published_confidence')})")
+    else:
+        typer.echo("\nDocuments bundle not available locally.")
+
+    reps_uri = manifest.get("replicates_uri")
+    if reps_uri and reps_uri.startswith("runs/"):
+        replicates = _load_local_gzip_json(reps_uri)
+        typer.echo("\nReplicates:")
+        for rep in replicates:
+            typer.echo(f"- replicate {rep.get('replicate_idx')}   p_web={rep.get('p_web'):.3f}")
+            support = list(rep.get("support_bullets") or [])[:max_support]
+            oppose = list(rep.get("oppose_bullets") or [])[:max_support]
+            if support:
+                typer.echo("  support:")
+                for bullet in support:
+                    typer.echo(f"    • {bullet}")
+            if oppose:
+                typer.echo("  oppose:")
+                for bullet in oppose:
+                    typer.echo(f"    • {bullet}")
+    else:
+        typer.echo("\nReplicate bundle not available locally.")
+
+    typer.echo("\nDone.")
 
 
 @app.command("describe")

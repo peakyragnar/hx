@@ -97,6 +97,12 @@ class WeightInfo(BaseModel):
     strength: float
 
 
+class WebArtifactPointer(BaseModel):
+    manifest: str
+    replicates_uri: Optional[str] = None
+    docs_uri: Optional[str] = None
+
+
 class RunResponse(BaseModel):
     execution_id: str
     run_id: str
@@ -122,6 +128,7 @@ class RunResponse(BaseModel):
     combined: Optional[CombinedResult] = None
     weights: Optional[WeightInfo] = None
     provenance: Optional[Dict[str, object]] = None
+    web_artifact: Optional[WebArtifactPointer] = None
 
 
 class MagicLinkPayload(BaseModel):
