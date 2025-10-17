@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from heretix_wel import evaluate_wel
+from heretix_wel.evaluate_wel import _chunk_docs
 
 
 class FakeRetriever:
@@ -70,3 +71,10 @@ def test_evaluate_wel_error(monkeypatch: pytest.MonkeyPatch):
     rep = result["replicates"][0]
     assert rep.p_web == 0.5  # fallback probability on error
     assert rep.json_valid is False
+
+
+def test_chunk_docs_balances_remainder(monkeypatch: pytest.MonkeyPatch):
+    docs = [FakeDoc(url=f"https://example.com/{i}", title=f"Doc {i}") for i in range(5)]
+    chunks = _chunk_docs(docs, replicates=3)
+    seen = {doc.url for chunk in chunks for doc in chunk}
+    assert seen == {f"https://example.com/{i}" for i in range(5)}

@@ -30,13 +30,18 @@ def _deterministic_seed(claim: str, provider: str, model: str, k_docs: int, repl
 def _chunk_docs(docs: List[Doc], replicates: int) -> List[List[Doc]]:
     if replicates <= 1 or len(docs) <= 1:
         return [docs]
-    stride = max(1, len(docs) // replicates)
+    stride = len(docs) // replicates
+    remainder = len(docs) % replicates
     chunks: List[List[Doc]] = []
+    start = 0
     for idx in range(replicates):
-        start = idx * stride
-        end = start + stride
-        subset = docs[start:end] or docs
+        extra = 1 if idx < remainder else 0
+        end = start + stride + extra
+        subset = docs[start:end]
+        if not subset:
+            subset = docs
         chunks.append(subset)
+        start = end
     return chunks
 
 
