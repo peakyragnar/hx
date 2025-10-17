@@ -86,6 +86,14 @@ Typical steps:
 - Create a dedicated bucket (e.g., `gsutil mb gs://heretix-web-artifacts`).
 - Grant a service account `Storage Object Admin` (or tighter scoped) permissions.
 - Provide credentials via `GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json` or workload identity.
+- For quick setups, generate a JSON key locally:
+  ```
+  gcloud iam service-accounts create heretix-artifacts --display-name="Heretix Artifact Writer"
+  gsutil iam ch serviceAccount:heretix-artifacts@<project>.iam.gserviceaccount.com:objectAdmin gs://heretix-web-artifacts
+  gcloud iam service-accounts keys create heretix-artifacts-key.json \
+      --iam-account=heretix-artifacts@<project>.iam.gserviceaccount.com
+  ```
+  Upload `heretix-artifacts-key.json` as a secret and point `GOOGLE_APPLICATION_CREDENTIALS` to its path in production. Never commit the key to source control.
 
 ---
 
@@ -170,6 +178,7 @@ Set `HERETIX_ARTIFACT_BACKEND=disabled` before the process starts. Useful for qu
    - Configure `GOOGLE_APPLICATION_CREDENTIALS` (JSON key) or workload identity for the deployment.
 3. **Environment Variables**  
    - Set `HERETIX_ARTIFACT_BACKEND=gcs`, `HERETIX_ARTIFACT_BUCKET=<bucket>`, and optional `HERETIX_ARTIFACT_PREFIX`.  
+   - Point `GOOGLE_APPLICATION_CREDENTIALS` to the service-account key file (or configure workload identity).  
    - Leave local dev on `local` (default) if desired.
 4. **Redeploy**  
    - Build and deploy the updated application so the pipeline includes artifact capture.  
