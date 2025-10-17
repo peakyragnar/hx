@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import json
 import logging
 import secrets
 from datetime import datetime, timezone
@@ -15,9 +13,9 @@ from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
 from heretix.config import RunConfig
-from heretix.rpl import run_single_version
 from heretix.provider.openai_gpt5 import score_claim as score_claim_live
 from heretix.provider.mock import score_claim_mock
+from heretix.pipeline import PipelineOptions, perform_run
 
 from .auth import complete_magic_link, get_current_user, handle_magic_link, sign_out
 from .config import settings
@@ -33,6 +31,11 @@ from .schemas import (
     RunRequest,
     RunResponse,
     SamplingInfo,
+    PriorBlock,
+    WebEvidence,
+    CombinedResult,
+    WeightInfo,
+    WebArtifactPointer,
 )
 from heretix.db.models import Check, User
 from .usage import ANON_PLAN, get_usage_state, increment_usage
@@ -43,6 +46,7 @@ from .billing import (
     handle_subscription_deleted,
     handle_subscription_updated,
 )
+from heretix_api.routes_checks import evaluate_web_informed
 
 app = FastAPI(title="Heretix API", version="0.1.0")
 
@@ -107,6 +111,10 @@ def run_check(
     if not claim:
         raise HTTPException(status_code=422, detail="claim must not be empty")
 
+    mode = (payload.mode or "baseline").lower()
+    if mode not in {"baseline", "web_informed"}:
+        raise HTTPException(status_code=400, detail="mode must be 'baseline' or 'web_informed'")
+
     anon_token: str | None = None
     if not user:
         anon_token = ensure_anon_token(request, response)
@@ -128,12 +136,31 @@ def run_check(
     )
     cfg.seed = payload.seed if payload.seed is not None else cfg.seed
 
-    prompt_file = settings.prompt_file()
-
     use_mock = payload.mock if payload.mock is not None else settings.allow_mock
 
+    prompt_root = Path(settings.prompts_dir) if settings.prompts_dir else None
+    pipeline_options = PipelineOptions(
+        app_env=settings.app_env,
+        wel_provider=settings.wel_provider,
+        wel_model=settings.wel_model,
+        wel_docs=settings.wel_docs,
+        wel_replicates=settings.wel_replicates,
+        wel_per_domain_cap=settings.wel_per_domain_cap,
+        wel_recency_days=settings.wel_recency_days,
+        prompt_root=prompt_root,
+    )
+
     try:
-        result = run_single_version(cfg, prompt_file=str(prompt_file), mock=use_mock)
+        artifacts = perform_run(
+            session=session,
+            cfg=cfg,
+            mode=mode,
+            options=pipeline_options,
+            use_mock=use_mock,
+            user_id=getattr(user, "id", None),
+            anon_token=anon_token,
+        )
+        result = artifacts.result
     except HTTPException:
         raise
     except Exception as exc:  # pragma: no cover - let FastAPI handle responses
@@ -153,37 +180,30 @@ def run_check(
     gate_stability_ok = stability_score >= 0.25
     gate_precision_ok = ci_width <= 0.30
 
-    now = datetime.now(timezone.utc)
+    prior_p = float(aggregates.get("prob_true_rpl") or 0.0)
+    prior_ci = [
+        float(ci95[0]) if ci95 and ci95[0] is not None else 0.0,
+        float(ci95[1]) if ci95 and ci95[1] is not None else 0.0,
+    ]
 
-    counts_json = json.dumps(aggregation.get("counts_by_template", {}))
-    config_json = json.dumps(
-        {
-            "claim": cfg.claim,
-            "model": cfg.model,
-            "prompt_version": cfg.prompt_version,
-            "K": cfg.K,
-            "R": cfg.R,
-            "T": sampling.get("T"),
-            "B": cfg.B,
-            "seed": cfg.seed,
-            "max_output_tokens": cfg.max_output_tokens,
-            "no_cache": cfg.no_cache,
-            "prompt_file": str(prompt_file),
-        }
-    )
+    prior_block_payload = artifacts.prior_block
+    web_block_payload = artifacts.web_block
+    combined_block_payload = artifacts.combined_block
+    weights_payload = artifacts.weights
+    wel_provenance = artifacts.wel_provenance
 
     run_id = result.get("run_id")
     if not run_id:
         raise HTTPException(status_code=500, detail="run_id missing from RPL result")
 
-    claim_hash = hashlib.sha256(claim.encode("utf-8")).hexdigest()
-
     bootstrap_seed_val = aggregation.get("bootstrap_seed")
+    explanation_prob = combined_block_payload["p"] if combined_block_payload else prior_p
+
     verdict_label, verdict_text, explanation_headline, explanation_text, explanation_reasons = build_explanation(
         claim=claim,
-        prob=aggregates.get("prob_true_rpl"),
+        prob=explanation_prob,
         cfg=cfg,
-        prompt_file=prompt_file,
+        prompt_file=artifacts.prompt_file,
         use_mock=use_mock,
         max_output_tokens=cfg.max_output_tokens,
     )
@@ -191,58 +211,15 @@ def run_check(
     checks_allowed = usage_state.checks_allowed
     used_after = usage_state.checks_used
     remaining_after = max(checks_allowed - used_after, 0) if checks_allowed else None
-    aggregates["ci_width"] = ci_width
 
-    check = None
+    check = artifacts.check
+    check.gate_compliance_ok = gate_compliance_ok
+    check.gate_stability_ok = gate_stability_ok
+    check.gate_precision_ok = gate_precision_ok
+
     try:
-        existing = session.scalar(select(Check).where(Check.run_id == run_id))
-        if existing:
-            check = existing
-        else:
-            check = Check(run_id=run_id, env=settings.app_env)
-            session.add(check)
-
-        check.env = settings.app_env
-        check.user_id = getattr(user, "id", None)
-        check.claim = claim
-        check.claim_hash = claim_hash
-        check.model = result.get("model", cfg.model)
-        check.prompt_version = result.get("prompt_version", cfg.prompt_version)
-        check.k = int(cfg.K)
-        check.r = int(cfg.R)
-        check.t = sampling.get("T")
-        check.b = cfg.B
-        check.seed = cfg.seed
-        check.bootstrap_seed = int(bootstrap_seed_val) if bootstrap_seed_val is not None else None
-        check.max_output_tokens = cfg.max_output_tokens
-        check.prob_true_rpl = float(aggregates.get("prob_true_rpl"))
-        check.ci_lo = float(ci95[0]) if ci95[0] is not None else None
-        check.ci_hi = float(ci95[1]) if ci95[1] is not None else None
-        check.ci_width = ci_width
-        check.template_iqr_logit = aggregation.get("template_iqr_logit")
-        check.stability_score = stability_score
-        check.imbalance_ratio = aggregation.get("imbalance_ratio")
-        check.rpl_compliance_rate = rpl_compliance_rate
-        check.cache_hit_rate = cache_hit_rate
-        check.config_json = config_json
-        check.sampler_json = json.dumps({"K": cfg.K, "R": cfg.R, "T": sampling.get("T")})
-        check.counts_by_template_json = counts_json
-        check.artifact_json_path = None
-        check.prompt_char_len_max = aggregation.get("prompt_char_len_max")
-        check.pqs = None
-        check.gate_compliance_ok = gate_compliance_ok
-        check.gate_stability_ok = gate_stability_ok
-        check.gate_precision_ok = gate_precision_ok
-        check.pqs_version = None
-        check.was_cached = cache_hit_rate >= 0.999
-        check.provider_model_id = result.get("model", cfg.model)
-        check.anon_token = anon_token if not user else None
-        check.created_at = now
-        check.finished_at = now
-
         used_after = increment_usage(session, user, usage_state)
         remaining_after = max(checks_allowed - used_after, 0) if checks_allowed else None
-
         session.commit()
     except ProgrammingError as exc:
         session.rollback()
@@ -260,6 +237,30 @@ def run_check(
             session.rollback()
             used_after = usage_state.checks_used
             remaining_after = max(checks_allowed - used_after, 0) if checks_allowed else None
+    except Exception:
+        session.rollback()
+        raise
+
+    prior_block_model = PriorBlock(**prior_block_payload)
+    web_block_model = WebEvidence(**web_block_payload) if web_block_payload else None
+    combined_block_model = CombinedResult(**combined_block_payload) if combined_block_payload else None
+    weights_model = WeightInfo(**weights_payload) if weights_payload else None
+    provenance_payload: dict[str, object] = {
+        "rpl": {
+            "prompt_version": result.get("prompt_version", cfg.prompt_version),
+            "model": result.get("model", cfg.model),
+        }
+    }
+    if wel_provenance:
+        provenance_payload["wel"] = wel_provenance
+
+    web_artifact_pointer: WebArtifactPointer | None = None
+    if artifacts.artifact_manifest_uri:
+        web_artifact_pointer = WebArtifactPointer(
+            manifest=artifacts.artifact_manifest_uri,
+            replicates_uri=artifacts.artifact_replicates_uri,
+            docs_uri=artifacts.artifact_docs_uri,
+        )
 
     return RunResponse(
         execution_id=result.get("execution_id"),
@@ -291,9 +292,14 @@ def run_check(
         explanation_headline=explanation_headline,
         explanation_text=explanation_text,
         explanation_reasons=explanation_reasons,
+        mode=mode,
+        prior=prior_block_model,
+        web=web_block_model,
+        combined=combined_block_model,
+        weights=weights_model,
+        provenance=provenance_payload,
+        web_artifact=web_artifact_pointer,
     )
-
-
 @app.post(
     "/api/auth/magic-links",
     status_code=status.HTTP_204_NO_CONTENT,

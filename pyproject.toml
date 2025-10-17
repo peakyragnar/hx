@@ -7,6 +7,11 @@ requires-python = ">=3.10"
 dependencies = [
     "numpy>=1.26",
     "openai>=1.40",
+    "requests>=2.32",
+    "tldextract>=5.1",
+    "beautifulsoup4>=4.12",
+    "python-dateutil>=2.9",
+    "filelock>=3.15",
     "pydantic>=2.6",
     "pydantic-settings>=2.5",
     "email-validator>=2.2",
@@ -21,6 +26,8 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "httpx>=0.27",
     "stripe>=11.0",
+    "duckdb>=1.4.1",
+    "google-cloud-storage>=3.4.1",
 ]
 
 [project.optional-dependencies]
@@ -40,7 +47,7 @@ dev = [
 heretix = "heretix.cli:app"
 
 [tool.setuptools.packages.find]
-include = ["heretix*"]
+include = ["heretix*", "heretix_wel*", "heretix_api*"]
 exclude = ["legacy*", "heretix_rpl*", "heretix_promptstudio*", "runs*", "tests*"]
 
 [tool.uv]

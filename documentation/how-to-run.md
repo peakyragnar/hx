@@ -48,6 +48,12 @@ uv run heretix run --config runs/rpl_example.yaml --out runs/rpl.json
 ```
 Stdout shows a compact line with p_RPL, CI95, width, stability, compliance, and cache. The JSON file contains full aggregates and diagnostics.
 
+To include the Web-Informed Lens, add `--mode web_informed` (requires network access and provider credentials):
+```
+uv run heretix run --config runs/rpl_example.yaml --out runs/rpl_web.json --mode web_informed
+```
+The resulting JSON now contains `prior`, `web`, `combined`, and `weights` blocks aligned with the API.
+
 ## 6) Smoke run (no network)
 For quick iteration without calling the provider:
 ```
@@ -200,6 +206,25 @@ Use gates to accept/reject; use PQS to choose among passes.
 - Unstable or wide CI: inspect `counts_by_template` and `template_iqr_logit`; adjust `K` and/or `T` or exclude the flakiest templates (do not change estimator math).
 - A/B says “Missing latest execution for: A or B”: you haven’t run that prompt version for the exact claim yet (or it’s outside the time window). Run the missing version once, or widen `--since-days`.
 - A/B shows “nothing changed” in prompt diffs: version name changed but content is identical; edit system/user/paraphrases to test a real change.
+
+## 16) Web artifacts (captured by default)
+
+- By default, web-informed runs write manifests and compressed bundles under `runs/artifacts`. Override the path with:
+  ```
+  export HERETIX_ARTIFACT_PATH=/custom/path
+  ```
+- To disable capture entirely, set `HERETIX_ARTIFACT_BACKEND=disabled`.
+- For Google Cloud Storage, set `HERETIX_ARTIFACT_BACKEND=gcs`, `HERETIX_ARTIFACT_BUCKET=<bucket>`, optional `HERETIX_ARTIFACT_PREFIX`, and ensure credentials via `GOOGLE_APPLICATION_CREDENTIALS`.
+- The manifest URI is stored on the `checks` row and returned in CLI/API payloads under `web_artifact`.
+- To materialize analytics tables from local artifacts:
+  ```
+  uv run python scripts/export_web_artifacts.py --artifact-root runs/artifacts --out runs/exports --parquet
+  ```
+  (`--parquet` requires `duckdb`; omit it to keep JSONL only.)
+- Quick peek directly from the CLI:
+  ```
+  uv run heretix artifact --claim "The current US government shutdown will last longer than 75 days"
+  ```
 
 ## References
 - Configuration details: `documentation/configuration.md`

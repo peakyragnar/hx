@@ -113,3 +113,13 @@ CONCURRENCY (ENV VAR)
   - Determinism & identity: replicate indices, prompt hashes, and cache keys are computed before dispatch; DB writes occur on the main thread.
   - Estimator/DB schema unchanged. Same inputs and seed → same p/CI/stability.
   - Token cap tip: for long claims, use `max_output_tokens: 768–1200` to avoid truncated JSON under parallel load.
+
+- ARTIFACT CAPTURE (ENV VAR)
+  - `HERETIX_ARTIFACT_BACKEND`: `local` (default), `gcs`, or `disabled`.
+    - `local`: writes manifests + compressed payloads under `HERETIX_ARTIFACT_PATH` (defaults to `runs/artifacts`).
+    - `gcs`: upload to Google Cloud Storage; requires `HERETIX_ARTIFACT_BUCKET`, optional `HERETIX_ARTIFACT_PREFIX`, and `GOOGLE_APPLICATION_CREDENTIALS` or workload identity.
+    - `disabled`: skips artifact creation.
+  - `HERETIX_ARTIFACT_PATH`: filesystem root for the local backend (auto-created).
+- CLI/API responses include `web_artifact.manifest` when capture is enabled.
+- Export helper: `uv run python scripts/export_web_artifacts.py --artifact-root runs/artifacts --out runs/exports`.
+- CLI inspection helper: `uv run heretix artifact --run-id <RUN_ID>` or `--claim "<claim text>"`.

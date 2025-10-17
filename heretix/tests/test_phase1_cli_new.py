@@ -49,13 +49,14 @@ def test_cli_run_dry_run(tmp_path: Path):
         ])
     )
     out_path = tmp_path / "out.json"
+    env = {"DATABASE_URL": f"sqlite:///{tmp_path / 'dry.sqlite'}"}
     result = runner.invoke(app, [
         "run",
         "--config", str(cfg_path),
         "--out", str(out_path),
         "--mock",
         "--dry-run",
-    ])
+    ], env=env)
     assert result.exit_code == 0, result.output
     doc = json.loads(result.stdout)
     assert doc.get("mode") == "single"
@@ -90,12 +91,13 @@ def test_cli_prompts_file_override(tmp_path: Path):
         ])
     )
     out_path = tmp_path / "out.json"
+    env = {"DATABASE_URL": f"sqlite:///{tmp_path / 'prompt.sqlite'}"}
     result = runner.invoke(app, [
         "run",
         "--config", str(cfg_path),
         "--out", str(out_path),
         "--mock",
-    ])
+    ], env=env)
     assert result.exit_code == 0, result.output
     doc = json.loads(out_path.read_text())
     assert doc["runs"][0]["prompt_version"].startswith("rpl_g5_custom_2099-01-01")
