@@ -139,7 +139,14 @@ class Check(Base):  # noqa: D401 - simple data container
     gate_stability_ok: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
     gate_precision_ok: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
     pqs_version: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
-    mode: Mapped[str] = mapped_column(String(32), nullable=False, default="baseline")
+    mode: Mapped[str] = mapped_column(
+        "mode",
+        String(32),
+        nullable=False,
+        default="baseline",
+        server_default="baseline",
+        quote=True,
+    )
     p_prior: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     ci_prior_lo: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     ci_prior_hi: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
