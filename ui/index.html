@@ -557,23 +557,35 @@
       }
 
       function renderResult(data) {
-      if (!resultCard || !data) return;
-        var probValue = data.aggregates && typeof data.aggregates.prob_true_rpl === 'number' ? data.aggregates.prob_true_rpl : 0;
+        if (!resultCard || !data) return;
+
+        var isWebMode = data.mode === 'web_informed';
+        var combinedProb = data.combined && typeof data.combined.p === 'number' ? data.combined.p : null;
+        var priorProb = data.aggregates && typeof data.aggregates.prob_true_rpl === 'number'
+          ? data.aggregates.prob_true_rpl
+          : null;
+        var probValue = isWebMode && combinedProb !== null ? combinedProb : (priorProb !== null ? priorProb : 0);
         var percentText = formatPercent(probValue);
+
         if (resultProb) { resultProb.textContent = percentText; }
         if (resultPercentage) { resultPercentage.textContent = percentText; }
         if (resultClaimEl && data.claim) { resultClaimEl.textContent = '“' + data.claim + '”'; }
+
         if (resultPill) {
-          var pillText = (data.model || 'GPT‑5') + ' · Internal knowledge only';
+          var pillText = (data.model || 'GPT‑5') + (isWebMode ? ' · Web-informed' : ' · Internal knowledge only');
           resultPill.textContent = pillText;
         }
+
         if (resultCi) {
-          if (typeof data.aggregates.ci_width === 'number') {
-            resultCi.textContent = data.aggregates.ci_width.toFixed(3);
-          } else {
-            resultCi.textContent = '--';
+          var ciWidth = null;
+          if (isWebMode && data.combined && Array.isArray(data.combined.ci95)) {
+            ciWidth = data.combined.ci95[1] - data.combined.ci95[0];
+          } else if (data.aggregates && typeof data.aggregates.ci_width === 'number') {
+            ciWidth = data.aggregates.ci_width;
           }
+          resultCi.textContent = typeof ciWidth === 'number' ? ciWidth.toFixed(3) : '--';
         }
+
         if (resultStability) {
           resultStability.textContent = data.aggregates.stability_score !== undefined ? data.aggregates.stability_score.toFixed(2) : '--';
         }
@@ -594,7 +606,8 @@
         var interpretation = data.explanation_text || verdictInfo.text;
 
         if (resultSubtitle) {
-          resultSubtitle.textContent = verdictLabel ? verdictLabel + ' · Probability this claim is true' : 'Probability this claim is true';
+          var subtitleBase = isWebMode ? 'Probability this claim is true (web-informed)' : 'Probability this claim is true';
+          resultSubtitle.textContent = verdictLabel ? verdictLabel + ' · ' + subtitleBase : subtitleBase;
         }
 
         if (resultInterpretationMain) {
