@@ -59,9 +59,9 @@ def test_cache_hit_behavior(tmp_path: Path):
     assert res_populate["run_id"] == res_clean["run_id"]
     assert res_populate["execution_id"] != res_clean["execution_id"]
 
-    # Third run should hit run cache and reuse populate execution payload
+    # Third run should see sample cache hits but produce a new execution (run cache disabled by default)
     cfg_cached = RunConfig(**{**base.__dict__})
     res_cached = run_single_version(cfg_cached, prompt_file=prompt_file, mock=True)
     assert res_cached["run_id"] == res_populate["run_id"]
-    assert res_cached["execution_id"] == res_populate["execution_id"]
-    assert res_cached["ci_status"]["phase"] == res_populate["ci_status"]["phase"]
+    assert res_cached["execution_id"] != res_populate["execution_id"]
+    assert res_cached["aggregates"]["cache_hit_rate"] >= 0.5

@@ -33,7 +33,7 @@ class RuntimeSettings:
     rpl_max_workers: int = int(os.getenv("HERETIX_RPL_CONCURRENCY", "8"))
     l1_ttl_seconds: int = int(os.getenv("HERETIX_L1_TTL", "900"))
     l1_max_items: int = int(os.getenv("HERETIX_L1_MAX", "2048"))
-    cache_ttl_seconds: int = int(os.getenv("HERETIX_CACHE_TTL", "259200"))
+    cache_ttl_seconds: int = int(os.getenv("HERETIX_CACHE_TTL", "0"))
     fast_ci_B: int = int(os.getenv("HERETIX_FAST_B", "1000"))
     final_ci_B: int = int(os.getenv("HERETIX_FINAL_B", "5000"))
     fast_then_final: bool = os.getenv("HERETIX_FAST_FINAL", "1") == "1"

@@ -128,47 +128,47 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
     final_B = max(1, int(cfg.B))
     fast_B = final_B if not runtime.fast_then_final else max(1, min(final_B, runtime.fast_ci_B))
 
-    run_cache_key = make_run_cache_key(
-        claim=cfg.claim,
-        model=cfg.model,
-        prompt_version=prompt_version_full,
-        K=cfg.K,
-        R=cfg.R,
-        T=T_stage,
-        max_output_tokens=cfg.max_output_tokens,
-        provider_mode=provider_mode,
-        target_B=final_B,
-    )
-
-    run_cache_hit = False
-    if not cfg.no_cache:
-        cached_run = run_cache_get(
-            run_cache_key,
-            db_path=db_path,
-            ttl_seconds=runtime.cache_ttl_seconds,
+    run_cache_key: Optional[str] = None
+    if runtime.cache_ttl_seconds > 0:
+        run_cache_key = make_run_cache_key(
+            claim=cfg.claim,
+            model=cfg.model,
+            prompt_version=prompt_version_full,
+            K=cfg.K,
+            R=cfg.R,
+            T=T_stage,
+            max_output_tokens=cfg.max_output_tokens,
+            provider_mode=provider_mode,
+            target_B=final_B,
         )
-        if cached_run:
-            run_cache_hit = True
-            cached_run.setdefault(
-                "ci_status",
-                {"phase": "final", "B_used": final_B, "job_id": None},
+
+        if not cfg.no_cache:
+            cached_run = run_cache_get(
+                run_cache_key,
+                db_path=db_path,
+                ttl_seconds=runtime.cache_ttl_seconds,
             )
-            log.info(
-                "run_summary",
-                extra={
-                    "claim": (cfg.claim or "")[:80],
-                    "run_id": cached_run.get("run_id"),
-                    "phase": "cache_hit",
-                    "workers": 0,
-                    "tokens_in": 0,
-                    "tokens_out": 0,
-                    "cost_usd": 0.0,
-                    "cache_samples": 0,
-                    "cache_runs": 1,
-                    "ms_total": 0,
-                },
-            )
-            return cached_run
+            if cached_run:
+                cached_run.setdefault(
+                    "ci_status",
+                    {"phase": "final", "B_used": final_B, "job_id": None},
+                )
+                log.info(
+                    "run_summary",
+                    extra={
+                        "claim": (cfg.claim or "")[:80],
+                        "run_id": cached_run.get("run_id"),
+                        "phase": "cache_hit",
+                        "workers": 0,
+                        "tokens_in": 0,
+                        "tokens_out": 0,
+                        "cost_usd": 0.0,
+                        "cache_samples": 0,
+                        "cache_runs": 1,
+                        "ms_total": 0,
+                    },
+                )
+                return cached_run
 
     # sampling loop
     runs: List[Dict[str, Any]] = []
@@ -614,7 +614,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
         "ci_status": ci_status,
     }
 
-    if not cfg.no_cache:
+    if run_cache_key and not cfg.no_cache:
         run_cache_set(
             run_cache_key,
             run_payload,
@@ -646,6 +646,8 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
 
         def _run_cache_writer(payload: Dict[str, Any]) -> None:
             if cfg.no_cache:
+                return
+            if not run_cache_key or runtime.cache_ttl_seconds <= 0:
                 return
             final_payload = json.loads(json.dumps(run_payload))
             final_payload["aggregates"]["ci95"] = payload["ci95"]
