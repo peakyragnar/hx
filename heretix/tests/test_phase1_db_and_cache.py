@@ -65,3 +65,30 @@ def test_cache_hit_behavior(tmp_path: Path):
     assert res_cached["run_id"] == res_populate["run_id"]
     assert res_cached["execution_id"] != res_populate["execution_id"]
     assert res_cached["aggregates"]["cache_hit_rate"] >= 0.5
+
+
+def test_run_cache_respects_seed(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("HERETIX_CACHE_TTL", "60")
+
+    prompt_file = str(Path(__file__).resolve().parents[1] / "prompts" / "rpl_g5_v2.yaml")
+    base_kwargs = dict(
+        claim=f"tariffs don't cause inflation [seed_cache_{tmp_path.name}]",
+        model="gpt-5",
+        prompt_version="rpl_g5_v2",
+        K=8,
+        R=2,
+        T=8,
+        B=5000,
+        max_output_tokens=384,
+    )
+
+    cfg_seed1 = RunConfig(**base_kwargs, seed=101)
+    res_seed1 = run_single_version(cfg_seed1, prompt_file=prompt_file, mock=True)
+
+    cfg_seed2 = RunConfig(**base_kwargs, seed=202)
+    res_seed2 = run_single_version(cfg_seed2, prompt_file=prompt_file, mock=True)
+
+    assert res_seed1["run_id"] == res_seed2["run_id"]
+    assert res_seed1["execution_id"] != res_seed2["execution_id"]
+
+    monkeypatch.delenv("HERETIX_CACHE_TTL", raising=False)

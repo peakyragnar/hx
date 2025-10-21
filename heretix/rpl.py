@@ -130,6 +130,12 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
 
     run_cache_key: Optional[str] = None
     if runtime.cache_ttl_seconds > 0:
+        if cfg.seed is not None:
+            seed_marker = f"cfg:{cfg.seed}"
+        else:
+            env_seed_override = os.getenv("HERETIX_RPL_SEED")
+            seed_marker = f"env:{env_seed_override}" if env_seed_override is not None else "auto"
+
         run_cache_key = make_run_cache_key(
             claim=cfg.claim,
             model=cfg.model,
@@ -140,6 +146,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             max_output_tokens=cfg.max_output_tokens,
             provider_mode=provider_mode,
             target_B=final_B,
+            seed_marker=seed_marker,
         )
 
         if not cfg.no_cache:
