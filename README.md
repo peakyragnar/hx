@@ -48,7 +48,9 @@ uv run heretix run --config runs/rpl_example.yaml --out runs/smoke.json --mock
 uv run heretix describe --config runs/rpl_example.yaml
 ```
 
-- Output includes: p_RPL, CI95, stability, cache_hit_rate, rpl_compliance_rate.
+- Output includes: p_RPL, CI95, stability, cache_hit_rate, rpl_compliance_rate. Each run also
+  emits stage-level telemetry (timings, tokens, cache hits) and a `run_summary` line with wall
+  time and estimated cost.
 
 Legacy CLI is available under `legacy/` for reference but is not installed by default.
 
@@ -154,9 +156,16 @@ API_URL=https://<your-api>.onrender.com
 - Run a claim (deducts usage and persists to Neon).
 - Trigger a real checkout with Stripe live mode (use $0 coupon or test card if on staging) and verify the webhook updates the plan.
 
-## Faster Runs (Optional Concurrency)
+## Faster Runs (Concurrency, Fast CI, Caching)
 
-- CLI (opt‑in):
+- Concurrency (default 8 workers): set `HERETIX_RPL_CONCURRENCY` to control the thread pool used for
+  provider calls. Leave it unset to use 8 workers or tune per run with the env var.
+- Fast-first CI: the harness returns a fast bootstrap (`HERETIX_FAST_B`, default 1000) immediately and
+  recomputes the final `B` (`HERETIX_FINAL_B`, default 5000) in the background. Disable with
+  `HERETIX_FAST_FINAL=0` if you want to block until the full CI is ready.
+- Run-level cache: sample caching is always on. Set `HERETIX_CACHE_TTL` to a positive number to reuse
+  identical runs; leave it unset (0) during development to ensure every run pulls fresh samples.
+- CLI example:
   - `HERETIX_CONCURRENCY=8 uv run heretix run --config runs/rpl_example.yaml --out runs/faster.json`
 - UI (opt‑in):
   - `HERETIX_CONCURRENCY=8 UI_PORT=7799 uv run python ui/serve.py` then open `http://127.0.0.1:7799`

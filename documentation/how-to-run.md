@@ -46,13 +46,16 @@ Run RPL and write a JSON summary:
 ```
 uv run heretix run --config runs/rpl_example.yaml --out runs/rpl.json
 ```
-Stdout shows a compact line with p_RPL, CI95, width, stability, compliance, and cache. The JSON file contains full aggregates and diagnostics.
+Stdout now emits structured telemetry (stage timings, token estimates, cache hits) and a final
+`run_summary` line with the total wall time, worker count, and estimated cost. The JSON file
+contains full aggregates and diagnostics.
 
 To include the Web-Informed Lens, add `--mode web_informed` (requires network access and provider credentials):
 ```
 uv run heretix run --config runs/rpl_example.yaml --out runs/rpl_web.json --mode web_informed
 ```
-The resulting JSON now contains `prior`, `web`, `combined`, and `weights` blocks aligned with the API.
+The resulting JSON now contains `prior`, `web`, `combined`, `weights`, and the full web replicates and
+debug votes the UI uses when explaining web-informed verdicts.
 
 ## 6) Smoke run (no network)
 For quick iteration without calling the provider:
@@ -72,7 +75,7 @@ sqlite3 runs/heretix.sqlite "SELECT run_id, datetime(created_at,'unixepoch','loc
 ```
 More DB tips are in `documentation/sqlite.md`.
 
-## 8) Optional: Concurrency (faster runs)
+## 8) Optional: Concurrency and fast-first CI (faster runs)
 
 Run provider calls in parallel. Estimator/math/DB remain unchanged.
 
@@ -88,6 +91,16 @@ HERETIX_CONCURRENCY=6 UI_PORT=7799 uv run python ui/serve.py
   - Start with 6–8 workers; reduce if you see provider throttling.
   - For long claims, set `max_output_tokens: 768–1200` in your config to avoid truncated JSON under load.
   - Cache keys are unchanged; re‑runs benefit from cache regardless of concurrency.
+  - If you leave `HERETIX_RPL_CONCURRENCY` unset, the harness defaults to 8 workers for live calls.
+
+Fast-first CI: by default the harness computes a fast bootstrap with `HERETIX_FAST_B` draws (1000) and
+returns immediately, then recomputes the final CI in the background using `HERETIX_FINAL_B` (5000).
+The final result is persisted in the database and cache once the background job completes.
+Disable this behaviour with `HERETIX_FAST_FINAL=0` if you prefer to block until the full `B` finishes.
+
+Run-level cache: sample-level caching is always on; run-level caching is opt-in via `HERETIX_CACHE_TTL`.
+Leave it unset (the default) when you want fresh results every time; set it to a positive TTL (seconds)
+when you want identical runs to return instantly from cache.
 
 ## 8) Generate an HTML report
 Create a static HTML report for the latest execution:
