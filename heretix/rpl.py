@@ -85,6 +85,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
     )
 
     run_start = time.perf_counter()
+    final_threads: List[threading.Thread] = []
 
     T_bank = len(paraphrases)
     T_stage = int(cfg.T) if cfg.T is not None else T_bank
@@ -631,8 +632,10 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
 
     if runtime.fast_then_final and final_B > fast_B:
         tpl_logits_copy = {k: list(v) for k, v in by_tpl.items()}
+        final_ci_payload: Optional[Dict[str, Any]] = None
 
         def _update_fn(payload: Dict[str, Any]) -> None:
+            nonlocal final_ci_payload
             conn_local = _ensure_db(db_path)
             update_run_ci(
                 conn_local,
@@ -650,6 +653,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
                 ci_width=payload["ci_width"],
                 B=payload["aggregation"]["B"],
             )
+            final_ci_payload = payload
 
         def _run_cache_writer(payload: Dict[str, Any]) -> None:
             if cfg.no_cache:
@@ -681,7 +685,20 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             final_B=final_B,
             update_fn=_update_fn,
             run_cache_writer=_run_cache_writer,
+            threads=final_threads,
         )
+
+    for th in final_threads:
+        th.join()
+
+    if runtime.fast_then_final and final_B > fast_B and 'final_ci_payload' in locals() and final_ci_payload:
+        run_payload["aggregates"]["ci95"] = final_ci_payload["ci95"]
+        run_payload["aggregates"]["ci_width"] = final_ci_payload["ci_width"]
+        run_payload["aggregation"]["B"] = final_ci_payload["aggregation"]["B"]
+        run_payload["aggregation"]["counts_by_template"] = final_ci_payload["aggregation"].get("counts_by_template", {})
+        run_payload["aggregation"]["imbalance_ratio"] = final_ci_payload["aggregation"].get("imbalance_ratio")
+        run_payload["aggregation"]["template_iqr_logit"] = final_ci_payload["aggregation"].get("template_iqr_logit")
+        run_payload["ci_status"] = {"phase": "final", "B_used": final_ci_payload["aggregation"]["B"], "job_id": execution_id}
 
     total_ms = int((time.perf_counter() - run_start) * 1000)
     estimated_cost = est_cost(

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import threading
-from typing import Dict, Callable, Any
+from typing import Dict, Callable, Any, Optional
 
 import numpy as np
 
@@ -20,6 +20,7 @@ def kick_off_final_ci(
     final_B: int,
     update_fn: Callable[[Dict[str, Any]], None],
     run_cache_writer: Callable[[Dict[str, Any]], None],
+    threads: Optional[list[threading.Thread]] = None,
 ):
     """Spawn background worker to recompute the CI with final_B bootstrap resamples."""
 
@@ -50,4 +51,8 @@ def kick_off_final_ci(
         update_fn(update_payload)
         run_cache_writer(update_payload)
 
-    threading.Thread(target=_job, daemon=True).start()
+    th = threading.Thread(target=_job, daemon=False)
+    th.start()
+    if threads is not None:
+        threads.append(th)
+    return th
