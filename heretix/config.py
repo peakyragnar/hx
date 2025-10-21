@@ -28,6 +28,19 @@ class RunConfig:
     prompt_file_path: Optional[str] = None
 
 
+@dataclass(frozen=True)
+class RuntimeSettings:
+    rpl_max_workers: int = int(os.getenv("HERETIX_RPL_CONCURRENCY", "8"))
+    l1_ttl_seconds: int = int(os.getenv("HERETIX_L1_TTL", "900"))
+    l1_max_items: int = int(os.getenv("HERETIX_L1_MAX", "2048"))
+    cache_ttl_seconds: int = int(os.getenv("HERETIX_CACHE_TTL", "0"))
+    fast_ci_B: int = int(os.getenv("HERETIX_FAST_B", "1000"))
+    final_ci_B: int = int(os.getenv("HERETIX_FINAL_B", "5000"))
+    fast_then_final: bool = os.getenv("HERETIX_FAST_FINAL", "1") == "1"
+    price_per_1k_prompt: float = float(os.getenv("HERETIX_PRICE_IN", "5.00"))
+    price_per_1k_output: float = float(os.getenv("HERETIX_PRICE_OUT", "15.00"))
+
+
 def load_run_config(path: str | Path) -> RunConfig:
     p = Path(path)
     data = yaml.safe_load(p.read_text()) if p.suffix in {".yaml", ".yml"} else json.loads(p.read_text())
@@ -46,3 +59,8 @@ def load_run_config(path: str | Path) -> RunConfig:
     else:
         cfg.prompt_file_path = cfg.prompts_file
     return cfg
+
+
+def load_runtime_settings() -> RuntimeSettings:
+    """Return runtime execution settings (concurrency, cache TTLs, CI budgets)."""
+    return RuntimeSettings()

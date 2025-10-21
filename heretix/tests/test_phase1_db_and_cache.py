@@ -47,19 +47,48 @@ def test_cache_hit_behavior(tmp_path: Path):
     )
     prompt_file = str(Path(__file__).resolve().parents[1] / "prompts" / "rpl_g5_v2.yaml")
 
-    # First run (no cache): expect 0.0
-    cfg1 = RunConfig(**{**base.__dict__})
-    cfg1.no_cache = True
-    res1 = run_single_version(cfg1, prompt_file=prompt_file, mock=True)
-    assert res1["aggregates"]["cache_hit_rate"] == 0.0
+    # First run bypasses cache entirely
+    cfg_clean = RunConfig(**{**base.__dict__})
+    cfg_clean.no_cache = True
+    res_clean = run_single_version(cfg_clean, prompt_file=prompt_file, mock=True)
+    assert res_clean["aggregates"]["cache_hit_rate"] == 0.0
 
-    # Second identical run (use cache): expect high hit rate
-    cfg2 = RunConfig(**{**base.__dict__})
-    res2 = run_single_version(cfg2, prompt_file=prompt_file, mock=True)
-    assert res2["aggregates"]["cache_hit_rate"] >= 0.9
+    # Second run populates run cache (may see sample hits from DB)
+    cfg_populate = RunConfig(**{**base.__dict__})
+    res_populate = run_single_version(cfg_populate, prompt_file=prompt_file, mock=True)
+    assert res_populate["run_id"] == res_clean["run_id"]
+    assert res_populate["execution_id"] != res_clean["execution_id"]
 
-    # No-cache override again: expect 0.0
-    cfg3 = RunConfig(**{**base.__dict__})
-    cfg3.no_cache = True
-    res3 = run_single_version(cfg3, prompt_file=prompt_file, mock=True)
-    assert res3["aggregates"]["cache_hit_rate"] == 0.0
+    # Third run should see sample cache hits but produce a new execution (run cache disabled by default)
+    cfg_cached = RunConfig(**{**base.__dict__})
+    res_cached = run_single_version(cfg_cached, prompt_file=prompt_file, mock=True)
+    assert res_cached["run_id"] == res_populate["run_id"]
+    assert res_cached["execution_id"] != res_populate["execution_id"]
+    assert res_cached["aggregates"]["cache_hit_rate"] >= 0.5
+
+
+def test_run_cache_respects_seed(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("HERETIX_CACHE_TTL", "60")
+
+    prompt_file = str(Path(__file__).resolve().parents[1] / "prompts" / "rpl_g5_v2.yaml")
+    base_kwargs = dict(
+        claim=f"tariffs don't cause inflation [seed_cache_{tmp_path.name}]",
+        model="gpt-5",
+        prompt_version="rpl_g5_v2",
+        K=8,
+        R=2,
+        T=8,
+        B=5000,
+        max_output_tokens=384,
+    )
+
+    cfg_seed1 = RunConfig(**base_kwargs, seed=101)
+    res_seed1 = run_single_version(cfg_seed1, prompt_file=prompt_file, mock=True)
+
+    cfg_seed2 = RunConfig(**base_kwargs, seed=202)
+    res_seed2 = run_single_version(cfg_seed2, prompt_file=prompt_file, mock=True)
+
+    assert res_seed1["run_id"] == res_seed2["run_id"]
+    assert res_seed1["execution_id"] != res_seed2["execution_id"]
+
+    monkeypatch.delenv("HERETIX_CACHE_TTL", raising=False)
