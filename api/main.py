@@ -299,6 +299,8 @@ def run_check(
         weights=weights_model,
         provenance=provenance_payload,
         web_artifact=web_artifact_pointer,
+        wel_replicates=artifacts.wel_replicates or None,
+        wel_debug_votes=artifacts.wel_debug_votes or None,
     )
 @app.post(
     "/api/auth/magic-links",

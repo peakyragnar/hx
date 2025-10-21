@@ -77,6 +77,7 @@ class WebEvidence(BaseModel):
     support: Optional[float] = None
     contradict: Optional[float] = None
     domains: Optional[int] = None
+    replicates: Optional[List[Dict[str, object]]] = None
 
 
 class CombinedResult(BaseModel):
@@ -95,6 +96,15 @@ class WeightInfo(BaseModel):
     w_web: float
     recency: float
     strength: float
+
+
+class WebReplicate(BaseModel):
+    replicate_idx: Optional[int] = None
+    p_web: Optional[float] = None
+    support_bullets: Optional[List[str]] = None
+    oppose_bullets: Optional[List[str]] = None
+    notes: Optional[List[str]] = None
+    json_valid: Optional[bool] = None
 
 
 class WebArtifactPointer(BaseModel):
@@ -129,6 +139,8 @@ class RunResponse(BaseModel):
     weights: Optional[WeightInfo] = None
     provenance: Optional[Dict[str, object]] = None
     web_artifact: Optional[WebArtifactPointer] = None
+    wel_replicates: Optional[List[WebReplicate]] = None
+    wel_debug_votes: Optional[List[Dict[str, object]]] = None
 
 
 class MagicLinkPayload(BaseModel):
