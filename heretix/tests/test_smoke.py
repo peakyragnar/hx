@@ -25,8 +25,9 @@ def test_smoke_mock_run(tmp_path: Path):
     assert 0.0 <= a["ci95"][0] <= 1.0
     assert 0.0 <= a["ci95"][1] <= 1.0
     assert a["ci95"][0] <= a["ci95"][1]
+    assert res["ci_status"]["B_used"] > 0
+    assert res["ci_status"]["phase"] in {"fast", "final"}
     # write artifact
     out = tmp_path / "smoke.json"
     out.write_text(json.dumps(res))
     assert out.exists()
-

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Optional
@@ -12,15 +13,34 @@ import yaml
 import uuid
 import concurrent.futures as _fut
 
-from .config import RunConfig
+from .config import RunConfig, load_runtime_settings
 from .sampler import rotation_offset, balanced_indices_with_rotation, planned_counts
 from .seed import make_bootstrap_seed
 from .aggregate import aggregate_clustered
 from .metrics import compute_stability_calibrated, stability_band_from_iqr
-from .cache import make_cache_key, get_cached_sample
-from .storage import _ensure_db, insert_run, insert_samples, insert_execution, insert_execution_samples, insert_prompt
+from .cache import (
+    make_cache_key,
+    make_run_cache_key,
+    sample_cache_get,
+    sample_cache_set,
+    configure_runtime_caches,
+    run_cache_get,
+    run_cache_set,
+)
+from .storage import (
+    _ensure_db,
+    insert_run,
+    insert_samples,
+    insert_execution,
+    insert_execution_samples,
+    insert_prompt,
+    update_run_ci,
+    update_execution_ci,
+)
 from .provider.openai_gpt5 import score_claim
 from .provider.mock import score_claim_mock
+from .telemetry import timed, est_tokens, est_cost, log
+from .finalizer import kick_off_final_ci
 
 
 def _logit(p: float) -> float:
@@ -55,6 +75,16 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
     paraphrases: List[str] = [str(x) for x in prompts.get("paraphrases", [])]
     if not paraphrases:
         raise ValueError("No paraphrases found in prompt file")
+
+    runtime = load_runtime_settings()
+    configure_runtime_caches(
+        sample_ttl=runtime.l1_ttl_seconds,
+        sample_max=runtime.l1_max_items,
+        run_ttl=runtime.cache_ttl_seconds,
+        run_max=max(64, runtime.l1_max_items // 2),
+    )
+
+    run_start = time.perf_counter()
 
     T_bank = len(paraphrases)
     T_stage = int(cfg.T) if cfg.T is not None else T_bank
@@ -95,27 +125,90 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
     provider_mode = "MOCK" if (mock or os.getenv("HERETIX_MOCK")) else "LIVE"
     db_path = Path("runs/heretix_mock.sqlite") if provider_mode == "MOCK" else Path("runs/heretix.sqlite")
 
+    final_B = max(1, int(cfg.B))
+    fast_B = final_B if not runtime.fast_then_final else max(1, min(final_B, runtime.fast_ci_B))
+
+    run_cache_key = make_run_cache_key(
+        claim=cfg.claim,
+        model=cfg.model,
+        prompt_version=prompt_version_full,
+        K=cfg.K,
+        R=cfg.R,
+        T=T_stage,
+        max_output_tokens=cfg.max_output_tokens,
+        provider_mode=provider_mode,
+        target_B=final_B,
+    )
+
+    run_cache_hit = False
+    if not cfg.no_cache:
+        cached_run = run_cache_get(
+            run_cache_key,
+            db_path=db_path,
+            ttl_seconds=runtime.cache_ttl_seconds,
+        )
+        if cached_run:
+            run_cache_hit = True
+            cached_run.setdefault(
+                "ci_status",
+                {"phase": "final", "B_used": final_B, "job_id": None},
+            )
+            log.info(
+                "run_summary",
+                extra={
+                    "claim": (cfg.claim or "")[:80],
+                    "run_id": cached_run.get("run_id"),
+                    "phase": "cache_hit",
+                    "workers": 0,
+                    "tokens_in": 0,
+                    "tokens_out": 0,
+                    "cost_usd": 0.0,
+                    "cache_samples": 0,
+                    "cache_runs": 1,
+                    "ms_total": 0,
+                },
+            )
+            return cached_run
+
     # sampling loop
     runs: List[Dict[str, Any]] = []
     by_tpl: Dict[str, List[float]] = {}
     all_logits: List[float] = []
     tpl_hashes: List[str] = []
-    cache_hits = 0
     attempted = 0
     valid_count = 0
+    sample_cache_hits = 0
+    sample_cache_misses = 0
+    total_tokens_in = 0
+    total_tokens_out = 0
+    metrics_lock = threading.Lock()
 
     # Precompute deterministic work list (one entry per attempt)
     class _Work:
         __slots__ = (
-            "pidx", "paraphrase_text", "prompt_sha256", "replicate_idx_global", "cache_key",
+            "pidx",
+            "paraphrase_text",
+            "prompt_sha256",
+            "replicate_idx_global",
+            "cache_key",
+            "prompt_char_len",
         )
 
-        def __init__(self, pidx: int, paraphrase_text: str, prompt_sha256: str, rep_idx: int, cache_key: str) -> None:
+        def __init__(
+            self,
+            pidx: int,
+            paraphrase_text: str,
+            prompt_sha256: str,
+            rep_idx: int,
+            cache_key: str,
+            prompt_char_len: int,
+        ) -> None:
             self.pidx = pidx
             self.paraphrase_text = paraphrase_text
             self.prompt_sha256 = prompt_sha256
             self.replicate_idx_global = rep_idx
             self.cache_key = cache_key
+            self.prompt_char_len = prompt_char_len
 
     work_items: List[_Work] = []
     occ_by_hash: Dict[str, int] = {}
@@ -138,7 +231,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
                 max_output_tokens=cfg.max_output_tokens,
                 provider_mode=provider_mode,
             )
-            work_items.append(_Work(pidx, paraphrase_text, prompt_sha256, rep_idx, ckey))
+            work_items.append(_Work(pidx, paraphrase_text, prompt_sha256, rep_idx, ckey, prompt_lengths[pidx]))
 
     # First, satisfy from cache (main thread) and collect misses
     rows_ready: List[Dict[str, Any]] = []
@@ -147,16 +240,28 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
         attempted += 1
         row = None
         if not cfg.no_cache:
-            row = get_cached_sample(w.cache_key, db_path=db_path)
+            row = sample_cache_get(
+                w.cache_key,
+                db_path=db_path,
+                ttl_seconds=runtime.cache_ttl_seconds,
+            )
             if row:
-                cache_hits += 1
+                sample_cache_hits += 1
         if row is None:
+            if not cfg.no_cache:
+                sample_cache_misses += 1
             misses.append(w)
         else:
             rows_ready.append(row)
 
     # Define a worker to call provider and build a sample row
     def _call_and_build(w: _Work) -> Dict[str, Any]:
+        nonlocal total_tokens_in, total_tokens_out
+
+        prompt_tokens_est = est_tokens(w.prompt_char_len)
+        with metrics_lock:
+            total_tokens_in += prompt_tokens_est
+
         def _once() -> Dict[str, Any]:
             if provider_mode == "MOCK":
                 return score_claim_mock(
@@ -176,7 +281,15 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
                 max_output_tokens=cfg.max_output_tokens,
             )
 
-        out = _once()
+        with timed(
+            "provider_call",
+            {
+                "provider": provider_mode,
+                "model": cfg.model,
+                "paraphrase_idx": w.pidx,
+            },
+        ):
+            out = _once()
         raw = out.get("raw", {})
         meta = out.get("meta", {})
         timing = out.get("timing", {})
@@ -212,7 +325,11 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
         txt_concat = json.dumps(raw)
         compliant = (json_valid == 1) and (not _has_citation_or_url(txt_concat))
         valid = int(1 if compliant else 0)
-        return {
+        response_chars = len(txt_concat)
+        with metrics_lock:
+            total_tokens_out += est_tokens(response_chars)
+
+        row = {
             "run_id": "",
             "cache_key": w.cache_key,
             "prompt_sha256": meta.get("prompt_sha256"),
@@ -227,34 +344,37 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             "latency_ms": int(timing.get("latency_ms") or 0),
             "json_valid": valid,
         }
+        sample_cache_set(w.cache_key, row)
+        return row
 
     # Dispatch misses with optional concurrency
-    conc_env = os.getenv("HERETIX_CONCURRENCY")
-    max_workers: Optional[int] = None
-    if conc_env:
-        try:
-            mw = int(conc_env)
-            # Validate bounds to protect system/provider; 1..32 is a sane default window
-            if 1 <= mw <= 32:
-                max_workers = mw
-            else:
-                print(f"[rpl] WARN: HERETIX_CONCURRENCY out of bounds ({mw}); expected 1..32. Running sequentially.")
-        except (ValueError, TypeError):
-            print(f"[rpl] WARN: HERETIX_CONCURRENCY not an integer ('{conc_env}'); running sequentially.")
+    max_workers: Optional[int] = runtime.rpl_max_workers if runtime.rpl_max_workers > 1 else None
 
     if misses:
         if max_workers and max_workers > 1:
             try:
-                with _fut.ThreadPoolExecutor(max_workers=max_workers) as ex:
-                    for row in ex.map(_call_and_build, misses):
-                        rows_ready.append(row)
+                with timed(
+                    "sampling_dispatch",
+                    {"workers": max_workers, "misses": len(misses)},
+                ):
+                    with _fut.ThreadPoolExecutor(max_workers=max_workers) as ex:
+                        for row in ex.map(_call_and_build, misses):
+                            rows_ready.append(row)
             except Exception as e:
                 print(f"[rpl] WARN: concurrency setup failed ({e}); falling back to sequential.")
+                with timed(
+                    "sampling_dispatch",
+                    {"workers": 1, "misses": len(misses)},
+                ):
+                    for w in misses:
+                        rows_ready.append(_call_and_build(w))
+        else:
+            with timed(
+                "sampling_dispatch",
+                {"workers": 1, "misses": len(misses)},
+            ):
                 for w in misses:
                     rows_ready.append(_call_and_build(w))
-        else:
-            for w in misses:
-                rows_ready.append(_call_and_build(w))
 
     # If concurrency was used and many rows are invalid, try a sequential repair pass
     if max_workers and max_workers > 1:
@@ -314,7 +434,18 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             B=cfg.B,
         )
     rng = np.random.default_rng(seed_val)
-    ell_hat, (lo_l, hi_l), diag = aggregate_clustered(by_tpl, B=cfg.B, rng=rng, center="trimmed", trim=0.2, fixed_m=None)
+    with timed(
+        "bootstrap_fast",
+        {"B": fast_B, "templates": len(by_tpl)},
+    ):
+        ell_hat, (lo_l, hi_l), diag = aggregate_clustered(
+            by_tpl,
+            B=fast_B,
+            rng=rng,
+            center="trimmed",
+            trim=0.2,
+            fixed_m=None,
+        )
     p_hat = _sigmoid(ell_hat)
     lo_p, hi_p = _sigmoid(lo_l), _sigmoid(hi_l)
 
@@ -324,7 +455,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
 
     counts = diag.get("counts_by_template", {})
     imb = float(diag.get("imbalance_ratio")) if diag.get("imbalance_ratio") is not None else 1.0
-    cache_hit_rate = (cache_hits / attempted) if attempted else 0.0
+    cache_hit_rate = (sample_cache_hits / attempted) if attempted else 0.0
     rpl_compliance_rate = (valid_count / attempted) if attempted else 0.0
 
     # Derived quality summary (PQS) and gates
@@ -376,7 +507,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             "K": cfg.K,
             "R": cfg.R,
             "T": T_stage,
-            "B": cfg.B,
+            "B": fast_B,
             # Store seeds as strings to avoid 64-bit overflow constraints in SQLite INTEGER columns
             "seed": (str(cfg.seed) if cfg.seed is not None else None),
             "bootstrap_seed": str(seed_val),
@@ -415,7 +546,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             "K": cfg.K,
             "R": cfg.R,
             "T": T_stage,
-            "B": cfg.B,
+            "B": fast_B,
             "seed": (str(cfg.seed) if cfg.seed is not None else None),
             "bootstrap_seed": str(seed_val),
             "prob_true_rpl": p_hat,
@@ -447,7 +578,11 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
     ]
     insert_execution_samples(conn, exec_maps)
 
-    return {
+    ci_status = {"phase": "final", "B_used": fast_B, "job_id": None}
+    if runtime.fast_then_final and final_B > fast_B:
+        ci_status = {"phase": "fast", "B_used": fast_B, "job_id": execution_id}
+
+    run_payload: Dict[str, Any] = {
         "execution_id": execution_id,
         "run_id": run_id,
         "claim": cfg.claim,
@@ -456,7 +591,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
         "sampling": {"K": cfg.K, "R": cfg.R, "T": T_stage},
         "aggregation": {
             "method": diag.get("method"),
-            "B": cfg.B,
+            "B": fast_B,
             "center": "trimmed",
             "trim": 0.2,
             "bootstrap_seed": seed_val,
@@ -476,4 +611,91 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             "rpl_compliance_rate": rpl_compliance_rate,
             "cache_hit_rate": cache_hit_rate,
         },
+        "ci_status": ci_status,
     }
+
+    if not cfg.no_cache:
+        run_cache_set(
+            run_cache_key,
+            run_payload,
+            db_path=db_path,
+            ttl_seconds=runtime.cache_ttl_seconds,
+        )
+
+    if runtime.fast_then_final and final_B > fast_B:
+        tpl_logits_copy = {k: list(v) for k, v in by_tpl.items()}
+
+        def _update_fn(payload: Dict[str, Any]) -> None:
+            conn_local = _ensure_db(db_path)
+            update_run_ci(
+                conn_local,
+                run_id,
+                ci_lo=payload["ci95"][0],
+                ci_hi=payload["ci95"][1],
+                ci_width=payload["ci_width"],
+                B=payload["aggregation"]["B"],
+            )
+            update_execution_ci(
+                conn_local,
+                execution_id,
+                ci_lo=payload["ci95"][0],
+                ci_hi=payload["ci95"][1],
+                ci_width=payload["ci_width"],
+                B=payload["aggregation"]["B"],
+            )
+
+        def _run_cache_writer(payload: Dict[str, Any]) -> None:
+            if cfg.no_cache:
+                return
+            final_payload = json.loads(json.dumps(run_payload))
+            final_payload["aggregates"]["ci95"] = payload["ci95"]
+            final_payload["aggregates"]["ci_width"] = payload["ci_width"]
+            final_payload["aggregation"]["B"] = payload["aggregation"]["B"]
+            final_payload["aggregation"]["counts_by_template"] = payload["aggregation"].get("counts_by_template", {})
+            final_payload["aggregation"]["imbalance_ratio"] = payload["aggregation"].get("imbalance_ratio")
+            final_payload["aggregation"]["template_iqr_logit"] = payload["aggregation"].get("template_iqr_logit")
+            final_payload["ci_status"] = {
+                "phase": "final",
+                "B_used": payload["aggregation"]["B"],
+                "job_id": execution_id,
+            }
+            run_cache_set(
+                run_cache_key,
+                final_payload,
+                db_path=db_path,
+                ttl_seconds=runtime.cache_ttl_seconds,
+            )
+
+        kick_off_final_ci(
+            by_template_logits=tpl_logits_copy,
+            seed=seed_val,
+            final_B=final_B,
+            update_fn=_update_fn,
+            run_cache_writer=_run_cache_writer,
+        )
+
+    total_ms = int((time.perf_counter() - run_start) * 1000)
+    estimated_cost = est_cost(
+        total_tokens_in,
+        total_tokens_out,
+        runtime.price_per_1k_prompt,
+        runtime.price_per_1k_output,
+    )
+    log.info(
+        "run_summary",
+        extra={
+            "claim": (cfg.claim or "")[:80],
+            "run_id": run_id,
+            "phase": run_payload["ci_status"]["phase"],
+            "workers": max_workers or 1,
+            "tokens_in": total_tokens_in,
+            "tokens_out": total_tokens_out,
+            "cost_usd": round(estimated_cost, 4),
+            "cache_samples": sample_cache_hits,
+            "cache_misses": sample_cache_misses,
+            "cache_runs": 0,
+            "ms_total": total_ms,
+        },
+    )
+
+    return run_payload

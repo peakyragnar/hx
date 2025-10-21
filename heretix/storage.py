@@ -4,6 +4,7 @@ import json
 import sqlite3
 from pathlib import Path
 import os
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 
@@ -151,6 +152,16 @@ def _ensure_db(path: Path | None = None) -> sqlite3.Connection:
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS result_cache (
+            key TEXT PRIMARY KEY,
+            payload_json TEXT NOT NULL,
+            computed_at INTEGER NOT NULL,
+            ttl_seconds INTEGER NOT NULL
+        )
+        """
+    )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_prompt_model ON runs(prompt_version, model)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_samples_run ON samples(run_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_exec_run ON executions(run_id)")
@@ -197,6 +208,51 @@ def get_cached_sample(cache_key: str, db_path: Path | None = None) -> Optional[D
         return None
     cols = [d[0] for d in cur.description]
     return {k: row[i] for i, k in enumerate(cols)}
+
+
+def get_cached_run(key: str, *, db_path: Path | None = None, ttl_seconds: int = 259200) -> Optional[Dict[str, Any]]:
+    conn = _ensure_db(db_path)
+    cur = conn.execute("SELECT payload_json, computed_at, ttl_seconds FROM result_cache WHERE key=?", (key,))
+    row = cur.fetchone()
+    if not row:
+        return None
+    payload_json, computed_at, ttl_row = row
+    if ttl_row is None:
+        ttl_row = ttl_seconds
+    if int(time.time()) > int(computed_at) + int(ttl_row):
+        conn.execute("DELETE FROM result_cache WHERE key=?", (key,))
+        conn.commit()
+        return None
+    return json.loads(payload_json)
+
+
+def set_cached_run(key: str, payload: Dict[str, Any], ttl_seconds: int, *, db_path: Path | None = None) -> None:
+    conn = _ensure_db(db_path)
+    conn.execute(
+        """
+        INSERT INTO result_cache (key, payload_json, computed_at, ttl_seconds)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET payload_json=excluded.payload_json, computed_at=excluded.computed_at, ttl_seconds=excluded.ttl_seconds
+        """,
+        (key, json.dumps(payload), int(time.time()), int(ttl_seconds)),
+    )
+    conn.commit()
+
+
+def update_run_ci(conn: sqlite3.Connection, run_id: str, *, ci_lo: float, ci_hi: float, ci_width: float, B: int):
+    conn.execute(
+        "UPDATE runs SET ci_lo=?, ci_hi=?, ci_width=?, B=? WHERE run_id=?",
+        (ci_lo, ci_hi, ci_width, B, run_id),
+    )
+    conn.commit()
+
+
+def update_execution_ci(conn: sqlite3.Connection, execution_id: str, *, ci_lo: float, ci_hi: float, ci_width: float, B: int):
+    conn.execute(
+        "UPDATE executions SET ci_lo=?, ci_hi=?, ci_width=?, B=? WHERE execution_id=?",
+        (ci_lo, ci_hi, ci_width, B, execution_id),
+    )
+    conn.commit()
 
 
 def insert_execution(conn: sqlite3.Connection, row: Dict[str, Any]) -> None:

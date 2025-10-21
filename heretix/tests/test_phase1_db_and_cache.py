@@ -47,19 +47,21 @@ def test_cache_hit_behavior(tmp_path: Path):
     )
     prompt_file = str(Path(__file__).resolve().parents[1] / "prompts" / "rpl_g5_v2.yaml")
 
-    # First run (no cache): expect 0.0
-    cfg1 = RunConfig(**{**base.__dict__})
-    cfg1.no_cache = True
-    res1 = run_single_version(cfg1, prompt_file=prompt_file, mock=True)
-    assert res1["aggregates"]["cache_hit_rate"] == 0.0
+    # First run bypasses cache entirely
+    cfg_clean = RunConfig(**{**base.__dict__})
+    cfg_clean.no_cache = True
+    res_clean = run_single_version(cfg_clean, prompt_file=prompt_file, mock=True)
+    assert res_clean["aggregates"]["cache_hit_rate"] == 0.0
 
-    # Second identical run (use cache): expect high hit rate
-    cfg2 = RunConfig(**{**base.__dict__})
-    res2 = run_single_version(cfg2, prompt_file=prompt_file, mock=True)
-    assert res2["aggregates"]["cache_hit_rate"] >= 0.9
+    # Second run populates run cache (may see sample hits from DB)
+    cfg_populate = RunConfig(**{**base.__dict__})
+    res_populate = run_single_version(cfg_populate, prompt_file=prompt_file, mock=True)
+    assert res_populate["run_id"] == res_clean["run_id"]
+    assert res_populate["execution_id"] != res_clean["execution_id"]
 
-    # No-cache override again: expect 0.0
-    cfg3 = RunConfig(**{**base.__dict__})
-    cfg3.no_cache = True
-    res3 = run_single_version(cfg3, prompt_file=prompt_file, mock=True)
-    assert res3["aggregates"]["cache_hit_rate"] == 0.0
+    # Third run should hit run cache and reuse populate execution payload
+    cfg_cached = RunConfig(**{**base.__dict__})
+    res_cached = run_single_version(cfg_cached, prompt_file=prompt_file, mock=True)
+    assert res_cached["run_id"] == res_populate["run_id"]
+    assert res_cached["execution_id"] == res_populate["execution_id"]
+    assert res_cached["ci_status"]["phase"] == res_populate["ci_status"]["phase"]
