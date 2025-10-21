@@ -780,6 +780,20 @@ class Handler(BaseHTTPRequestHandler):
                     if _add_items(items):
                         break
 
+        if not reasons and web_summary:
+            metrics = web_summary.get("metrics") or {}
+            n_docs = int(metrics.get("n_docs") or 0)
+            n_domains = int(metrics.get("n_domains") or 0)
+            recency_days = metrics.get("median_age_days")
+            shift_line = (
+                f"Web evidence across {n_docs} document{'s' if n_docs != 1 else ''} "
+                f"from {n_domains} domain{'s' if n_domains != 1 else ''} moved GPT‑5’s prior from {prior_percent} to {percent}."
+            )
+            reasons.append(shift_line)
+            if isinstance(recency_days, (int, float)) and recency_days == recency_days:
+                reasons.append(
+                    f"Median publish date was about {int(recency_days)} day{'s' if recency_days != 1 else ''} ago, so fresher coverage would further tighten the estimate."
+                )
         if not reasons:
             reasons = _generate_explanation()
         # Build display pieces
