@@ -208,6 +208,15 @@ def run_check(
         max_output_tokens=cfg.max_output_tokens,
     )
 
+    if mode == "web_informed" and web_block_payload:
+        explanation_headline, explanation_text, explanation_reasons = build_web_explanation(
+            prior_block=prior_block_payload,
+            combined_block=combined_block_payload,
+            web_block=web_block_payload,
+            weights=weights_payload,
+            wel_replicates=artifacts.wel_replicates,
+        )
+
     checks_allowed = usage_state.checks_allowed
     used_after = usage_state.checks_used
     remaining_after = max(checks_allowed - used_after, 0) if checks_allowed else None
@@ -446,6 +455,77 @@ def build_explanation(
         reasons = fallback_reasons(prob)
 
     return verdict_label, verdict_text, headline, interpretation, reasons
+
+
+def build_web_explanation(
+    *,
+    prior_block: dict[str, object],
+    combined_block: dict[str, object] | None,
+    web_block: dict[str, object],
+    weights: dict[str, object] | None,
+    wel_replicates: list[dict[str, object]] | None,
+) -> tuple[str, str, list[str]]:
+    def _fmt_percent(val: float | None) -> str:
+        if val is None:
+            return "--"
+        return f"{val * 100:.1f}%"
+
+    combined_percent = _fmt_percent((combined_block or {}).get("p") if combined_block else None)
+    prior_percent = _fmt_percent(prior_block.get("p"))
+    web_percent = _fmt_percent(web_block.get("p"))
+    metrics = web_block.get("evidence", {}) or {}
+    n_docs = int(metrics.get("n_docs") or 0)
+    n_domains = int(metrics.get("n_domains") or 0)
+    median_age = metrics.get("median_age_days")
+    weight_val = (weights or {}).get("w_web")
+
+    headline = "Why the web-informed verdict looks this way"
+    summary_text = (
+        f"Combining GPT-5’s prior ({prior_percent}) with web evidence ({web_percent}) "
+        f"yields {combined_percent}."
+    )
+
+    reason_lines: list[str] = [
+        (
+            f"Web evidence across {n_docs} document{'s' if n_docs != 1 else ''} "
+            f"from {n_domains} domain{'s' if n_domains != 1 else ''} moved GPT-5’s prior from "
+            f"{prior_percent} to {combined_percent}."
+        )
+    ]
+
+    if isinstance(median_age, (int, float)) and median_age == median_age:
+        reason_lines.append(
+            f"Median publish date was about {int(round(median_age))} day"
+            f"{'s' if abs(int(round(median_age))) != 1 else ''} ago, so fresher coverage could tighten the estimate."
+        )
+
+    if isinstance(weight_val, (int, float)):
+        reason_lines.append(
+            f"Web weighting was {weight_val:.2f}, balancing new evidence against the original prior."
+        )
+
+    seen_lines: set[str] = set(reason_lines)
+    for replica in wel_replicates or []:
+        for key in ("support_bullets", "oppose_bullets", "notes"):
+            for item in (replica.get(key) or []):
+                if not isinstance(item, str):
+                    continue
+                line = item.strip()
+                if not line:
+                    continue
+                if line[-1] not in ".!?":
+                    line += "."
+                if line not in seen_lines:
+                    seen_lines.add(line)
+                    reason_lines.append(line)
+                if len(reason_lines) >= 6:
+                    break
+            if len(reason_lines) >= 6:
+                break
+        if len(reason_lines) >= 6:
+            break
+
+    return headline, summary_text, reason_lines
 
 
 def load_prompt_components(prompt_file: str | Path) -> tuple[str, str, list[str]]:
