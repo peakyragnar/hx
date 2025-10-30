@@ -28,7 +28,7 @@ class PipelineOptions:
     wel_docs: int = 16
     wel_replicates: int = 2
     wel_per_domain_cap: int = 3
-    wel_recency_days: Optional[int] = 14
+    wel_recency_days: Optional[int] = None
     prompt_root: Optional[Path] = None
 
 

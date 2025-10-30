@@ -119,9 +119,11 @@ def cmd_run(
         try:
             wel_recency = int(recency_env)
         except ValueError:
-            wel_recency = 14
+            # On invalid override, fall back to adaptive (auto)
+            wel_recency = None
     else:
-        wel_recency = 14
+        # Default to adaptive (auto): let WEL choose based on claim timeliness
+        wel_recency = None
 
     pipeline_options = PipelineOptions(
         app_env=os.getenv("APP_ENV", "local"),
