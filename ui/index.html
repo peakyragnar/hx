@@ -470,6 +470,7 @@
       var managePlanBtn = document.getElementById('manage-plan');
       var navPlanLink = document.getElementById('nav-plan-link');
       var navSignIn = document.getElementById('nav-signin');
+      var meState = null; // last known account/usage state from /api/me
       var navToggle = document.getElementById('nav-toggle');
       var navList = document.getElementById('nav-list');
       if (navToggle && navList) {
@@ -832,16 +833,19 @@
         try {
           var res = await fetch(apiBase + '/api/me', { credentials: 'include' });
           if (!res.ok) {
+            meState = null;
             renderAuth(null);
             updatePortalButton(null);
             return;
           }
           var data = await res.json();
+          meState = data;
           renderUsage(data);
           renderAuth(data);
           updatePortalButton(data);
         } catch (err) {
           console.warn('Unable to fetch session info', err);
+          meState = null;
           renderAuth(null);
           updatePortalButton(null);
         }
@@ -1102,6 +1106,21 @@
             setStatus('Enter a claim to evaluate.', 'warn');
             return;
           }
+          // Pre-check usage limits before showing the loader.
+          // If the user is out of checks, open the Plans modal immediately.
+          try {
+            if (!meState) { await fetchMe(); }
+          } catch (e) { /* ignore precheck errors; server will enforce */ }
+          var allowed = (meState && (meState.checks_allowed !== undefined && meState.checks_allowed !== null)) ? meState.checks_allowed : null;
+          var remaining = (meState && typeof meState.remaining === 'number') ? meState.remaining
+                           : (meState && typeof meState.checks_remaining === 'number') ? meState.checks_remaining
+                           : undefined;
+          if (allowed !== null && typeof remaining === 'number' && remaining <= 0) {
+            setStatus('You’ve used your free checks—choose a plan to continue.', 'warn');
+            openPlanModal(normalizePlanName((meState && (meState.plan || meState.usage_plan)) || 'starter'));
+            return;
+          }
+
           setStatus('Running evaluation…', 'info');
           var modeValue = modeSelect ? modeSelect.value : 'prior';
           toggleLoading(true, value, modeValue);
