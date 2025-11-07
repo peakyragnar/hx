@@ -17,11 +17,12 @@
     html,body { margin:0; padding:0; background:var(--bg); color:var(--fg); font-family:"Inter","Helvetica Neue",Arial,sans-serif; }
     a { color:var(--bright); text-decoration:none; }
     header { position:sticky; top:0; backdrop-filter:blur(12px); background:rgba(4,6,4,0.9); border-bottom:1px solid rgba(0,255,65,0.12); z-index:20; }
-    .nav { max-width:1100px; margin:0 auto; padding:14px 20px; display:flex; justify-content:space-between; align-items:center; }
+    .nav { max-width:1100px; margin:0 auto; padding:14px 20px; display:flex; justify-content:space-between; align-items:center; position:relative; }
     .brand { font-family:"Space Mono", monospace; font-size:20px; letter-spacing:4px; color:var(--bright); }
     nav ul { list-style:none; margin:0; padding:0; display:flex; gap:18px; font-size:14px; }
     nav a { color:var(--muted); }
     nav a:hover { color:var(--bright); }
+    .menu-btn { display:none; background:transparent; color:var(--bright); border:1px solid rgba(0,255,65,0.35); padding:6px 10px; border-radius:10px; font-size:18px; line-height:1; cursor:pointer; }
 
     main { max-width:1100px; margin:0 auto; padding:48px 20px 90px; display:flex; flex-direction:column; gap:60px; }
     h1 { font-size:clamp(34px,5vw,52px); margin:12px 0; text-shadow:0 0 26px rgba(0,255,65,0.25); }
@@ -45,15 +46,20 @@
     footer a { color:var(--muted); margin:0 12px; }
     footer a:hover { color:var(--bright); }
 
-    @media (max-width:720px){ nav ul { display:none; } }
+    @media (max-width:720px){
+      .menu-btn { display:inline-block; }
+      nav ul { display:none; position:absolute; right:20px; top:60px; background:#0b0d0b; border:1px solid rgba(0,255,65,0.35); border-radius:12px; padding:12px; flex-direction:column; gap:12px; min-width:180px; box-shadow:0 16px 40px rgba(0,255,65,0.15); z-index:30; }
+      nav ul.open { display:flex; }
+    }
   </style>
 </head>
 <body>
   <header>
     <div class="nav">
       <a class="brand" href="/">HERETIX</a>
+      <button class="menu-btn" id="nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-list">☰</button>
       <nav>
-        <ul>
+        <ul id="nav-list">
           <li><a href="/">Home</a></li>
           <li><a href="/?quick=1">Run a claim</a></li>
           <li><a href="/examples.html" aria-current="page">Examples</a></li>
@@ -150,6 +156,56 @@
   <script>
     var yearSpan = document.getElementById('year');
     if (yearSpan) { yearSpan.textContent = new Date().getFullYear(); }
+    (function(){
+      var btn = document.getElementById('nav-toggle');
+      var list = document.getElementById('nav-list');
+      var navSignIn = document.getElementById('nav-signin');
+      var apiBase = (function(){
+        if (location.origin.includes('app.')) { return location.origin.replace('app.', 'api.'); }
+        if (location.hostname.endsWith('heretix.ai')) { return 'https://api.heretix.ai'; }
+        if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') { return 'http://127.0.0.1:8000'; }
+        return 'https://heretix-api.onrender.com';
+      })();
+      if (navSignIn) {
+        try {
+          fetch(apiBase + '/api/me', { credentials: 'include' }).then(function(res){
+            if (!res.ok) return null; return res.json();
+          }).then(function(data){
+            if (data && data.authenticated) {
+              navSignIn.dataset.mode = 'signout';
+              navSignIn.textContent = 'Sign out';
+              navSignIn.title = data.email ? ('Signed in as ' + data.email) : 'Sign out';
+            } else {
+              navSignIn.dataset.mode = 'signin';
+            }
+          }).catch(function(){});
+        } catch(e) {}
+        navSignIn.addEventListener('click', function(evt){
+          if (navSignIn.dataset.mode === 'signout') {
+            evt.preventDefault();
+            fetch(apiBase + '/api/auth/signout', { method: 'POST', credentials: 'include' }).finally(function(){
+              navSignIn.dataset.mode = 'signin';
+              navSignIn.textContent = 'Sign up / Sign in';
+              navSignIn.title = '';
+            });
+          }
+        });
+      }
+      if (!btn || !list) return;
+      btn.addEventListener('click', function(ev){
+        ev.preventDefault();
+        var isOpen = list.classList.toggle('open');
+        btn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      });
+      document.addEventListener('click', function(ev){
+        if (!list.contains(ev.target) && !btn.contains(ev.target)) {
+          if (list.classList.contains('open')) {
+            list.classList.remove('open');
+            btn.setAttribute('aria-expanded', 'false');
+          }
+        }
+      });
+    })();
   </script>
 </body>
 </html>

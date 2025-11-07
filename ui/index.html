@@ -20,12 +20,15 @@
     html, body { margin:0; padding:0; background:var(--bg); color:var(--fg); font-family:"Inter", "Helvetica Neue", Arial, sans-serif; }
     a { color:var(--bright); text-decoration:none; }
     header { position:sticky; top:0; backdrop-filter:blur(12px); background:rgba(7,8,7,0.9); border-bottom:1px solid rgba(0,255,65,0.15); z-index:20; }
-    .nav { max-width:1100px; margin:0 auto; padding:14px 20px; display:flex; align-items:center; justify-content:space-between; }
+    .nav { max-width:1100px; margin:0 auto; padding:14px 20px; display:flex; align-items:center; justify-content:space-between; position:relative; }
     .brand { font-family:"Space Mono", monospace; font-size:22px; letter-spacing:4px; color:var(--bright); text-shadow:0 0 16px rgba(0,255,65,0.35); }
     nav ul { list-style:none; display:flex; gap:18px; margin:0; padding:0; }
     nav a { font-size:14px; color:var(--muted); transition:color 0.2s ease; }
     nav a:hover { color:var(--bright); }
     .nav a.signed-in { color:var(--bright); font-weight:500; }
+
+    /* Mobile menu button */
+    .menu-btn { display:none; background:transparent; color:var(--bright); border:1px solid rgba(0,255,65,0.35); padding:6px 10px; border-radius:10px; font-size:18px; line-height:1; cursor:pointer; }
 
     main { max-width:1100px; margin:0 auto; padding:40px 20px 120px; }
     section { margin-top:80px; }
@@ -156,7 +159,9 @@
     footer a:hover { color:var(--bright); }
 
     @media (max-width:720px){
-      nav ul { display:none; }
+      .menu-btn { display:inline-block; }
+      nav ul { display:none; position:absolute; right:20px; top:60px; background:#0b0d0b; border:1px solid rgba(0,255,65,0.35); border-radius:12px; padding:12px; flex-direction:column; gap:12px; min-width:200px; box-shadow:0 16px 40px rgba(0,255,65,0.15); z-index:30; }
+      nav ul.open { display:flex; }
       .hero { margin-top:20px; }
       .example-card h3 { font-size:44px; }
     }
@@ -189,8 +194,9 @@
   <header>
     <div class="nav">
       <a class="brand" href="/">HERETIX</a>
+      <button class="menu-btn" id="nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-list">☰</button>
       <nav>
-        <ul>
+        <ul id="nav-list">
           <li><a href="/how.html">How it works</a></li>
           <li><a href="/examples.html">Examples</a></li>
           <li><a href="#" id="nav-plan-link">Plans</a></li>
@@ -398,6 +404,12 @@
       if (params.get('plans') === '1' && !document.body.classList.contains('modal-open')) {
         setTimeout(function(){ openPlanModal(normalizePlanName(latestPlanName)); }, 0);
       }
+      if (params.get('signin') === '1' && !document.body.classList.contains('modal-open')) {
+        var signInModalEl = document.getElementById('signin-modal');
+        if (signInModalEl) {
+          setTimeout(function(){ openModal(signInModalEl); }, 0);
+        }
+      }
       if (params.get('quick') === '1') {
         document.body.classList.add('quick');
         var quickClaim = document.getElementById('claim');
@@ -458,6 +470,23 @@
       var managePlanBtn = document.getElementById('manage-plan');
       var navPlanLink = document.getElementById('nav-plan-link');
       var navSignIn = document.getElementById('nav-signin');
+      var navToggle = document.getElementById('nav-toggle');
+      var navList = document.getElementById('nav-list');
+      if (navToggle && navList) {
+        navToggle.addEventListener('click', function(evt){
+          evt.preventDefault();
+          var isOpen = navList.classList.toggle('open');
+          navToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        });
+        document.addEventListener('click', function(evt){
+          if (!navList.contains(evt.target) && !navToggle.contains(evt.target)) {
+            if (navList.classList.contains('open')) {
+              navList.classList.remove('open');
+              navToggle.setAttribute('aria-expanded', 'false');
+            }
+          }
+        });
+      }
       var currentUserEmail = '';
       var latestPlanName = 'trial';
 
