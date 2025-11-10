@@ -210,7 +210,7 @@
     <section class="hero" id="top">
       <div>
         <h1>Understand the AI answering your questions.</h1>
-        <p>Heretix measures how GPT‑5’s training data anchors your claim—no web browsing—and explains the result in plain language.</p>
+        <p>Heretix shows how likely the AI thinks your claim is true—and explains why.</p>
         <div class="hero-examples">
           <button type="button" class="example-pill" data-example="Do tariffs cause inflation?">Do tariffs cause inflation?</button>
           <button type="button" class="example-pill" data-example="Solar panels never pay for themselves">Do solar panels pay for themselves?</button>
@@ -285,22 +285,27 @@
 
     <section class="how" id="how">
       <h2>How Heretix works</h2>
-      <p>We query the model in a few carefully chosen ways, average its answers, and share the model’s own reasoning. No retrieval, no citations, just what the AI already believes.</p>
+      <p>Heretix isolates what an AI really believes. We ask your claim in precise ways, measure how confident the model is, and explain what shaped its answer.</p>
       <div class="how-grid">
         <div class="how-card">
-          <span>Step 1</span>
+          <span>Step 1 — Ask</span>
           <h3>Ask</h3>
-          <p>You submit a claim. We freeze all runs to GPT‑5’s internal knowledge—no search engines, no external documents.</p>
+          <p>Type any claim.</p>
         </div>
         <div class="how-card">
-          <span>Step 2</span>
-          <h3>Listen</h3>
-          <p>Heretix asks the claim in multiple phrasings to check the model’s prior belief and keep things consistent.</p>
+          <span>Step 2 — Choose a model</span>
+          <h3>Choose a model</h3>
+          <p>Pick which AI you want to examine—each has its own perspective and training.</p>
         </div>
         <div class="how-card">
-          <span>Step 3</span>
+          <span>Step 3 — Add context (optional)</span>
+          <h3>Add context (optional)</h3>
+          <p>Decide whether to keep the model in its own world, or let it pull from the internet for new evidence.</p>
+        </div>
+        <div class="how-card">
+          <span>Step 4 — Understand</span>
           <h3>Understand</h3>
-          <p>We translate the model’s judgement into a probability and a short explanation you can read in seconds.</p>
+          <p>See how confident the model is in your claim, and what drove that confidence—revealing its bias in plain language.</p>
         </div>
       </div>
     </section>
@@ -317,9 +322,8 @@
         </ul>
       </div>
       <div>
-        <h2>See what the model already believes</h2>
-        <p>Heretix is a window into GPT‑5’s own prior. You can explore fresh claims, revisit past arguments, or sanity‑check a story before sharing it.</p>
-        <p>Want more? Browse a gallery of claims inside the app or run your own instantly—no signup required.</p>
+        <h2>Ask the AI what it really believes</h2>
+        <p>Heretix makes bias visible. Try a short claim, get its confidence, and see how its story changes when you ask again.</p>
         <a class="example-pill" href="#top">Start a claim</a>
       </div>
     </section>
@@ -328,20 +332,17 @@
       <h2>Questions people ask</h2>
       <details>
         <summary>What does the percentage mean?</summary>
-        <p>It’s GPT‑5’s probability that the claim is true, using only its internal training knowledge. A low number means the model thinks the claim is likely false.</p>
+        <p>This is how confident the AI is in your claim. It’s not absolute truth—it’s a reflection of what the model believes, shaped by its training and bias.</p>
       </details>
       <details>
         <summary>Does Heretix browse the web with my claim?</summary>
-        <p>No. The Raw Prior Lens is strictly internal. We don’t fetch external content and we don’t store your claims beyond what’s needed to return the result.</p>
+        <p>Yes—if you choose to. Select Internet Search to let the model pull current information from the web to supplement its reasoning.</p>
       </details>
       <details>
         <summary>Is this politically biased?</summary>
         <p>We show the model’s belief, not a judgement from us. Heretix reveals consensus the AI already absorbed, so you can inspect it—not reinforce it.</p>
       </details>
-      <details>
-        <summary>Can I see the advanced stats?</summary>
-        <p>Yes. Every result includes an “Advanced details” panel with the confidence interval width, template stability, and policy compliance—open it whenever you want a deeper read.</p>
-      </details>
+      
     </section>
   </main>
 
