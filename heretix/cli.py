@@ -188,6 +188,7 @@ def _build_run_entry(cfg: RunConfig, mode: str, mock: bool, artifacts) -> dict:
         "weights": artifacts.weights,
         "mock": mock,
         "prompt_file": str(artifacts.prompt_file),
+        "simple_expl": artifacts.simple_expl,
         "provenance": {
             "rpl": {
                 "prompt_version": result.get("prompt_version", cfg.prompt_version),

@@ -49,6 +49,7 @@ class PipelineArtifacts:
     artifact_manifest_uri: Optional[str] = None
     artifact_replicates_uri: Optional[str] = None
     artifact_docs_uri: Optional[str] = None
+    simple_expl: Optional[Dict[str, Any]] = None
 
 
 logger = logging.getLogger(__name__)
@@ -353,6 +354,20 @@ def perform_run(
 
     normalized_reps = [_normalize_replica(rep) for rep in raw_replicates]
 
+    # Backend-owned Simple View explanation (skip for resolved cases)
+    simple_expl: Optional[Dict[str, Any]] = None
+    try:
+        if combined_block_payload and not (combined_block_payload.get("resolved") or (sanitized_web_block or {}).get("resolved")):
+            from heretix.simple_expl import compose_simple_expl
+            simple_expl = compose_simple_expl(
+                claim=cfg.claim or "",
+                combined_p=float(combined_block_payload.get("p", prior_p)),
+                web_block=sanitized_web_block,
+                replicates=normalized_reps,
+            )
+    except Exception:
+        simple_expl = None
+
     return PipelineArtifacts(
         result=result,
         prior_block=prior_block_payload,
@@ -367,6 +382,7 @@ def perform_run(
         artifact_manifest_uri=artifact_record.manifest_uri if artifact_record else None,
         artifact_replicates_uri=artifact_record.verdicts_uri if artifact_record else None,
         artifact_docs_uri=artifact_record.docs_uri if artifact_record else None,
+        simple_expl=simple_expl,
     )
 
 

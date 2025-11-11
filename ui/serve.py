@@ -1022,18 +1022,42 @@ class Handler(BaseHTTPRequestHandler):
             f"<li>{html.escape(item, quote=True)}</li>" for item in simple_items
         )
 
+        # Prefer backend-provided simple explanation when available
+        backend_simple = run.get("simple_expl") or {}
+        lines_from_backend = []
+        if backend_simple and isinstance(backend_simple.get("lines"), list):
+            try:
+                lines_from_backend = [str(x) for x in backend_simple.get("lines") if isinstance(x, (str, int, float))]
+                summary_line = backend_simple.get("summary")
+                if isinstance(summary_line, str) and summary_line:
+                    lines_from_backend.append(summary_line)
+            except Exception:
+                lines_from_backend = []
+
         # Build the stack block (omit entirely when resolved)
         if resolved_flag:
             stack_block_html = ""
         else:
-            stack_block_html = (
-                '<div class="stack">'
-                '<div class="card">'
-                f"<h2>{html.escape(why_head, quote=True)}</h2>"
-                '<ul>' + why_items_html + '</ul>'
-                '</div>'
-                '</div>'
-            )
+            if lines_from_backend:
+                simple_title = backend_simple.get("title") or why_head
+                list_html = "".join(f"<li>{html.escape(str(x), quote=True)}</li>" for x in lines_from_backend)
+                stack_block_html = (
+                    '<div class="stack">'
+                    '<div class="card">'
+                    f"<h2>{html.escape(str(simple_title), quote=True)}</h2>"
+                    '<ul>' + list_html + '</ul>'
+                    '</div>'
+                    '</div>'
+                )
+            else:
+                stack_block_html = (
+                    '<div class="stack">'
+                    '<div class="card">'
+                    f"<h2>{html.escape(why_head, quote=True)}</h2>"
+                    '<ul>' + why_items_html + '</ul>'
+                    '</div>'
+                    '</div>'
+                )
 
         # Build deeper explanation block (skip entirely when resolved)
         deeper_parts: list[str] = []
