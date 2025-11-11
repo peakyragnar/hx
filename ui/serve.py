@@ -882,6 +882,8 @@ class Handler(BaseHTTPRequestHandler):
             t = s.strip()
             # strip leading domain like "example.com:" or "example.com —"
             t = _re_s.sub(r'^\s*(?:[A-Za-z0-9.-]+\.(?:com|org|net|gov|edu|news|io|co|uk|us|ca|au|de|fr))\s*[:—-]\s*', '', t)
+            # strip leading BrandName: (with colon)
+            t = _re_s.sub(r'^\s*[A-Z][\w&-]*(?:\s+[A-Z][\w&-]*){0,3}\s*:\s*', '', t)
             # strip leading brand name followed by reporting verb
             t = _re_s.sub(r'^\s*[A-Z][\w&-]*(?:\s+[A-Z][\w&-]*){0,3}\s+(?:states|reports|says|announces|notes|claims|plans|projects|indicates)\b[:,]?\s*', '', t)
             # remove bracketed/parenthetical source hints
@@ -960,17 +962,17 @@ class Handler(BaseHTTPRequestHandler):
             for line in simple_norm:
                 line2 = _sanitize_reason(line)
                 if line2:
-                    simple_items.append(html.escape(line2, quote=True))
+                    simple_items.append(line2)
         elif is_web_mode and web_summary:
             for l in _compose_simple_web(claim):
                 if len(simple_items) >= 3:
                     break
                 if l:
-                    simple_items.append(html.escape(l, quote=True))
+                    simple_items.append(l)
         elif simple_why:
             line2 = _sanitize_reason(simple_why)
             if line2:
-                simple_items.append(html.escape(line2, quote=True))
+                simple_items.append(line2)
         # Add a plain, non-technical stance summary
         def _stance(prob: float) -> str:
             try:
@@ -989,7 +991,7 @@ class Handler(BaseHTTPRequestHandler):
         verdict_phrase = (verdict or '').lower()
         agreement = 'agree' if ((prior_stance == 'leans true' and web_stance == 'leans true') or (prior_stance == 'leans false' and web_stance == 'leans false')) else ('disagree' if ((prior_stance == 'leans true' and web_stance == 'leans false') or (prior_stance == 'leans false' and web_stance == 'leans true')) else 'are mixed')
         # Final summary (no model/source stance line; concise verdict tie-in)
-        simple_items.append(html.escape(f"Taken together, these points suggest the claim is {verdict_phrase}.", quote=True))
+        simple_items.append(f"Taken together, these points suggest the claim is {verdict_phrase}.")
 
         # Top up with additional sanitized web reasons to bring total to about four lines (no domains, no numbers)
         if is_web_mode and web_summary and len(simple_items) < 4:
@@ -1019,7 +1021,7 @@ class Handler(BaseHTTPRequestHandler):
 
         # Escape for HTML for the simple view list (guard: empty when resolved)
         why_items_html = "" if resolved_flag else "\n".join(
-            f"<li>{item}</li>" for item in [html.escape(x, quote=True) for x in simple_items]
+            f"<li>{html.escape(item, quote=True)}</li>" for item in simple_items
         )
 
         # Build the stack block (omit entirely when resolved)
