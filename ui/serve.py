@@ -911,9 +911,9 @@ class Handler(BaseHTTPRequestHandler):
         verdict_phrase = (verdict or '').lower()
         agreement = 'agree' if ((prior_stance == 'leans true' and web_stance == 'leans true') or (prior_stance == 'leans false' and web_stance == 'leans false')) else ('disagree' if ((prior_stance == 'leans true' and web_stance == 'leans false') or (prior_stance == 'leans false' and web_stance == 'leans true')) else 'are mixed')
         if is_web_mode:
-            simple_items.append(f"The model {prior_stance}, and recent sources {agreement}; overall it’s {verdict_phrase}.")
+            simple_items.append(html.escape(f"The model {prior_stance}, and recent sources {agreement}; overall it’s {verdict_phrase}.", quote=True))
         else:
-            simple_items.append(f"The model {prior_stance}; overall it’s {verdict_phrase}.")
+            simple_items.append(html.escape(f"The model {prior_stance}; overall it’s {verdict_phrase}.", quote=True))
 
         # Top up with additional sanitized web reasons to bring total to about four lines (no domains, no numbers)
         if is_web_mode and web_summary and len(simple_items) < 4:
