@@ -132,6 +132,7 @@ def run_check(
         R=payload.R or settings.rpl_r,
         B=payload.B or settings.rpl_b,
         max_output_tokens=payload.max_output_tokens or settings.rpl_max_output_tokens,
+        max_prompt_chars=settings.rpl_max_prompt_chars,
         no_cache=bool(payload.no_cache) if payload.no_cache is not None else False,
     )
     cfg.seed = payload.seed if payload.seed is not None else cfg.seed
