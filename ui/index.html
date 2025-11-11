@@ -749,7 +749,7 @@
             resultInterpretationDetail.textContent = simpleWhy;
           }
 
-          // Build simple lines: 3–4 plain sentences (no domains, no numbers)
+          // Build simple lines: 3–4 plain, connected sentences (no domains, no numbers)
           if (resultSimpleLines) {
             resultSimpleLines.innerHTML = '';
             function sanitizeReason(s) {
@@ -757,21 +757,55 @@
               var t = s.trim();
               t = t.replace(/^\s*(?:[A-Za-z0-9.-]+\.(?:com|org|net|gov|edu|news|io|co|uk|us|ca|au|de|fr))\s*[:—-]\s*/i, '');
               t = t.replace(/\s*\([^)]*\b(?:com|org|net|gov|edu|news|io|co|uk|us|ca|au|de|fr)\b[^)]*\)\s*$/i, '');
+              t = t.replace(/\s*\[[^\]]*\b(?:com|org|net|gov|edu|news|io|co|uk|us|ca|au|de|fr)\b[^\]]*\]\s*$/i, '');
+              // Strip leading brand names before reporting verbs
+              t = t.replace(/^\s*[A-Z][\w&-]*(?:\s+[A-Z][\w&-]*){0,3}\s+(?:states|reports|says|announces|notes|claims|plans|projects)\b[:,]?\s*/i, '');
+              // Soften heavy numerics
+              t = t.replace(/\b(\d{3,}|\d+\.?\d*%|\$\d[\d,]*)\b/g, 'initial capacity');
               if (!t) return '';
               return /[.!?]$/.test(t) ? t : (t + '.');
             }
             var lines = [];
+            // Compose narrative for web mode
             if (isWebMode && welReplicates && welReplicates.length) {
-              outer: for (var r = 0; r < welReplicates.length; r++) {
+              // Parse basic target (year, percent) from claim
+              var yearMatch = (data.claim || '').match(/(20\d{2})/);
+              var pctMatch = (data.claim || '').match(/(\d{1,3})\s?%/);
+              var yearTxt = yearMatch ? yearMatch[1] : null;
+              var pctTxt = pctMatch ? pctMatch[1] : null;
+              if (yearTxt && pctTxt) {
+                lines.push('Reaching ' + pctTxt + '% by ' + yearTxt + ' requires significant new capacity to come online quickly.');
+              } else if (yearTxt) {
+                lines.push('Meeting the claim by ' + yearTxt + ' would require multiple projects to be operating and scaled.');
+              } else {
+                lines.push('Meeting the claim would require substantial expansion within a short timeframe.');
+              }
+
+              // Gather signals from support bullets
+              var timeline = null, capacity = null, dependency = null, policy = null;
+              for (var r = 0; r < welReplicates.length; r++) {
                 var rep = welReplicates[r] || {};
                 var items = Array.isArray(rep.support_bullets) ? rep.support_bullets : [];
                 for (var k = 0; k < items.length; k++) {
-                  var s = sanitizeReason(items[k]);
-                  if (s && lines.indexOf(s) === -1) {
-                    lines.push(s);
-                    if (lines.length >= 3) break outer;
-                  }
+                  var s0 = sanitizeReason(items[k]);
+                  var low = s0.toLowerCase();
+                  if (!timeline && /(early|late|by\s+20\d{2}|next year|this year|startup|begin)/.test(low)) { timeline = s0; continue; }
+                  if (!capacity && /(production|processing|refining|magnet|output|capacity|plant|factory|mill)/.test(low)) { capacity = s0; continue; }
+                  if (!dependency && /(import|depend|reliance|supply chain|bottleneck|intermediate)/.test(low)) { dependency = s0; continue; }
+                  if (!policy && /(funding|policy|act|bill|incentive|approval|permitting)/.test(low)) { policy = s0; continue; }
                 }
+              }
+              if (capacity && timeline) {
+                lines.push('Recent reporting points to projects starting around ' + (yearTxt || 'this period') + ' with ' + capacity.toLowerCase());
+              } else if (capacity) {
+                lines.push(capacity);
+              } else if (timeline) {
+                lines.push(timeline);
+              }
+              if (dependency) {
+                lines.push(dependency);
+              } else if (policy) {
+                lines.push('Policy support exists, but build‑out typically lags approvals.');
               }
             }
             // Stance line last
