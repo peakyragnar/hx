@@ -922,6 +922,21 @@ class Handler(BaseHTTPRequestHandler):
                 if hist:
                     lines.append('Earlier proposals were discussed or tabled; there is no announced rule change yet.')
                 return lines
+            # datacenter electricity cost/inflation pattern
+            if ('data center' in claim_low or 'datacenter' in claim_low) and (
+                'electric' in claim_low or 'power' in claim_low or 'rate' in claim_low or 'bill' in claim_low or 'inflation' in claim_low
+            ):
+                lines.append('Large data center build‑outs raise peak demand and capacity needs in some regions.')
+                cap_price = grab(r'capacity price|auction|monitor|PJM|MISO|ISO|market monitor')
+                if cap_price:
+                    lines.append('Recent market reports attribute a sizable share of capacity price increases to data center demand, costs typically recovered from customers.')
+                conn = grab(r'connection|interconnection|upgrade|transmission|rate case|bill impact|cost shift')
+                if conn:
+                    lines.append('Reports describe higher connection and upgrade costs tied to data center hookups, often passed through to ratepayers under current rules.')
+                nuance = grab(r'region|state|var(y|ies)|uneven|mitigate|offset|supply')
+                if nuance:
+                    lines.append('Effects vary by region and timing; mitigation depends on rate design and new supply.')
+                return lines
             # domestic sourcing percentage
             if (('source' in claim_low or 'sourc' in claim_low or 'domestic' in claim_low) and pct_txt):
                 if year_txt:
@@ -949,10 +964,6 @@ class Handler(BaseHTTPRequestHandler):
                     lines.append('Sustaining it will depend on the company’s trajectory over the next periods.')
                 return lines
             # generic
-            if year_txt:
-                lines.append(f"Meeting the claim by {year_txt} would require multiple steps to complete and scale in time.")
-            else:
-                lines.append("Meeting the claim would require coordinated progress on several fronts in a short timeframe.")
             any_line = grab(r'.')
             if any_line:
                 lines.append(any_line)
@@ -993,23 +1004,10 @@ class Handler(BaseHTTPRequestHandler):
         # Final summary (no model/source stance line; concise verdict tie-in)
         simple_items.append(f"Taken together, these points suggest the claim is {verdict_phrase}.")
 
-        # Top up with additional sanitized web reasons to bring total to about four lines (no domains, no numbers)
-        if is_web_mode and web_summary and len(simple_items) < 4:
-            try:
-                seen_texts = set([html.unescape(x) for x in simple_items])
-            except Exception:
-                seen_texts = set()
-            for rep in (web_summary.get('replicates') or []):
-                items = rep.get('support_bullets', []) if isinstance(rep, dict) else getattr(rep, 'support_bullets', [])
-                for it in (items or []):
-                    s2 = _sanitize_reason(str(it))
-                    if s2 and s2 not in seen_texts:
-                        simple_items.append(html.escape(s2, quote=True))
-                        seen_texts.add(s2)
-                    if len(simple_items) >= 4:
-                        break
-                if len(simple_items) >= 4:
-                    break
+        # Ensure summary appears last and cap to 4 lines
+        if len(simple_items) > 3:
+            simple_items = simple_items[:3]
+        simple_items.append(f"Taken together, these points suggest the claim is {verdict_phrase}.")
 
         # Prepare summary lines for copy button
         if simple_items:

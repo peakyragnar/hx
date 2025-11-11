@@ -783,7 +783,7 @@
               } else if (claimLow.includes('market cap') || claimLow.includes('market capitalization') || claimLow.includes('trillion')) {
                 lines.push((yearTxt ? ('Hitting that milestone by ' + yearTxt) : 'Reaching that milestone') + ' depends on earnings and broader market conditions.');
               } else {
-                lines.push(yearTxt ? ('Meeting the claim by ' + yearTxt + ' would require multiple steps to complete and scale in time.') : 'Meeting the claim would require coordinated progress on several fronts in a short timeframe.');
+                // no generic filler sentence
               }
 
               // Gather signals from support bullets
@@ -816,7 +816,8 @@
                 lines.push('Recent reporting notes the milestone has already been reached at times, showing it is attainable.');
               }
             }
-            // Summary line (no model/source stance wording); just a verdict tie-in
+            // Keep at most 3 content lines, then add summary last
+            if (lines.length > 3) lines = lines.slice(0, 3);
             lines.push('Taken together, these points suggest the claim is ' + verdictLabel.toLowerCase() + '.');
             // Render up to 4
             for (var i = 0; i < lines.length && i < 4; i++) {
