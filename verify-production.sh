@@ -48,16 +48,20 @@ else
     echo -e "${YELLOW}⚠️  GitHub commit doesn't match expected merge${NC}"
 fi
 
-# 4. Test claim submission (requires API key)
+# 4. Test claim submission and simple_expl presence (mock)
 echo ""
-echo "4️⃣  Testing live claim submission..."
-if [[ -z "$OPENAI_API_KEY" ]]; then
-    echo -e "${YELLOW}⚠️  OPENAI_API_KEY not set, skipping live test${NC}"
-    echo "   To test: export OPENAI_API_KEY=your-key && $0"
+echo "4️⃣  Testing API run (mock) and Simple View block..."
+RUN_PAYLOAD='{"claim":"Test claim for verification","mode":"web_informed","mock":true}'
+RUN_RESP=$(curl -s -X POST "$API_URL/api/checks/run" -H 'content-type: application/json' -d "$RUN_PAYLOAD" || echo "")
+if [[ -n "$RUN_RESP" ]]; then
+    SIMPLE=$(echo "$RUN_RESP" | jq -r 'has("simple_expl") and (.simple_expl.lines|type=="array")')
+    if [[ "$SIMPLE" == "true" ]]; then
+        echo -e "${GREEN}✅ API returns simple_expl with lines (mock)${NC}"
+    else
+        echo -e "${YELLOW}⚠️  API response missing simple_expl.lines (check backend version)${NC}"
+    fi
 else
-    echo "   Submitting test claim (this will take ~30 seconds)..."
-    # This would require authentication, skip for now
-    echo -e "${YELLOW}⚠️  Skipped (would require auth token)${NC}"
+    echo -e "${YELLOW}⚠️  Unable to call /api/checks/run (mock); skipping API response verification${NC}"
 fi
 
 # Summary

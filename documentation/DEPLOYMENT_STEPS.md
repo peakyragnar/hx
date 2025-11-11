@@ -51,13 +51,13 @@ vercel --prod --force --scope team_gLiEIcZRGpBnE255gcV91UpS
 
 **Backend Check:**
 ```bash
-# Test that simple_expl module exists
-curl -X POST https://api.heretix.ai/api/run \
+# Test that backend returns simple_expl in the response
+curl -s -X POST https://api.heretix.ai/api/checks/run \
   -H "Content-Type: application/json" \
   -d '{"claim": "Test claim", "mode": "web_informed"}' \
   | jq '.simple_expl'
 
-# Should return: {"title": "Why...", "lines": [...], "summary": "..."}
+# Should return an object like: {"title": "Why...", "lines": [...], "summary": "..."}
 ```
 
 **Frontend Check:**

@@ -141,6 +141,8 @@ class RunResponse(BaseModel):
     web_artifact: Optional[WebArtifactPointer] = None
     wel_replicates: Optional[List[WebReplicate]] = None
     wel_debug_votes: Optional[List[Dict[str, object]]] = None
+    # Backend-provided Simple View explanation block
+    simple_expl: Optional[Dict[str, object]] = None
 
 
 class MagicLinkPayload(BaseModel):
