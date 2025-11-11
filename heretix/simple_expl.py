@@ -45,7 +45,18 @@ def compose_simple_expl(
     def grab(regex: str) -> Optional[str]:
         pat = re.compile(regex, re.IGNORECASE)
         for rep_idx, rep in enumerate(replicates or []):
-            items = rep.get("support_bullets") or []
+            # Validate replicate structure and extract bullets
+            if not isinstance(rep, dict):
+                continue
+            bullets = rep.get("support_bullets")
+            if bullets is None:
+                items = []
+            elif isinstance(bullets, list):
+                items = bullets
+            else:
+                # Handle case where support_bullets is not a list (defensive)
+                items = [str(bullets)] if bullets else []
+
             for item_idx, it in enumerate(items):
                 key = (rep_idx, item_idx)
                 if key in used_bullets:
