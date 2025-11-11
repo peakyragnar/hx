@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     rpl_r: int = Field(2, alias="RPL_R")
     rpl_b: int = Field(5000, alias="RPL_B")
     rpl_max_output_tokens: int = Field(1024, alias="RPL_MAX_OUTPUT_TOKENS")
+    rpl_max_prompt_chars: int = Field(1200, alias="RPL_MAX_PROMPT_CHARS")
     allow_mock: bool = Field(True, alias="RPL_ALLOW_MOCK")
     magic_link_ttl_minutes: int = Field(10, alias="MAGIC_LINK_TTL_MINUTES")
     session_ttl_days: int = Field(30, alias="SESSION_TTL_DAYS")
