@@ -1018,12 +1018,26 @@ class Handler(BaseHTTPRequestHandler):
         # Escape for HTML for the simple view list
         why_items_html = "\n".join(f"<li>{item}</li>" for item in [html.escape(x, quote=True) for x in simple_items])
 
-        # Build deeper explanation block
+        # Build the stack block (omit entirely when resolved)
+        if resolved_flag:
+            stack_block_html = ""
+        else:
+            stack_block_html = (
+                '<div class="stack">'
+                '<div class="card">'
+                f"<h2>{html.escape(why_head, quote=True)}</h2>"
+                '<ul>' + why_items_html + '</ul>'
+                '</div>'
+                '</div>'
+            )
+
+        # Build deeper explanation block (skip entirely when resolved)
         deeper_parts: list[str] = []
-        deeper_parts.append("<details><summary>Deeper explanation</summary>")
-        deeper_parts.append("<div>")
-        deeper_parts.append("<h4>Training‑only (model prior)</h4>")
-        deeper_parts.append(f"<p>Model (training‑only): {prior_percent}</p>")
+        if not resolved_flag:
+            deeper_parts.append("<details><summary>Deeper explanation</summary>")
+            deeper_parts.append("<div>")
+            deeper_parts.append("<h4>Training‑only (model prior)</h4>")
+            deeper_parts.append(f"<p>Model (training‑only): {prior_percent}</p>")
         # Up to four concise prior sentences
         prior_lines: list[str] = []
         if label == 'evil':
@@ -1053,7 +1067,7 @@ class Handler(BaseHTTPRequestHandler):
         for s in prior_lines[:4]:
             deeper_parts.append(f"<li>{html.escape(s, quote=True)}</li>")
         deeper_parts.append('</ul>')
-        if is_web_mode:
+        if not resolved_flag and is_web_mode:
             deeper_parts.append("<h4>Web evidence (recent)</h4>")
             deeper_parts.append(f"<p>Web evidence: {web_percent}</p>")
             # Distill up to four web bullets (favor substantive statements), or normative set
@@ -1183,8 +1197,8 @@ class Handler(BaseHTTPRequestHandler):
             # Plain-language combination rule
             deeper_parts.append("<h4>How we combine</h4>")
             deeper_parts.append("<p>We blend the model’s training view with recent, consistent sources. When sources agree and are current, the web view gets slightly more say; otherwise the training view dominates.</p>")
-        deeper_parts.append("</div></details>")
-        deeper_block_html = "".join(deeper_parts)
+            deeper_parts.append("</div></details>")
+        deeper_block_html = "".join(deeper_parts) if deeper_parts else ""
         body = _render(
             ROOT / "results.html",
             {
@@ -1194,8 +1208,7 @@ class Handler(BaseHTTPRequestHandler):
                 "INTERPRETATION": html.escape(interpretation, quote=True),
                 "UI_MODEL": html.escape(ui_model_label, quote=True),
                 "UI_MODE": html.escape(ui_mode_label, quote=True),
-                "WHY_HEAD": why_head,
-                "WHY_ITEMS": why_items_html,
+                "STACK_BLOCK": stack_block_html,
                 "WHY_KIND": why_kind,
                 "INFO_TITLE": html.escape(info_title, quote=True),
                 "INFO_NOTE_A": html.escape(info_note_a, quote=True),
