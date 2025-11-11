@@ -893,11 +893,80 @@ class Handler(BaseHTTPRequestHandler):
             # keep sentence end
             return t if t.endswith('.') or not t else (t + '.')
 
+        # Pattern-aware composer (web mode)
+        def _compose_simple_web(claim_text: str) -> list[str]:
+            lines: list[str] = []
+            claim_low = (claim_text or '').lower()
+            year_m = _re_s.search(r'(20\d{2})', claim_text or '')
+            pct_m = _re_s.search(r'(\d{1,3})\s?%[^\d]*', claim_text or '')
+            year_txt = year_m.group(1) if year_m else None
+            pct_txt = pct_m.group(1) if pct_m else None
+            def grab(regex: str) -> str | None:
+                pat = _re_s.compile(regex, _re_s.IGNORECASE)
+                for rep in (web_summary.get('replicates') or []):
+                    items = rep.get('support_bullets', []) if isinstance(rep, dict) else getattr(rep, 'support_bullets', [])
+                    for it in (items or []):
+                        s = _sanitize_reason(str(it))
+                        if pat.search(s):
+                            return s
+                return None
+            # ban pattern
+            if ('ban' in claim_low or 'banned' in claim_low):
+                lines.append(
+                    f"A ban would require formal approval by the owners at a rules meeting{(' in ' + year_txt) if year_txt else ''}."
+                )
+                lines.append('Recent reporting points to debate and expectations of a vote, not a finalized decision.')
+                hist = grab(r'delayed|tabled|no decision|not approved|postponed')
+                if hist:
+                    lines.append('Earlier proposals were discussed or tabled; there is no announced rule change yet.')
+                return lines
+            # domestic sourcing percentage
+            if (('source' in claim_low or 'sourc' in claim_low or 'domestic' in claim_low) and pct_txt):
+                if year_txt:
+                    lines.append(f"Reaching {pct_txt}% by {year_txt} would need rapid build‑out of extraction, processing and magnet capacity.")
+                else:
+                    lines.append(f"Meeting a {pct_txt}% threshold would require substantial new domestic capacity.")
+                cap = grab(r'production|processing|refining|magnet|capacity|output|plant|factory')
+                if cap:
+                    lines.append(cap)
+                dep = grab(r'import|depend|reliance|supply chain|bottleneck|intermediate')
+                if dep:
+                    lines.append(dep)
+                return lines
+            # market cap / valuation milestone
+            if ('market cap' in claim_low) or ('market capitalization' in claim_low) or ('trillion' in claim_low):
+                if year_txt:
+                    lines.append(f"Hitting that milestone by {year_txt} depends on earnings and broader market conditions.")
+                else:
+                    lines.append("Reaching that milestone depends on results and market conditions.")
+                crossed = grab(r'crossed|surpassed|joined|reached')
+                if crossed:
+                    lines.append('Recent reporting notes the milestone has already been reached at times, showing it is attainable.')
+                sustain = grab(r'sustain|maintain|trajectory|growth|margin')
+                if sustain:
+                    lines.append('Sustaining it will depend on the company’s trajectory over the next periods.')
+                return lines
+            # generic
+            if year_txt:
+                lines.append(f"Meeting the claim by {year_txt} would require multiple steps to complete and scale in time.")
+            else:
+                lines.append("Meeting the claim would require coordinated progress on several fronts in a short timeframe.")
+            any_line = grab(r'.')
+            if any_line:
+                lines.append(any_line)
+            return lines
+
         if simple_norm:
             for line in simple_norm:
                 line2 = _sanitize_reason(line)
                 if line2:
                     simple_items.append(html.escape(line2, quote=True))
+        elif is_web_mode and web_summary:
+            for l in _compose_simple_web(claim):
+                if len(simple_items) >= 3:
+                    break
+                if l:
+                    simple_items.append(html.escape(l, quote=True))
         elif simple_why:
             line2 = _sanitize_reason(simple_why)
             if line2:

@@ -773,12 +773,15 @@
               var pctMatch = (data.claim || '').match(/(\d{1,3})\s?%/);
               var yearTxt = yearMatch ? yearMatch[1] : null;
               var pctTxt = pctMatch ? pctMatch[1] : null;
-              if (yearTxt && pctTxt) {
-                lines.push('Reaching ' + pctTxt + '% by ' + yearTxt + ' requires significant new capacity to come online quickly.');
-              } else if (yearTxt) {
-                lines.push('Meeting the claim by ' + yearTxt + ' would require multiple projects to be operating and scaled.');
+              var claimLow = (data.claim || '').toLowerCase();
+              if (claimLow.includes('ban')) {
+                lines.push('A ban would require formal approval by the owners at a rules meeting' + (yearTxt ? (' in ' + yearTxt) : '') + '.');
+              } else if ((claimLow.includes('source') || claimLow.includes('domestic')) && pctTxt) {
+                lines.push((yearTxt ? ('Reaching ' + pctTxt + '% by ' + yearTxt) : ('Meeting a ' + pctTxt + '% threshold')) + ' would need rapid build‑out of extraction, processing and magnet capacity.');
+              } else if (claimLow.includes('market cap') || claimLow.includes('market capitalization') || claimLow.includes('trillion')) {
+                lines.push((yearTxt ? ('Hitting that milestone by ' + yearTxt) : 'Reaching that milestone') + ' depends on earnings and broader market conditions.');
               } else {
-                lines.push('Meeting the claim would require substantial expansion within a short timeframe.');
+                lines.push(yearTxt ? ('Meeting the claim by ' + yearTxt + ' would require multiple steps to complete and scale in time.') : 'Meeting the claim would require coordinated progress on several fronts in a short timeframe.');
               }
 
               // Gather signals from support bullets
@@ -793,6 +796,7 @@
                   if (!capacity && /(production|processing|refining|magnet|output|capacity|plant|factory|mill)/.test(low)) { capacity = s0; continue; }
                   if (!dependency && /(import|depend|reliance|supply chain|bottleneck|intermediate)/.test(low)) { dependency = s0; continue; }
                   if (!policy && /(funding|policy|act|bill|incentive|approval|permitting)/.test(low)) { policy = s0; continue; }
+                  if (!crossed && /(crossed|surpassed|joined|reached)/.test(low)) { var crossed = s0; continue; }
                 }
               }
               if (capacity && timeline) {
@@ -806,6 +810,8 @@
                 lines.push(dependency);
               } else if (policy) {
                 lines.push('Policy support exists, but build‑out typically lags approvals.');
+              } else if (crossed) {
+                lines.push('Recent reporting notes the milestone has already been reached at times, showing it is attainable.');
               }
             }
             // Summary line (no model/source stance wording); just a verdict tie-in
