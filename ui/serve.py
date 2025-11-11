@@ -874,11 +874,25 @@ class Handler(BaseHTTPRequestHandler):
         simple_norm = _normative_simple_lines(label, (verdict or '').lower()) if label else []
 
         simple_why = candidate or (_strip_parens(web_reasons[0]) if web_reasons else interpretation)
+        # Sanitize reasons to avoid domain mentions
+        import re as _re_s
+        def _sanitize_reason(s: str) -> str:
+            if not isinstance(s, str):
+                return ''
+            t = s.strip()
+            t = _re_s.sub(r'^\s*(?:[A-Za-z0-9.-]+\.(?:com|org|net|gov|edu|news|io|co|uk|us|ca|au|de|fr))\s*[:—-]\s*', '', t)
+            t = _re_s.sub(r'\s*\([^)]*\b(?:com|org|net|gov|edu|news|io|co|uk|us|ca|au|de|fr)\b[^)]*\)\s*$', '', t)
+            return t if t.endswith('.') else (t + '.') if t else ''
+
         if simple_norm:
             for line in simple_norm:
-                simple_items.append(html.escape(line, quote=True))
+                line2 = _sanitize_reason(line)
+                if line2:
+                    simple_items.append(html.escape(line2, quote=True))
         elif simple_why:
-            simple_items.append(html.escape(simple_why, quote=True))
+            line2 = _sanitize_reason(simple_why)
+            if line2:
+                simple_items.append(html.escape(line2, quote=True))
         # Add a plain, non-technical stance summary
         def _stance(prob: float) -> str:
             try:
@@ -901,111 +915,23 @@ class Handler(BaseHTTPRequestHandler):
         else:
             simple_items.append(f"The model {prior_stance}; overall it’s {verdict_phrase}.")
 
-        # Optional compact percentages as a second-class detail
-        simple_items.append(f"Model (training‑only): {prior_percent}")
-        if is_web_mode:
-            simple_items.append(f"Web evidence: {web_percent}")
-            # Sources: prefer resolved citation domains; else collect from replicates; else show count
-            src_names: list[str] = []
-            if resolved_flag and resolved_citations:
-                for cite in resolved_citations:
-                    dom = (cite.get("domain") or "").strip()
-                    if dom and dom not in src_names:
-                        src_names.append(dom)
-                    if len(src_names) >= 3:
+        # Top up with additional sanitized web reasons to bring total to about four lines (no domains, no numbers)
+        if is_web_mode and web_summary and len(simple_items) < 4:
+            try:
+                seen_texts = set([html.unescape(x) for x in simple_items])
+            except Exception:
+                seen_texts = set()
+            for rep in (web_summary.get('replicates') or []):
+                items = rep.get('support_bullets', []) if isinstance(rep, dict) else getattr(rep, 'support_bullets', [])
+                for it in (items or []):
+                    s2 = _sanitize_reason(str(it))
+                    if s2 and s2 not in seen_texts:
+                        simple_items.append(html.escape(s2, quote=True))
+                        seen_texts.add(s2)
+                    if len(simple_items) >= 4:
                         break
-            if not src_names and web_summary and web_summary.get("replicates"):
-                try:
-                    seen = set()
-                    for rep in web_summary["replicates"]:
-                        docs = rep.get("docs") if isinstance(rep, dict) else getattr(rep, "docs", [])
-                        for d in (docs or []):
-                            dom = (d.get("domain") if isinstance(d, dict) else getattr(d, "domain", "")) or ""
-                            dom = dom.strip()
-                            if dom and dom not in seen:
-                                seen.add(dom)
-                                src_names.append(dom)
-                            if len(src_names) >= 12:
-                                break
-                        if len(src_names) >= 12:
-                            break
-                except Exception:
-                    src_names = []
-            # Friendly names and basic preference filter
-            def _friendly_name(domain: str) -> str:
-                d = (domain or '').lower().strip()
-                mapping = {
-                    'virginia.edu': 'University of Virginia',
-                    'harvard.edu': 'Harvard University',
-                    'law.harvard.edu': 'Harvard Law',
-                    'mit.edu': 'MIT',
-                    'stanford.edu': 'Stanford University',
-                    'yale.edu': 'Yale University',
-                    'ox.ac.uk': 'University of Oxford',
-                    'cam.ac.uk': 'University of Cambridge',
-                    'wm.edu': 'William & Mary',
-                    'brennancenter.org': 'Brennan Center for Justice',
-                    'aclu.org': 'ACLU',
-                    'cato.org': 'Cato Institute',
-                    'heritage.org': 'Heritage Foundation',
-                    'brookings.edu': 'Brookings Institution',
-                    'nih.gov': 'NIH',
-                    'cdc.gov': 'CDC',
-                    'who.int': 'WHO',
-                    'supremecourt.gov': 'Supreme Court',
-                    'congress.gov': 'US Congress',
-                    'whitehouse.gov': 'White House',
-                    'gao.gov': 'GAO',
-                    'oecd.org': 'OECD',
-                    'imf.org': 'IMF',
-                    'worldbank.org': 'World Bank',
-                    'bbc.com': 'BBC',
-                    'cnn.com': 'CNN',
-                    'reuters.com': 'Reuters',
-                    'apnews.com': 'AP News',
-                    'bloomberg.com': 'Bloomberg',
-                    'politico.com': 'Politico',
-                    'foxnews.com': 'Fox News',
-                    'nbcnews.com': 'NBC News',
-                    'abcnews.go.com': 'ABC News',
-                    'cbsnews.com': 'CBS News',
-                    'latimes.com': 'LA Times',
-                    'nytimes.com': 'New York Times',
-                    'washingtonpost.com': 'Washington Post',
-                    'wsj.com': 'Wall Street Journal',
-                    'ft.com': 'Financial Times',
-                    'economist.com': 'The Economist',
-                    'theguardian.com': 'The Guardian',
-                    'guardian.com': 'The Guardian',
-                    'guardian.co.uk': 'The Guardian',
-                    'techcrunch.com': 'TechCrunch',
-                    'nature.com': 'Nature',
-                    'sciencemag.org': 'Science',
-                    'npr.org': 'NPR',
-                    'aljazeera.com': 'Al Jazeera',
-                    'axios.com': 'Axios',
-                    'usatoday.com': 'USA Today',
-                    'msn.com': 'MSN (syndicated)',
-                }
-                return mapping.get(d, domain)
-
-            def _is_preferred_domain(domain: str) -> bool:
-                d = (domain or '').lower().strip()
-                if d.endswith('.edu') or d.endswith('.gov'):
-                    return True
-                preferred = {
-                    'bbc.com','cnn.com','reuters.com','apnews.com','nytimes.com','washingtonpost.com','wsj.com','ft.com','economist.com','nature.com','sciencemag.org','npr.org','bloomberg.com','politico.com','foxnews.com','nbcnews.com','abcnews.go.com','cbsnews.com','latimes.com','theguardian.com','guardian.com','guardian.co.uk','techcrunch.com','brennancenter.org','aclu.org','cato.org','heritage.org','brookings.edu','who.int'
-                }
-                return d in preferred
-
-            if src_names:
-                preferred = [s for s in src_names if _is_preferred_domain(s)]
-                names_to_show = preferred[:3] if len(preferred) >= 2 else src_names[:3]
-                friendly = [_friendly_name(s) for s in names_to_show]
-                more_total = int(web_summary.get("metrics", {}).get("n_domains") or len(src_names))
-                more = " (+ more)" if more_total > len(names_to_show) else ""
-                simple_items.append("Sources: " + ", ".join(friendly) + more)
-            # If no friendly names found, omit the sources line entirely (avoid "13 domains")
+                if len(simple_items) >= 4:
+                    break
 
         # Prepare summary lines for copy button
         if simple_items:

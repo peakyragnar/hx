@@ -749,29 +749,51 @@
             resultInterpretationDetail.textContent = simpleWhy;
           }
 
-          // Build simple lines: model, web (if any), sources
+          // Build simple lines: 3–4 plain sentences (no domains, no numbers)
           if (resultSimpleLines) {
             resultSimpleLines.innerHTML = '';
-            var modelLine = 'Model (training‑only): ' + (priorProb !== null ? formatPercent(priorProb) : '--');
-            var liModel = document.createElement('li');
-            liModel.textContent = modelLine;
-            resultSimpleLines.appendChild(liModel);
-
-            if (isWebMode) {
-              var webProb = (webBlock && typeof webBlock.p === 'number') ? webBlock.p : null;
-              var webLine = 'Web evidence: ' + (webProb !== null ? formatPercent(webProb) : percentText);
-              var liWeb = document.createElement('li');
-              liWeb.textContent = webLine;
-              resultSimpleLines.appendChild(liWeb);
-
-              // Sources list (domains)
-              var domains = (webBlock && Array.isArray(webBlock.domains)) ? webBlock.domains.slice(0, 3) : [];
-              if (domains.length) {
-                var more = (webBlock.domains && webBlock.domains.length > domains.length) ? ' (+ more)' : '';
-                var liSrc = document.createElement('li');
-                liSrc.textContent = 'Sources: ' + domains.join(', ') + more;
-                resultSimpleLines.appendChild(liSrc);
+            function sanitizeReason(s) {
+              if (typeof s !== 'string') return '';
+              var t = s.trim();
+              t = t.replace(/^\s*(?:[A-Za-z0-9.-]+\.(?:com|org|net|gov|edu|news|io|co|uk|us|ca|au|de|fr))\s*[:—-]\s*/i, '');
+              t = t.replace(/\s*\([^)]*\b(?:com|org|net|gov|edu|news|io|co|uk|us|ca|au|de|fr)\b[^)]*\)\s*$/i, '');
+              if (!t) return '';
+              return /[.!?]$/.test(t) ? t : (t + '.');
+            }
+            var lines = [];
+            if (isWebMode && welReplicates && welReplicates.length) {
+              outer: for (var r = 0; r < welReplicates.length; r++) {
+                var rep = welReplicates[r] || {};
+                var items = Array.isArray(rep.support_bullets) ? rep.support_bullets : [];
+                for (var k = 0; k < items.length; k++) {
+                  var s = sanitizeReason(items[k]);
+                  if (s && lines.indexOf(s) === -1) {
+                    lines.push(s);
+                    if (lines.length >= 3) break outer;
+                  }
+                }
               }
+            }
+            // Stance line last
+            var stance;
+            if (probValue >= 0.6) stance = 'leans true';
+            else if (probValue <= 0.4) stance = 'leans false';
+            else stance = 'is mixed';
+            var webStance;
+            if (isWebMode && webBlock && typeof webBlock.p === 'number') {
+              webStance = webBlock.p >= 0.6 ? 'lean true' : (webBlock.p <= 0.4 ? 'lean false' : 'are mixed');
+            } else {
+              webStance = stance === 'leans true' ? 'agree' : (stance === 'leans false' ? 'agree' : 'are mixed');
+            }
+            var stanceLine = isWebMode
+              ? ('The model ' + stance + ', and recent sources ' + (webStance === 'lean true' || webStance === 'lean false' ? 'agree' : 'are mixed') + '; overall it’s ' + verdictLabel.toLowerCase() + '.')
+              : ('The model ' + stance + '; overall it’s ' + verdictLabel.toLowerCase() + '.');
+            lines.push(stanceLine);
+            // Render up to 4
+            for (var i = 0; i < lines.length && i < 4; i++) {
+              var li = document.createElement('li');
+              li.textContent = lines[i];
+              resultSimpleLines.appendChild(li);
             }
           }
 
