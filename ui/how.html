@@ -64,57 +64,89 @@
   </header>
 
   <main>
-    <h1>How Heretix checks a claim</h1>
-    <p>Heretix shows you what GPT‑5 already believes—its <em>raw prior</em>—before any web search or outside evidence. Here’s what happens each time you press “Ask the model.”</p>
+    <h1>How Heretix Checks a Claim</h1>
+    <p>Heretix helps you see what leading AI models already believe about any statement you submit.<br />
+    When you press “Ask the model,” here’s what happens behind the scenes.</p>
+
+    <p style="text-align:center; letter-spacing:2px; color:rgba(0,255,65,0.8);">⸻</p>
 
     <div class="card">
-      <h2>Step-by-step</h2>
+      <h2>Step by step</h2>
       <ol class="steps">
         <li>
-          <span>1 · Freeze the lens</span>
-          We lock the model into the Raw Prior Lens. That means internal knowledge only: no browsing, no new documents, no citations.
-        </li>
-        <li>
-          <span>2 · Ask many paraphrases</span>
-          Heretix rewrites your claim in several neutral wordings and asks GPT‑5 each one twice. This keeps wording quirks from tilting the answer.
-        </li>
-        <li>
-          <span>3 · Aggregate the belief</span>
-          We average the responses in log-odds space, trim extreme outliers, and bootstrap a confidence interval so you see both the probability and how firm it is.
-        </li>
-        <li>
-          <span>4 · Explain the lean</span>
-          Finally, we translate the result into plain English: the percentage, a verdict (“likely true/false/uncertain”), and 2–3 reasons the model leans that way.
+          <span>1 · Choose your lens</span>
+          You decide how the AI should think.
+          <ul>
+            <li><strong>Model-only:</strong> the AI answers using what it has already learned from its own training.</li>
+            <li><strong>Internet-informed:</strong> the AI also searches the web for new evidence before answering.</li>
+          </ul>
+          This choice lets you compare what the model believes on its own versus what changes when it sees new information.
         </li>
       </ol>
     </div>
 
+    <p style="text-align:center; letter-spacing:2px; color:rgba(0,255,65,0.8);">⸻</p>
+
+    <div class="card">
+      <ol class="steps">
+        <li>
+          <span>2 · Check the claim from many angles</span>
+          Heretix rewrites your statement in several simple ways and asks the AI each version.
+          This helps keep the answer balanced, so it’s not swayed by one particular wording.
+        </li>
+      </ol>
+    </div>
+
+    <p style="text-align:center; letter-spacing:2px; color:rgba(0,255,65,0.8);">⸻</p>
+
+    <div class="card">
+      <ol class="steps">
+        <li>
+          <span>3 · Combine the results</span>
+          Heretix looks at all the answers and blends them into one clear score—a number that shows how likely the AI thinks your claim is true.
+          You’ll also see how confident the model is, so you can tell whether it’s certain or unsure.
+        </li>
+      </ol>
+    </div>
+
+    <p style="text-align:center; letter-spacing:2px; color:rgba(0,255,65,0.8);">⸻</p>
+
+    <div class="card">
+      <ol class="steps">
+        <li>
+          <span>4 · Show the reasoning</span>
+          Finally, Heretix explains why the AI leans the way it does.
+          You’ll see:
+          <ul>
+            <li>A short verdict such as “likely true,” “likely false,” or “uncertain.”</li>
+            <li>A few plain-language points summarizing what shaped that belief.</li>
+          </ul>
+        </li>
+      </ol>
+    </div>
+
+    <p style="text-align:center; letter-spacing:2px; color:rgba(0,255,65,0.8);">⸻</p>
+
     <div class="panel">
       <div>
         <h3>What the percentage means</h3>
-        <p>The number is GPT‑5’s probability that the claim is true. A 68% score means the model thinks it’s probably true; 11% means it thinks it’s probably false.</p>
+        <p>The number you see isn’t “truth”—it’s the AI’s belief.<br />
+        A 90% result means the model thinks your claim is very likely true.<br />
+        A 10% result means it thinks it’s very likely false.<br />
+        And values near 50% mean the model is genuinely unsure.</p>
       </div>
       <div>
-        <h3>Advanced details</h3>
-        <p>Open the “Advanced details” panel on any result to see:</p>
-        <ul>
-          <li><strong>Confidence width</strong> – how tight the probability interval is.</li>
-          <li><strong>Template stability</strong> – whether different phrasings agreed.</li>
-          <li><strong>Policy compliance</strong> – how often the responses followed Raw Prior rules.</li>
-        </ul>
-      </div>
-      <div>
-        <h3>Why no retrieval?</h3>
-        <p>By skipping web searches we expose the model’s trained-in consensus. Later lenses will add evidence; this one lets you inspect the baseline belief first.</p>
+        <h3>Why this matters</h3>
+        <p>By showing both the model’s internal belief and its internet-informed view, Heretix helps you understand how AI sees the world—and where it might be biased, outdated, or missing key facts.</p>
       </div>
     </div>
 
     <div class="card">
       <h2>Tips</h2>
       <ul>
-        <li>Be specific about the claim so the model isn’t guessing the scope.</li>
-        <li>Use the explanation bullets to decide what to investigate next.</li>
-        <li>Re-run anytime—cache makes repeats fast, so you can compare after prompt changes.</li>
+        <li>Be clear and specific in your claim so the AI knows exactly what to judge.</li>
+        <li>Try both modes—Model-only and Internet-informed—to see how the AI’s view shifts.</li>
+        <li>Read the short explanation to decide what’s worth exploring next.</li>
       </ul>
     </div>
   </main>
