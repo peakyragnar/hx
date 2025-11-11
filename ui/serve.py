@@ -1015,8 +1015,10 @@ class Handler(BaseHTTPRequestHandler):
             summary_lines.append('Reasons: (none)')
         summary_attr = html.escape("\n".join(summary_lines), quote=True)
 
-        # Escape for HTML for the simple view list
-        why_items_html = "\n".join(f"<li>{item}</li>" for item in [html.escape(x, quote=True) for x in simple_items])
+        # Escape for HTML for the simple view list (guard: empty when resolved)
+        why_items_html = "" if resolved_flag else "\n".join(
+            f"<li>{item}</li>" for item in [html.escape(x, quote=True) for x in simple_items]
+        )
 
         # Build the stack block (omit entirely when resolved)
         if resolved_flag:
