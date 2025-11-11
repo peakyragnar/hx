@@ -874,15 +874,24 @@ class Handler(BaseHTTPRequestHandler):
         simple_norm = _normative_simple_lines(label, (verdict or '').lower()) if label else []
 
         simple_why = candidate or (_strip_parens(web_reasons[0]) if web_reasons else interpretation)
-        # Sanitize reasons to avoid domain mentions
+        # Sanitize reasons to avoid domains/brands and heavy numerics
         import re as _re_s
         def _sanitize_reason(s: str) -> str:
             if not isinstance(s, str):
                 return ''
             t = s.strip()
+            # strip leading domain like "example.com:" or "example.com —"
             t = _re_s.sub(r'^\s*(?:[A-Za-z0-9.-]+\.(?:com|org|net|gov|edu|news|io|co|uk|us|ca|au|de|fr))\s*[:—-]\s*', '', t)
+            # strip leading brand name followed by reporting verb
+            t = _re_s.sub(r'^\s*[A-Z][\w&-]*(?:\s+[A-Z][\w&-]*){0,3}\s+(?:states|reports|says|announces|notes|claims|plans|projects|indicates)\b[:,]?\s*', '', t)
+            # remove bracketed/parenthetical source hints
             t = _re_s.sub(r'\s*\([^)]*\b(?:com|org|net|gov|edu|news|io|co|uk|us|ca|au|de|fr)\b[^)]*\)\s*$', '', t)
-            return t if t.endswith('.') else (t + '.') if t else ''
+            t = _re_s.sub(r'\s*\[[^\]]*\b(?:com|org|net|gov|edu|news|io|co|uk|us|ca|au|de|fr)\b[^\]]*\]\s*$', '', t)
+            # soften heavy numerics (e.g., 3T, $4T, 1200 tpa)
+            t = _re_s.sub(r'\$\d[\d,]*(?:\.\d+)?', 'a high value', t)
+            t = _re_s.sub(r'\b\d+(?:\.\d+)?\s?(?:T|B|M|K)\b', 'a large figure', t, flags=_re_s.IGNORECASE)
+            # keep sentence end
+            return t if t.endswith('.') or not t else (t + '.')
 
         if simple_norm:
             for line in simple_norm:
@@ -910,10 +919,8 @@ class Handler(BaseHTTPRequestHandler):
         # verdict already computed above; convert to lowercase friendly label
         verdict_phrase = (verdict or '').lower()
         agreement = 'agree' if ((prior_stance == 'leans true' and web_stance == 'leans true') or (prior_stance == 'leans false' and web_stance == 'leans false')) else ('disagree' if ((prior_stance == 'leans true' and web_stance == 'leans false') or (prior_stance == 'leans false' and web_stance == 'leans true')) else 'are mixed')
-        if is_web_mode:
-            simple_items.append(html.escape(f"The model {prior_stance}, and recent sources {agreement}; overall it’s {verdict_phrase}.", quote=True))
-        else:
-            simple_items.append(html.escape(f"The model {prior_stance}; overall it’s {verdict_phrase}.", quote=True))
+        # Final summary (no model/source stance line; concise verdict tie-in)
+        simple_items.append(html.escape(f"Taken together, these points suggest the claim is {verdict_phrase}.", quote=True))
 
         # Top up with additional sanitized web reasons to bring total to about four lines (no domains, no numbers)
         if is_web_mode and web_summary and len(simple_items) < 4:
