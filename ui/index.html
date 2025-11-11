@@ -588,12 +588,16 @@
       }
 
       function renderResult(data) {
-        if (!resultCard || !data) return;
-
+        if (!resultCard || !data) {
+          setStatus('Unexpected response. Please try again.', 'error');
+          return;
+        }
+        // Defensive guards so a partial/malformed payload never blanks the page
         var isWebMode = data.mode === 'web_informed';
         var combinedProb = data.combined && typeof data.combined.p === 'number' ? data.combined.p : null;
-        var priorProb = data.aggregates && typeof data.aggregates.prob_true_rpl === 'number'
-          ? data.aggregates.prob_true_rpl
+        var aggregatesSafe = (data && typeof data === 'object' && data.aggregates) ? data.aggregates : {};
+        var priorProb = (typeof aggregatesSafe.prob_true_rpl === 'number')
+          ? aggregatesSafe.prob_true_rpl
           : null;
         var probValue = isWebMode && combinedProb !== null ? combinedProb : (priorProb !== null ? priorProb : 0);
         var percentText = formatPercent(probValue);
@@ -611,21 +615,22 @@
           var ciWidth = null;
           if (isWebMode && data.combined && Array.isArray(data.combined.ci95)) {
             ciWidth = data.combined.ci95[1] - data.combined.ci95[0];
-          } else if (data.aggregates && typeof data.aggregates.ci_width === 'number') {
-            ciWidth = data.aggregates.ci_width;
+          } else if (typeof aggregatesSafe.ci_width === 'number') {
+            ciWidth = aggregatesSafe.ci_width;
           }
           resultCi.textContent = typeof ciWidth === 'number' ? ciWidth.toFixed(3) : '--';
         }
 
         if (resultStability) {
-          resultStability.textContent = data.aggregates.stability_score !== undefined ? data.aggregates.stability_score.toFixed(2) : '--';
+          var st = aggregatesSafe.stability_score;
+          resultStability.textContent = (typeof st === 'number') ? st.toFixed(2) : '--';
         }
         if (resultBand) {
-          resultBand.textContent = data.aggregates.stability_band ? ('Band: ' + data.aggregates.stability_band) : '';
+          resultBand.textContent = aggregatesSafe.stability_band ? ('Band: ' + aggregatesSafe.stability_band) : '';
         }
         if (resultCompliance) {
-          if (typeof data.aggregates.rpl_compliance_rate === 'number') {
-            resultCompliance.textContent = Math.round(data.aggregates.rpl_compliance_rate * 100) + '%';
+          if (typeof aggregatesSafe.rpl_compliance_rate === 'number') {
+            resultCompliance.textContent = Math.round(aggregatesSafe.rpl_compliance_rate * 100) + '%';
           } else {
             resultCompliance.textContent = '--';
           }
@@ -751,8 +756,13 @@
           resultCopyButton.textContent = 'Copy summary';
         }
 
-        resultCard.classList.remove('hidden');
-        document.body.classList.add('results-mode');
+        try {
+          resultCard.classList.remove('hidden');
+          document.body.classList.add('results-mode');
+        } catch (err) {
+          console.error('renderResult display error', err);
+          setStatus('Unable to display result. Please try again.', 'error');
+        }
       }
 
       function closeModal(modal) {
