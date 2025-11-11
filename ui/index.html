@@ -660,7 +660,10 @@
         var welReplicates = Array.isArray(data.wel_replicates) ? data.wel_replicates : [];
         var webBlock = data.web && typeof data.web === 'object' ? data.web : null;
         var weightsBlock = data.weights && typeof data.weights === 'object' ? data.weights : {};
-        if (apiReasons.length) {
+        var resolvedFlag = Boolean(isWebMode && webBlock && webBlock.resolved);
+        if (resolvedFlag) {
+          reasonList = [];
+        } else if (apiReasons.length) {
           reasonList = apiReasons;
         } else {
           var collected = [];
@@ -728,7 +731,7 @@
         }
 
         // Simple/deeper presentation
-        if (resultExplainer && resultVerdict) {
+        if (!resolvedFlag && resultExplainer && resultVerdict) {
           // Mode-aware headline
           var simpleHeadline = isWebMode ? 'Why the web‑informed verdict looks this way' : 'Why the model‑only verdict looks this way';
           resultVerdict.textContent = simpleHeadline;
@@ -832,6 +835,15 @@
 
           resultExplainer.classList.remove('hidden');
           if (resultDeeper) { resultDeeper.classList.remove('hidden'); }
+        }
+
+        // If resolved, suppress explainer/simple/deeper blocks entirely
+        if (resolvedFlag) {
+          if (resultExplainer) resultExplainer.classList.add('hidden');
+          if (resultReasons) { resultReasons.innerHTML=''; resultReasons.classList.add('hidden'); }
+          if (resultSimpleLines) { resultSimpleLines.innerHTML=''; }
+          if (resultDeeper) { resultDeeper.classList.add('hidden'); }
+          if (resultDeeperBody) { resultDeeperBody.innerHTML=''; }
         }
 
         if (resultCopyButton) {
