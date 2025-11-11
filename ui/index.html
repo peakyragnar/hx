@@ -256,8 +256,15 @@
       <div class="result-explainer hidden" id="result-explainer">
         <h3 id="result-verdict">—</h3>
         <p id="result-interpretation-detail"></p>
+        <!-- Simple view lines: model prior, web estimate, sources -->
+        <ul id="result-simple-lines" class="simple-lines"></ul>
+        <!-- Keep legacy reasons list hidden for concise simple view; deeper panel will include details -->
         <ul id="result-reasons" class="hidden"></ul>
       </div>
+      <details class="result-deeper" id="result-deeper">
+        <summary>Deeper explanation</summary>
+        <div id="result-deeper-body"></div>
+      </details>
       <details class="result-advanced">
         <summary>Advanced details</summary>
         <div class="advanced-grid">
@@ -455,6 +462,9 @@
       var resultInterpretationMain = document.getElementById('result-interpretation-main');
       var resultInterpretationDetail = document.getElementById('result-interpretation-detail');
       var resultReasons = document.getElementById('result-reasons');
+      var resultSimpleLines = document.getElementById('result-simple-lines');
+      var resultDeeper = document.getElementById('result-deeper');
+      var resultDeeperBody = document.getElementById('result-deeper-body');
       var loadingOverlay = document.getElementById('loading-overlay');
       var loadingClaim = document.getElementById('loading-claim');
       var loadingHeadline = document.getElementById('loading-headline');
@@ -717,26 +727,111 @@
           reasonList = collected.length ? collected : buildReasons(probValue);
         }
 
+        // Simple/deeper presentation
         if (resultExplainer && resultVerdict) {
-          resultVerdict.textContent = headline;
+          // Mode-aware headline
+          var simpleHeadline = isWebMode ? 'Why the web‑informed verdict looks this way' : 'Why the model‑only verdict looks this way';
+          resultVerdict.textContent = simpleHeadline;
+
+          // Simple "why" sentence: prefer first reason from collected web bullets if available
+          var simpleWhy = '';
+          if (isWebMode && Array.isArray(reasonList) && reasonList.length) {
+            simpleWhy = reasonList[0];
+          } else if (typeof interpretation === 'string' && interpretation) {
+            simpleWhy = interpretation;
+          } else if (verdictInfo && verdictInfo.text) {
+            simpleWhy = verdictInfo.text;
+          }
           if (resultInterpretationDetail) {
-            resultInterpretationDetail.textContent = interpretation;
+            resultInterpretationDetail.textContent = simpleWhy;
           }
 
-          if (resultReasons) {
-            resultReasons.innerHTML = '';
-            if (reasonList.length) {
-              reasonList.forEach(function(line){
-                var li = document.createElement('li');
-                li.textContent = line;
-                resultReasons.appendChild(li);
-              });
-              resultReasons.classList.remove('hidden');
-            } else {
-              resultReasons.classList.add('hidden');
+          // Build simple lines: model, web (if any), sources
+          if (resultSimpleLines) {
+            resultSimpleLines.innerHTML = '';
+            var modelLine = 'Model (training‑only): ' + (priorProb !== null ? formatPercent(priorProb) : '--');
+            var liModel = document.createElement('li');
+            liModel.textContent = modelLine;
+            resultSimpleLines.appendChild(liModel);
+
+            if (isWebMode) {
+              var webProb = (webBlock && typeof webBlock.p === 'number') ? webBlock.p : null;
+              var webLine = 'Web evidence: ' + (webProb !== null ? formatPercent(webProb) : percentText);
+              var liWeb = document.createElement('li');
+              liWeb.textContent = webLine;
+              resultSimpleLines.appendChild(liWeb);
+
+              // Sources list (domains)
+              var domains = (webBlock && Array.isArray(webBlock.domains)) ? webBlock.domains.slice(0, 3) : [];
+              if (domains.length) {
+                var more = (webBlock.domains && webBlock.domains.length > domains.length) ? ' (+ more)' : '';
+                var liSrc = document.createElement('li');
+                liSrc.textContent = 'Sources: ' + domains.join(', ') + more;
+                resultSimpleLines.appendChild(liSrc);
+              }
             }
           }
+
+          // Hide legacy reasons in simple view
+          if (resultReasons) {
+            resultReasons.innerHTML = '';
+            resultReasons.classList.add('hidden');
+          }
+
+          // Deeper explanation panel
+          if (resultDeeperBody) {
+            var esc = function(s){ return String(s == null ? '' : s); };
+            var htmlParts = [];
+            // Training-only block
+            htmlParts.push('<h4>Training‑only (model prior)</h4>');
+            htmlParts.push('<p>Prior: ' + (priorProb !== null ? formatPercent(priorProb) : '--') + '</p>');
+            var priorReasons = buildReasons(priorProb);
+            if (Array.isArray(priorReasons) && priorReasons.length) {
+              htmlParts.push('<ul>');
+              priorReasons.slice(0,3).forEach(function(r){ htmlParts.push('<li>' + esc(r) + '</li>'); });
+              htmlParts.push('</ul>');
+            }
+            // Web evidence block (only if web mode)
+            if (isWebMode) {
+              var webProbVal = (webBlock && typeof webBlock.p === 'number') ? webBlock.p : null;
+              htmlParts.push('<h4>Web evidence (recent)</h4>');
+              htmlParts.push('<p>Web estimate: ' + (webProbVal !== null ? formatPercent(webProbVal) : '--') + '</p>');
+              var webBullets = [];
+              if (welReplicates && welReplicates.length) {
+                for (var i = 0; i < welReplicates.length; i++) {
+                  var repx = welReplicates[i] || {};
+                  if (Array.isArray(repx.support_bullets)) {
+                    webBullets = repx.support_bullets.filter(function(x){ return typeof x === 'string' && x.trim(); });
+                    if (webBullets.length) break;
+                  }
+                }
+              }
+              if (webBullets.length) {
+                htmlParts.push('<ul>');
+                webBullets.slice(0,3).forEach(function(b){ htmlParts.push('<li>' + esc(b) + '</li>'); });
+                htmlParts.push('</ul>');
+              }
+              var metrics2 = webBlock && webBlock.evidence ? webBlock.evidence : {};
+              var nDocs2 = Number(metrics2 && metrics2.n_docs || 0);
+              var nDomains2 = Number(metrics2 && metrics2.n_domains || 0);
+              var medAge = metrics2 && typeof metrics2.median_age_days === 'number' ? metrics2.median_age_days : null;
+              var metaBits = [];
+              if (nDocs2 || nDomains2) metaBits.push(nDocs2 + ' docs / ' + nDomains2 + ' domains');
+              if (medAge === medAge && medAge !== null) metaBits.push('median age ~' + Math.round(medAge) + ' days');
+              if (metaBits.length) htmlParts.push('<p class="note">' + esc(metaBits.join(' · ')) + '</p>');
+
+              var w = (weightsBlock && typeof weightsBlock.w_web === 'number') ? weightsBlock.w_web : null;
+              if (w !== null && priorProb !== null && (webProbVal !== null || combinedProb !== null)) {
+                var webShown = webProbVal !== null ? webProbVal : combinedProb;
+                htmlParts.push('<h4>How we combine</h4>');
+                htmlParts.push('<p>Weight ' + w.toFixed(2) + ' → ' + ( (1 - w).toFixed(2) ) + '×' + formatPercent(priorProb) + ' + ' + w.toFixed(2) + '×' + formatPercent(webShown) + '.</p>');
+              }
+            }
+            resultDeeperBody.innerHTML = htmlParts.join('\n');
+          }
+
           resultExplainer.classList.remove('hidden');
+          if (resultDeeper) { resultDeeper.classList.remove('hidden'); }
         }
 
         if (resultCopyButton) {

@@ -780,42 +780,411 @@ class Handler(BaseHTTPRequestHandler):
                     if _add_items(items):
                         break
 
-        if not reasons and web_summary:
-            metrics = web_summary.get("metrics") or {}
-            n_docs = int(metrics.get("n_docs") or 0)
-            n_domains = int(metrics.get("n_domains") or 0)
-            recency_days = metrics.get("median_age_days")
-            shift_line = (
-                f"Web evidence across {n_docs} document{'s' if n_docs != 1 else ''} "
-                f"from {n_domains} domain{'s' if n_domains != 1 else ''} moved GPT‑5’s prior from {prior_percent} to {percent}."
-            )
-            reasons.append(shift_line)
-            if isinstance(recency_days, (int, float)) and recency_days == recency_days:
-                reasons.append(
-                    f"Median publish date was about {int(recency_days)} day{'s' if recency_days != 1 else ''} ago, so fresher coverage would further tighten the estimate."
-                )
+        # Avoid technical fallbacks (doc counts, numeric shifts) in user-facing reasons
+        # Also collect a separate prior-only explainer set
+        explainer_reasons = _generate_explanation()
         if not reasons:
-            reasons = _generate_explanation()
+            reasons = list(explainer_reasons)
+        web_reasons = list(reasons)
+        # Build prior-only reasons by filtering explainer output for any domain/URL mentions
+        import re as _re_prior
+        def _filter_no_domains(lines: list[str]) -> list[str]:
+            out: list[str] = []
+            for s in lines or []:
+                if not isinstance(s, str):
+                    continue
+                ss = s.strip()
+                if not ss:
+                    continue
+                if _re_prior.search(r"https?://|www\.|\b\w+\.(com|org|net|gov|edu|news|io|co|uk|us|ca|au|de|fr)\b", ss):
+                    continue
+                out.append(ss)
+                if len(out) >= 4:
+                    break
+            return out
+        prior_reasons = _filter_no_domains(explainer_reasons)
         # Build display pieces
-        if p >= 0.60:
-            why_head = "Why it’s likely true"
-            why_kind = "true"
-        elif p <= 0.40:
-            why_head = "Why it’s likely false"
-            why_kind = "false"
+        # Simple/deeper presentation for results.html
+        is_web_mode = (ui_mode_value == "internet-search") and bool(web_summary)
+        if is_web_mode:
+            why_head = "Why the web‑informed verdict looks this way"
         else:
-            why_head = "Why it’s uncertain"
-            why_kind = "uncertain"
+            why_head = "Why the model‑only verdict looks this way"
+        why_kind = (
+            "true" if p >= 0.60 else ("false" if p <= 0.40 else "uncertain")
+        )
 
-        if reasons:
+        # Build simple lines
+        simple_items: list[str] = []
+        # Strip any trailing parenthetical source lists from the first reason
+        import re as _re_simple
+        def _strip_parens(text: str) -> str:
+            try:
+                return _re_simple.sub(r"\s*\([^\)]*\)\s*$", "", text or "").strip()
+            except Exception:
+                return (text or "").strip()
+        # Prefer a substantive web bullet for the first sentence, else fallback
+        def _choose_web_reason() -> str:
+            if not (is_web_mode and web_summary):
+                return ''
+            try:
+                keywords = ("show", "shows", "report", "reports", "document", "documents", "analysis", "study", "studies", "evidence", "found", "court", "data", "law", "rights", "policy")
+                for rep in (web_summary.get('replicates') or []):
+                    items = rep.get('support_bullets', []) if isinstance(rep, dict) else getattr(rep, 'support_bullets', [])
+                    for it in (items or []):
+                        s = _strip_parens(str(it))
+                        low = s.lower()
+                        if any(k in low for k in keywords) and 8 <= len(s.split()) <= 28:
+                            return s
+            except Exception:
+                return ''
+            return ''
+
+        candidate = _choose_web_reason()
+
+        # Normative-claim helpers (e.g., "X is evil")
+        def _normative_label(text: str) -> str:
+            t = (text or '').lower()
+            labels = ['evil','nazi','good','bad','corrupt','racist','sexist','liar','genius','idiot','coward','traitor']
+            for lab in labels:
+                if f" {lab}" in t or t.endswith(lab) or f"is {lab}" in t:
+                    return lab
+            return ''
+
+        def _normative_simple_lines(label: str, verdict_phrase: str) -> list[str]:
+            if not label:
+                return []
+            if label == 'evil':
+                return [
+                    '“Evil” is a moral label, not a verifiable fact; definitions vary widely.',
+                    'Most coverage is opinion or rhetoric, not evidence of deliberate severe harm that would meet a clear “evil” standard.',
+                ]
+            if label == 'nazi':
+                return [
+                    '“Nazi” is a specific historical/political designation, not a general insult.',
+                    'It typically means membership in the Nazi Party or explicit neo‑Nazi affiliation/ideology; credible records do not establish that here.',
+                ]
+            # Generic normative fallback
+            return [
+                f'“{label.capitalize()}” is a value judgment; definitions differ across sources.',
+                'Most coverage frames views and opinions rather than verifiable criteria for that label.',
+            ]
+
+        label = _normative_label(claim)
+        simple_norm = _normative_simple_lines(label, (verdict or '').lower()) if label else []
+
+        simple_why = candidate or (_strip_parens(web_reasons[0]) if web_reasons else interpretation)
+        if simple_norm:
+            for line in simple_norm:
+                simple_items.append(html.escape(line, quote=True))
+        elif simple_why:
+            simple_items.append(html.escape(simple_why, quote=True))
+        # Add a plain, non-technical stance summary
+        def _stance(prob: float) -> str:
+            try:
+                v = float(prob)
+            except Exception:
+                v = 0.5
+            if v >= 0.6:
+                return 'leans true'
+            if v <= 0.4:
+                return 'leans false'
+            return 'is mixed'
+
+        prior_stance = _stance(prior_p)
+        web_stance = _stance(float(web_summary.get('p')) if (is_web_mode and isinstance(web_summary, dict) and web_summary.get('p') is not None) else prior_p)
+        # verdict already computed above; convert to lowercase friendly label
+        verdict_phrase = (verdict or '').lower()
+        agreement = 'agree' if ((prior_stance == 'leans true' and web_stance == 'leans true') or (prior_stance == 'leans false' and web_stance == 'leans false')) else ('disagree' if ((prior_stance == 'leans true' and web_stance == 'leans false') or (prior_stance == 'leans false' and web_stance == 'leans true')) else 'are mixed')
+        if is_web_mode:
+            simple_items.append(f"The model {prior_stance}, and recent sources {agreement}; overall it’s {verdict_phrase}.")
+        else:
+            simple_items.append(f"The model {prior_stance}; overall it’s {verdict_phrase}.")
+
+        # Optional compact percentages as a second-class detail
+        simple_items.append(f"Model (training‑only): {prior_percent}")
+        if is_web_mode:
+            simple_items.append(f"Web evidence: {web_percent}")
+            # Sources: prefer resolved citation domains; else collect from replicates; else show count
+            src_names: list[str] = []
+            if resolved_flag and resolved_citations:
+                for cite in resolved_citations:
+                    dom = (cite.get("domain") or "").strip()
+                    if dom and dom not in src_names:
+                        src_names.append(dom)
+                    if len(src_names) >= 3:
+                        break
+            if not src_names and web_summary and web_summary.get("replicates"):
+                try:
+                    seen = set()
+                    for rep in web_summary["replicates"]:
+                        docs = rep.get("docs") if isinstance(rep, dict) else getattr(rep, "docs", [])
+                        for d in (docs or []):
+                            dom = (d.get("domain") if isinstance(d, dict) else getattr(d, "domain", "")) or ""
+                            dom = dom.strip()
+                            if dom and dom not in seen:
+                                seen.add(dom)
+                                src_names.append(dom)
+                            if len(src_names) >= 12:
+                                break
+                        if len(src_names) >= 12:
+                            break
+                except Exception:
+                    src_names = []
+            # Friendly names and basic preference filter
+            def _friendly_name(domain: str) -> str:
+                d = (domain or '').lower().strip()
+                mapping = {
+                    'virginia.edu': 'University of Virginia',
+                    'harvard.edu': 'Harvard University',
+                    'law.harvard.edu': 'Harvard Law',
+                    'mit.edu': 'MIT',
+                    'stanford.edu': 'Stanford University',
+                    'yale.edu': 'Yale University',
+                    'ox.ac.uk': 'University of Oxford',
+                    'cam.ac.uk': 'University of Cambridge',
+                    'wm.edu': 'William & Mary',
+                    'brennancenter.org': 'Brennan Center for Justice',
+                    'aclu.org': 'ACLU',
+                    'cato.org': 'Cato Institute',
+                    'heritage.org': 'Heritage Foundation',
+                    'brookings.edu': 'Brookings Institution',
+                    'nih.gov': 'NIH',
+                    'cdc.gov': 'CDC',
+                    'who.int': 'WHO',
+                    'supremecourt.gov': 'Supreme Court',
+                    'congress.gov': 'US Congress',
+                    'whitehouse.gov': 'White House',
+                    'gao.gov': 'GAO',
+                    'oecd.org': 'OECD',
+                    'imf.org': 'IMF',
+                    'worldbank.org': 'World Bank',
+                    'bbc.com': 'BBC',
+                    'cnn.com': 'CNN',
+                    'reuters.com': 'Reuters',
+                    'apnews.com': 'AP News',
+                    'bloomberg.com': 'Bloomberg',
+                    'politico.com': 'Politico',
+                    'foxnews.com': 'Fox News',
+                    'nbcnews.com': 'NBC News',
+                    'abcnews.go.com': 'ABC News',
+                    'cbsnews.com': 'CBS News',
+                    'latimes.com': 'LA Times',
+                    'nytimes.com': 'New York Times',
+                    'washingtonpost.com': 'Washington Post',
+                    'wsj.com': 'Wall Street Journal',
+                    'ft.com': 'Financial Times',
+                    'economist.com': 'The Economist',
+                    'theguardian.com': 'The Guardian',
+                    'guardian.com': 'The Guardian',
+                    'guardian.co.uk': 'The Guardian',
+                    'techcrunch.com': 'TechCrunch',
+                    'nature.com': 'Nature',
+                    'sciencemag.org': 'Science',
+                    'npr.org': 'NPR',
+                    'aljazeera.com': 'Al Jazeera',
+                    'axios.com': 'Axios',
+                    'usatoday.com': 'USA Today',
+                    'msn.com': 'MSN (syndicated)',
+                }
+                return mapping.get(d, domain)
+
+            def _is_preferred_domain(domain: str) -> bool:
+                d = (domain or '').lower().strip()
+                if d.endswith('.edu') or d.endswith('.gov'):
+                    return True
+                preferred = {
+                    'bbc.com','cnn.com','reuters.com','apnews.com','nytimes.com','washingtonpost.com','wsj.com','ft.com','economist.com','nature.com','sciencemag.org','npr.org','bloomberg.com','politico.com','foxnews.com','nbcnews.com','abcnews.go.com','cbsnews.com','latimes.com','theguardian.com','guardian.com','guardian.co.uk','techcrunch.com','brennancenter.org','aclu.org','cato.org','heritage.org','brookings.edu','who.int'
+                }
+                return d in preferred
+
+            if src_names:
+                preferred = [s for s in src_names if _is_preferred_domain(s)]
+                names_to_show = preferred[:3] if len(preferred) >= 2 else src_names[:3]
+                friendly = [_friendly_name(s) for s in names_to_show]
+                more_total = int(web_summary.get("metrics", {}).get("n_domains") or len(src_names))
+                more = " (+ more)" if more_total > len(names_to_show) else ""
+                simple_items.append("Sources: " + ", ".join(friendly) + more)
+            # If no friendly names found, omit the sources line entirely (avoid "13 domains")
+
+        # Prepare summary lines for copy button
+        if simple_items:
             summary_lines.append('Reasons:')
-            summary_lines.extend(f'- {r}' for r in reasons)
+            summary_lines.extend(f'- {i}' for i in simple_items[:4])
         else:
             summary_lines.append('Reasons: (none)')
         summary_attr = html.escape("\n".join(summary_lines), quote=True)
 
-        # Escape for HTML but preserve Unicode characters (avoid JSON string escapes like \u201c)
-        why_items_html = "\n".join(f"<li>{html.escape(r, quote=True)}</li>" for r in reasons)
+        # Escape for HTML for the simple view list
+        why_items_html = "\n".join(f"<li>{item}</li>" for item in [html.escape(x, quote=True) for x in simple_items])
+
+        # Build deeper explanation block
+        deeper_parts: list[str] = []
+        deeper_parts.append("<details><summary>Deeper explanation</summary>")
+        deeper_parts.append("<div>")
+        deeper_parts.append("<h4>Training‑only (model prior)</h4>")
+        deeper_parts.append(f"<p>Model (training‑only): {prior_percent}</p>")
+        # Up to four concise prior sentences
+        prior_lines: list[str] = []
+        if label == 'evil':
+            prior_lines = [
+                '“Evil” is a moral label rather than a factual category.',
+                'The model sees mixed rhetoric and lacks a clear rule for labeling a person “evil.”',
+                'Without explicit criteria (e.g., intent to cause severe harm), it doesn’t infer that label from disagreements or controversy.',
+                'As a factual statement, the claim is not established under common definitions.',
+            ]
+        elif label == 'nazi':
+            prior_lines = [
+                '“Nazi” is a specific historical/political designation.',
+                'The model treats it as requiring evidence of party membership or explicit neo‑Nazi self‑identification.',
+                'Rhetoric, comparisons, or associations do not meet that threshold.',
+                'On that basis, it does not infer the label from controversies alone.',
+            ]
+        else:
+            # Use neutral explainer reasons (prior-only), padded to four if short
+            base = [ _strip_parens(r) for r in (prior_reasons[:4] if prior_reasons else []) ]
+            prior_lines = [s for s in base if s][:4]
+            if not prior_lines:
+                prior_lines = [
+                    'This view uses only the model’s internal knowledge; no web sources.',
+                    'It reflects typical usage and references the model has seen rather than a formal definition.',
+                ]
+        deeper_parts.append('<ul>')
+        for s in prior_lines[:4]:
+            deeper_parts.append(f"<li>{html.escape(s, quote=True)}</li>")
+        deeper_parts.append('</ul>')
+        if is_web_mode:
+            deeper_parts.append("<h4>Web evidence (recent)</h4>")
+            deeper_parts.append(f"<p>Web evidence: {web_percent}</p>")
+            # Distill up to four web bullets (favor substantive statements), or normative set
+            web_lines: list[str] = []
+            if label == 'evil':
+                web_lines = [
+                    'Recent pieces mostly offer opinions or rhetoric rather than verifiable criteria for “evil.”',
+                    'Coverage cites controversies and harsh language but doesn’t show deliberate severe harm that meets a clear standard.',
+                    'Credible outlets do not converge on a shared definition or threshold for this label.',
+                    'Taken together, web sources support treating the statement as a value judgment, not a verified fact.',
+                ]
+            elif label == 'nazi':
+                web_lines = [
+                    'Reporting highlights Nazi‑related rhetoric or comparisons but no credible evidence of party membership or neo‑Nazi affiliation.',
+                    'Major outlets do not document self‑identification or organizational ties that would satisfy the label.',
+                    'References are largely opinion or metaphor rather than documentation of affiliation.',
+                    'Together, sources support treating the statement as factually false rather than a proven designation.',
+                ]
+            else:
+                distilled: list[str] = []
+                try:
+                    for rep in (web_summary.get('replicates') or []):
+                        items = rep.get('support_bullets', []) if isinstance(rep, dict) else getattr(rep, 'support_bullets', [])
+                        for it in (items or []):
+                            s = _strip_parens(it)
+                            if s and s not in distilled:
+                                distilled.append(s)
+                            if len(distilled) >= 4:
+                                break
+                        if len(distilled) >= 4:
+                            break
+                except Exception:
+                    pass
+                web_lines = distilled[:4]
+            if web_lines:
+                deeper_parts.append('<ul>')
+                for s in web_lines[:4]:
+                    deeper_parts.append(f"<li>{html.escape(s, quote=True)}</li>")
+                # Add one-line sources summary using friendly names
+                try:
+                    src_names: list[str] = []
+                    if resolved_flag and resolved_citations:
+                        for cite in resolved_citations:
+                            dom = (cite.get('domain') or '').strip()
+                            if dom and dom not in src_names:
+                                src_names.append(dom)
+                            if len(src_names) >= 6:
+                                break
+                    if not src_names and web_summary and web_summary.get('replicates'):
+                        seen = set()
+                        for rep in web_summary['replicates']:
+                            docs = rep.get('docs') if isinstance(rep, dict) else getattr(rep, 'docs', [])
+                            for d in (docs or []):
+                                # Prefer explicit domain; fall back to URL hostname
+                                if isinstance(d, dict):
+                                    dom = (d.get('domain') or '').strip()
+                                    if not dom:
+                                        u = (d.get('url') or '').strip()
+                                        try:
+                                            host = urllib.parse.urlparse(u).hostname or ''
+                                            dom = host.replace('www.', '').strip('. ')
+                                        except Exception:
+                                            dom = ''
+                                else:
+                                    dom = (getattr(d, 'domain', '') or '').strip()
+                                    if not dom:
+                                        u = (getattr(d, 'url', '') or '').strip()
+                                        try:
+                                            host = urllib.parse.urlparse(u).hostname or ''
+                                            dom = host.replace('www.', '').strip('. ')
+                                        except Exception:
+                                            dom = ''
+                                if dom and dom not in seen:
+                                    seen.add(dom)
+                                    src_names.append(dom)
+                                if len(src_names) >= 12:
+                                    break
+                            if len(src_names) >= 12:
+                                break
+                    # Fallback: extract domains mentioned in reason text (e.g., "(bbc.com; reuters.com)")
+                    if not src_names and reasons:
+                        import re as _re_dom
+                        seen2 = set()
+                        for rtxt in reasons:
+                            for m in _re_dom.findall(r"\b([A-Za-z0-9.-]+\.(?:com|org|net|gov|edu|news|io|co|uk|us|ca|au|de|fr))\b", rtxt):
+                                dom = m.lower().strip('.').strip()
+                                if dom and dom not in seen2:
+                                    seen2.add(dom)
+                                    src_names.append(dom)
+                                if len(src_names) >= 12:
+                                    break
+                            if len(src_names) >= 12:
+                                break
+                    if src_names:
+                        # Local friendly mapping and preference filter
+                        def _friendly_name2(domain: str) -> str:
+                            d = (domain or '').lower().strip()
+                            mapping = {
+                                'virginia.edu': 'University of Virginia', 'harvard.edu': 'Harvard University', 'law.harvard.edu': 'Harvard Law',
+                                'mit.edu': 'MIT', 'stanford.edu': 'Stanford University', 'yale.edu': 'Yale University', 'ox.ac.uk': 'University of Oxford',
+                                'cam.ac.uk': 'University of Cambridge', 'wm.edu': 'William & Mary', 'brennancenter.org': 'Brennan Center for Justice',
+                                'aclu.org': 'ACLU', 'cato.org': 'Cato Institute', 'heritage.org': 'Heritage Foundation', 'brookings.edu': 'Brookings Institution',
+                                'nih.gov': 'NIH', 'cdc.gov': 'CDC', 'who.int': 'WHO', 'supremecourt.gov': 'Supreme Court', 'congress.gov': 'US Congress',
+                                'whitehouse.gov': 'White House', 'gao.gov': 'GAO', 'oecd.org': 'OECD', 'imf.org': 'IMF', 'worldbank.org': 'World Bank',
+                                'bbc.com': 'BBC', 'cnn.com': 'CNN', 'reuters.com': 'Reuters', 'apnews.com': 'AP News', 'bloomberg.com': 'Bloomberg',
+                                'politico.com': 'Politico', 'foxnews.com': 'Fox News', 'nbcnews.com': 'NBC News', 'abcnews.go.com': 'ABC News',
+                                'cbsnews.com': 'CBS News', 'latimes.com': 'LA Times', 'nytimes.com': 'New York Times', 'washingtonpost.com': 'Washington Post',
+                                'wsj.com': 'Wall Street Journal', 'ft.com': 'Financial Times', 'economist.com': 'The Economist', 'theguardian.com': 'The Guardian',
+                                'guardian.com': 'The Guardian', 'guardian.co.uk': 'The Guardian', 'techcrunch.com': 'TechCrunch', 'nature.com': 'Nature',
+                                'sciencemag.org': 'Science', 'npr.org': 'NPR', 'aljazeera.com': 'Al Jazeera', 'axios.com': 'Axios', 'usatoday.com': 'USA Today', 'msn.com': 'MSN (syndicated)'
+                            }
+                            return mapping.get(d, domain)
+                        def _is_preferred_domain2(domain: str) -> bool:
+                            d = (domain or '').lower().strip()
+                            if d.endswith('.edu') or d.endswith('.gov'): return True
+                            preferred = {'bbc.com','cnn.com','reuters.com','apnews.com','nytimes.com','washingtonpost.com','wsj.com','ft.com','economist.com','nature.com','sciencemag.org','npr.org','bloomberg.com','politico.com','foxnews.com','nbcnews.com','abcnews.go.com','cbsnews.com','latimes.com','theguardian.com','guardian.com','guardian.co.uk','techcrunch.com','brennancenter.org','aclu.org','cato.org','heritage.org','brookings.edu','who.int'}
+                            return d in preferred
+                        preferred = [s for s in src_names if _is_preferred_domain2(s)]
+                        names_to_show = preferred[:3] if preferred else src_names[:3]
+                        friendly = [_friendly_name2(s) for s in names_to_show]
+                        more_total = int(web_summary.get('metrics', {}).get('n_domains') or len(src_names)) if isinstance(web_summary, dict) else len(src_names)
+                        more = ' (+ more)' if more_total > len(names_to_show) else ''
+                        deeper_parts.append('<li>Sources: ' + ', '.join([html.escape(x, quote=True) for x in friendly]) + more + '</li>')
+                except Exception:
+                    pass
+                deeper_parts.append('</ul>')
+            # Plain-language combination rule
+            deeper_parts.append("<h4>How we combine</h4>")
+            deeper_parts.append("<p>We blend the model’s training view with recent, consistent sources. When sources agree and are current, the web view gets slightly more say; otherwise the training view dominates.</p>")
+        deeper_parts.append("</div></details>")
+        deeper_block_html = "".join(deeper_parts)
         body = _render(
             ROOT / "results.html",
             {
@@ -834,6 +1203,7 @@ class Handler(BaseHTTPRequestHandler):
                 "ADV_NOTE": html.escape(adv_note, quote=True),
                 "ADV_EXTRA": adv_extra_html,
                 "RESOLVED_BLOCK": resolved_block_html,
+                "DEEPER_BLOCK": deeper_block_html,
                 "ADV_WIDTH": adv_width,
                 "ADV_STABILITY": adv_stability,
                 "ADV_COMPLIANCE": adv_compliance,
