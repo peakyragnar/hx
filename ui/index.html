@@ -256,8 +256,15 @@
       <div class="result-explainer hidden" id="result-explainer">
         <h3 id="result-verdict">—</h3>
         <p id="result-interpretation-detail"></p>
+        <!-- Simple view lines: model prior, web estimate, sources -->
+        <ul id="result-simple-lines" class="simple-lines"></ul>
+        <!-- Keep legacy reasons list hidden for concise simple view; deeper panel will include details -->
         <ul id="result-reasons" class="hidden"></ul>
       </div>
+      <details class="result-deeper" id="result-deeper">
+        <summary>Deeper explanation</summary>
+        <div id="result-deeper-body"></div>
+      </details>
       <details class="result-advanced">
         <summary>Advanced details</summary>
         <div class="advanced-grid">
@@ -455,6 +462,9 @@
       var resultInterpretationMain = document.getElementById('result-interpretation-main');
       var resultInterpretationDetail = document.getElementById('result-interpretation-detail');
       var resultReasons = document.getElementById('result-reasons');
+      var resultSimpleLines = document.getElementById('result-simple-lines');
+      var resultDeeper = document.getElementById('result-deeper');
+      var resultDeeperBody = document.getElementById('result-deeper-body');
       var loadingOverlay = document.getElementById('loading-overlay');
       var loadingClaim = document.getElementById('loading-claim');
       var loadingHeadline = document.getElementById('loading-headline');
@@ -655,7 +665,10 @@
         var welReplicates = Array.isArray(data.wel_replicates) ? data.wel_replicates : [];
         var webBlock = data.web && typeof data.web === 'object' ? data.web : null;
         var weightsBlock = data.weights && typeof data.weights === 'object' ? data.weights : {};
-        if (apiReasons.length) {
+        var resolvedFlag = Boolean(isWebMode && webBlock && webBlock.resolved);
+        if (resolvedFlag) {
+          reasonList = [];
+        } else if (apiReasons.length) {
           reasonList = apiReasons;
         } else {
           var collected = [];
@@ -722,26 +735,185 @@
           reasonList = collected.length ? collected : buildReasons(probValue);
         }
 
-        if (resultExplainer && resultVerdict) {
-          resultVerdict.textContent = headline;
+        // Simple/deeper presentation
+        if (!resolvedFlag && resultExplainer && resultVerdict) {
+          // Mode-aware headline
+          var simpleHeadline = isWebMode ? 'Why the web‑informed verdict looks this way' : 'Why the model‑only verdict looks this way';
+          resultVerdict.textContent = simpleHeadline;
+
+          // Simple "why" sentence: prefer first reason from collected web bullets if available
+          var simpleWhy = '';
+          if (isWebMode && Array.isArray(reasonList) && reasonList.length) {
+            simpleWhy = reasonList[0];
+          } else if (typeof interpretation === 'string' && interpretation) {
+            simpleWhy = interpretation;
+          } else if (verdictInfo && verdictInfo.text) {
+            simpleWhy = verdictInfo.text;
+          }
           if (resultInterpretationDetail) {
-            resultInterpretationDetail.textContent = interpretation;
+            resultInterpretationDetail.textContent = simpleWhy;
           }
 
-          if (resultReasons) {
-            resultReasons.innerHTML = '';
-            if (reasonList.length) {
-              reasonList.forEach(function(line){
+          // Build simple lines: prefer backend-provided simple_expl
+          if (resultSimpleLines) {
+            resultSimpleLines.innerHTML = '';
+            var simpleExpl = data.simple_expl;
+            if (simpleExpl && Array.isArray(simpleExpl.lines) && simpleExpl.lines.length) {
+              var lines = simpleExpl.lines.slice(0, 3);
+              if (typeof simpleExpl.summary === 'string' && simpleExpl.summary) {
+                lines.push(simpleExpl.summary);
+              }
+              for (var i = 0; i < lines.length && i < 4; i++) {
                 var li = document.createElement('li');
-                li.textContent = line;
-                resultReasons.appendChild(li);
-              });
-              resultReasons.classList.remove('hidden');
+                li.textContent = String(lines[i] || '');
+                resultSimpleLines.appendChild(li);
+              }
             } else {
-              resultReasons.classList.add('hidden');
+            function sanitizeReason(s) {
+              if (typeof s !== 'string') return '';
+              var t = s.trim();
+              t = t.replace(/^\s*(?:[A-Za-z0-9.-]+\.(?:com|org|net|gov|edu|news|io|co|uk|us|ca|au|de|fr))\s*[:—-]\s*/i, '');
+              // strip leading BrandName: (with colon)
+              t = t.replace(/^\s*[A-Z][\w&-]*(?:\s+[A-Z][\w&-]*){0,3}\s*:\s*/i, '');
+              t = t.replace(/\s*\([^)]*\b(?:com|org|net|gov|edu|news|io|co|uk|us|ca|au|de|fr)\b[^)]*\)\s*$/i, '');
+              t = t.replace(/\s*\[[^\]]*\b(?:com|org|net|gov|edu|news|io|co|uk|us|ca|au|de|fr)\b[^\]]*\]\s*$/i, '');
+              // Strip leading brand names before reporting verbs
+              t = t.replace(/^\s*[A-Z][\w&-]*(?:\s+[A-Z][\w&-]*){0,3}\s+(?:states|reports|says|announces|notes|claims|plans|projects)\b[:,]?\s*/i, '');
+              // Soften heavy numerics
+              t = t.replace(/\b(\d{3,}|\d+\.?\d*%|\$\d[\d,]*)\b/g, 'initial capacity');
+              if (!t) return '';
+              return /[.!?]$/.test(t) ? t : (t + '.');
+            }
+            var lines = [];
+            // Compose narrative for web mode
+            if (isWebMode && welReplicates && welReplicates.length) {
+              // Parse basic target (year, percent) from claim
+              var yearMatch = (data.claim || '').match(/(20\d{2})/);
+              var pctMatch = (data.claim || '').match(/(\d{1,3})\s?%/);
+              var yearTxt = yearMatch ? yearMatch[1] : null;
+              var pctTxt = pctMatch ? pctMatch[1] : null;
+              var claimLow = (data.claim || '').toLowerCase();
+              if (claimLow.includes('ban')) {
+                lines.push('A ban would require formal approval by the owners at a rules meeting' + (yearTxt ? (' in ' + yearTxt) : '') + '.');
+              } else if ((claimLow.includes('source') || claimLow.includes('domestic')) && pctTxt) {
+                lines.push((yearTxt ? ('Reaching ' + pctTxt + '% by ' + yearTxt) : ('Meeting a ' + pctTxt + '% threshold')) + ' would need rapid build‑out of extraction, processing and magnet capacity.');
+              } else if (claimLow.includes('market cap') || claimLow.includes('market capitalization') || claimLow.includes('trillion')) {
+                lines.push((yearTxt ? ('Hitting that milestone by ' + yearTxt) : 'Reaching that milestone') + ' depends on earnings and broader market conditions.');
+              } else {
+                // no generic filler sentence
+              }
+
+              // Gather signals from support bullets
+              var timeline = null, capacity = null, dependency = null, policy = null;
+              for (var r = 0; r < welReplicates.length; r++) {
+                var rep = welReplicates[r] || {};
+                var items = Array.isArray(rep.support_bullets) ? rep.support_bullets : [];
+                for (var k = 0; k < items.length; k++) {
+                  var s0 = sanitizeReason(items[k]);
+                  var low = s0.toLowerCase();
+                  if (!timeline && /(early|late|by\s+20\d{2}|next year|this year|startup|begin)/.test(low)) { timeline = s0; continue; }
+                  if (!capacity && /(production|processing|refining|magnet|output|capacity|plant|factory|mill)/.test(low)) { capacity = s0; continue; }
+                  if (!dependency && /(import|depend|reliance|supply chain|bottleneck|intermediate)/.test(low)) { dependency = s0; continue; }
+                  if (!policy && /(funding|policy|act|bill|incentive|approval|permitting)/.test(low)) { policy = s0; continue; }
+                  if (!crossed && /(crossed|surpassed|joined|reached)/.test(low)) { var crossed = s0; continue; }
+                }
+              }
+              if (capacity && timeline) {
+                lines.push('Recent reporting points to projects starting around ' + (yearTxt || 'this period') + ' with ' + capacity.toLowerCase());
+              } else if (capacity) {
+                lines.push(capacity);
+              } else if (timeline) {
+                lines.push(timeline);
+              }
+              if (dependency) {
+                lines.push(dependency);
+              } else if (policy) {
+                lines.push('Policy support exists, but build‑out typically lags approvals.');
+              } else if (crossed) {
+                lines.push('Recent reporting notes the milestone has already been reached at times, showing it is attainable.');
+              }
+            }
+            // Keep at most 3 content lines, then add summary last
+            if (lines.length > 3) lines = lines.slice(0, 3);
+            lines.push('Taken together, these points suggest the claim is ' + verdictLabel.toLowerCase() + '.');
+            // Render up to 4
+            for (var i = 0; i < lines.length && i < 4; i++) {
+              var li = document.createElement('li');
+              li.textContent = lines[i];
+              resultSimpleLines.appendChild(li);
+            }
             }
           }
+
+          // Hide legacy reasons in simple view
+          if (resultReasons) {
+            resultReasons.innerHTML = '';
+            resultReasons.classList.add('hidden');
+          }
+
+          // Deeper explanation panel
+          if (resultDeeperBody) {
+            var esc = function(s){ return String(s == null ? '' : s); };
+            var htmlParts = [];
+            // Training-only block
+            htmlParts.push('<h4>Training‑only (model prior)</h4>');
+            htmlParts.push('<p>Prior: ' + (priorProb !== null ? formatPercent(priorProb) : '--') + '</p>');
+            var priorReasons = buildReasons(priorProb);
+            if (Array.isArray(priorReasons) && priorReasons.length) {
+              htmlParts.push('<ul>');
+              priorReasons.slice(0,3).forEach(function(r){ htmlParts.push('<li>' + esc(r) + '</li>'); });
+              htmlParts.push('</ul>');
+            }
+            // Web evidence block (only if web mode)
+            if (isWebMode) {
+              var webProbVal = (webBlock && typeof webBlock.p === 'number') ? webBlock.p : null;
+              htmlParts.push('<h4>Web evidence (recent)</h4>');
+              htmlParts.push('<p>Web estimate: ' + (webProbVal !== null ? formatPercent(webProbVal) : '--') + '</p>');
+              var webBullets = [];
+              if (welReplicates && welReplicates.length) {
+                for (var i = 0; i < welReplicates.length; i++) {
+                  var repx = welReplicates[i] || {};
+                  if (Array.isArray(repx.support_bullets)) {
+                    webBullets = repx.support_bullets.filter(function(x){ return typeof x === 'string' && x.trim(); });
+                    if (webBullets.length) break;
+                  }
+                }
+              }
+              if (webBullets.length) {
+                htmlParts.push('<ul>');
+                webBullets.slice(0,3).forEach(function(b){ htmlParts.push('<li>' + esc(b) + '</li>'); });
+                htmlParts.push('</ul>');
+              }
+              var metrics2 = webBlock && webBlock.evidence ? webBlock.evidence : {};
+              var nDocs2 = Number(metrics2 && metrics2.n_docs || 0);
+              var nDomains2 = Number(metrics2 && metrics2.n_domains || 0);
+              var medAge = metrics2 && typeof metrics2.median_age_days === 'number' ? metrics2.median_age_days : null;
+              var metaBits = [];
+              if (nDocs2 || nDomains2) metaBits.push(nDocs2 + ' docs / ' + nDomains2 + ' domains');
+              if (medAge === medAge && medAge !== null) metaBits.push('median age ~' + Math.round(medAge) + ' days');
+              if (metaBits.length) htmlParts.push('<p class="note">' + esc(metaBits.join(' · ')) + '</p>');
+
+              var w = (weightsBlock && typeof weightsBlock.w_web === 'number') ? weightsBlock.w_web : null;
+              if (w !== null && priorProb !== null && (webProbVal !== null || combinedProb !== null)) {
+                var webShown = webProbVal !== null ? webProbVal : combinedProb;
+                htmlParts.push('<h4>How we combine</h4>');
+                htmlParts.push('<p>Weight ' + w.toFixed(2) + ' → ' + ( (1 - w).toFixed(2) ) + '×' + formatPercent(priorProb) + ' + ' + w.toFixed(2) + '×' + formatPercent(webShown) + '.</p>');
+              }
+            }
+            resultDeeperBody.innerHTML = htmlParts.join('\n');
+          }
+
           resultExplainer.classList.remove('hidden');
+          if (resultDeeper) { resultDeeper.classList.remove('hidden'); }
+        }
+
+        // If resolved, suppress explainer/simple/deeper blocks entirely
+        if (resolvedFlag) {
+          if (resultExplainer) resultExplainer.classList.add('hidden');
+          if (resultReasons) { resultReasons.innerHTML=''; resultReasons.classList.add('hidden'); }
+          if (resultSimpleLines) { resultSimpleLines.innerHTML=''; }
+          if (resultDeeper) { resultDeeper.classList.add('hidden'); }
+          if (resultDeeperBody) { resultDeeperBody.innerHTML=''; }
         }
 
         if (resultCopyButton) {
