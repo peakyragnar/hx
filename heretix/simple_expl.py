@@ -40,13 +40,19 @@ def compose_simple_expl(
     year_txt = year_m.group(1) if year_m else None
     pct_txt = pct_m.group(1) if pct_m else None
 
+    used_bullets = set()  # Track (rep_idx, item_idx) pairs to avoid repeats
+
     def grab(regex: str) -> Optional[str]:
         pat = re.compile(regex, re.IGNORECASE)
-        for rep in (replicates or []):
+        for rep_idx, rep in enumerate(replicates or []):
             items = rep.get("support_bullets") or []
-            for it in items:
+            for item_idx, it in enumerate(items):
+                key = (rep_idx, item_idx)
+                if key in used_bullets:
+                    continue
                 s = _sanitize(str(it))
                 if pat.search(s):
+                    used_bullets.add(key)
                     return s
         return None
 
@@ -99,9 +105,13 @@ def compose_simple_expl(
                 "Reports describe higher connection and upgrade costs tied to data center hookups, often passed through to ratepayers under current rules."
             )
     else:
-        any_line = grab(r".")
-        if any_line:
-            lines.append(any_line)
+        # Grab up to 3 distinct lines for generic claims
+        for _ in range(3):
+            line = grab(r".")
+            if line:
+                lines.append(line)
+            else:
+                break
 
     # Cap to 3 content lines
     if len(lines) > 3:
