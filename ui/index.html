@@ -749,9 +749,21 @@
             resultInterpretationDetail.textContent = simpleWhy;
           }
 
-          // Build simple lines: 3–4 plain, connected sentences (no domains, no numbers)
+          // Build simple lines: prefer backend-provided simple_expl
           if (resultSimpleLines) {
             resultSimpleLines.innerHTML = '';
+            var simpleExpl = data.simple_expl;
+            if (simpleExpl && Array.isArray(simpleExpl.lines) && simpleExpl.lines.length) {
+              var lines = simpleExpl.lines.slice(0, 3);
+              if (typeof simpleExpl.summary === 'string' && simpleExpl.summary) {
+                lines.push(simpleExpl.summary);
+              }
+              for (var i = 0; i < lines.length && i < 4; i++) {
+                var li = document.createElement('li');
+                li.textContent = String(lines[i] || '');
+                resultSimpleLines.appendChild(li);
+              }
+            } else {
             function sanitizeReason(s) {
               if (typeof s !== 'string') return '';
               var t = s.trim();
@@ -824,6 +836,7 @@
               var li = document.createElement('li');
               li.textContent = lines[i];
               resultSimpleLines.appendChild(li);
+            }
             }
           }
 
