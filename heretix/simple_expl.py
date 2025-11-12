@@ -139,6 +139,86 @@ def compose_simple_expl(
     }
 
 
+STOPWORDS = {
+    "the",
+    "a",
+    "an",
+    "and",
+    "or",
+    "but",
+    "with",
+    "into",
+    "onto",
+    "from",
+    "about",
+    "this",
+    "that",
+    "these",
+    "those",
+    "will",
+    "would",
+    "could",
+    "should",
+    "for",
+    "of",
+    "to",
+    "by",
+    "on",
+    "in",
+    "at",
+    "as",
+    "is",
+    "are",
+    "be",
+    "been",
+    "being",
+    "it",
+    "its",
+    "their",
+    "there",
+    "over",
+    "under",
+    "after",
+    "before",
+    "than",
+    "per",
+    "across",
+    "around",
+    "through",
+    "once",
+}
+
+
+def _extract_keywords(text: str, max_terms: int = 3) -> List[str]:
+    if not text:
+        return []
+    words = re.findall(r"[A-Za-z][A-Za-z'\\-]+", text.lower())
+    filtered: List[str] = []
+    seen = set()
+    for word in words:
+        if word in STOPWORDS:
+            continue
+        if len(word) < 4:
+            continue
+        if word in seen:
+            continue
+        seen.add(word)
+        filtered.append(word)
+        if len(filtered) >= max_terms:
+            break
+    return filtered
+
+
+def _format_topic(words: List[str]) -> str:
+    if not words:
+        return "this topic"
+    if len(words) == 1:
+        return words[0]
+    if len(words) == 2:
+        return f"{words[0]} and {words[1]}"
+    return f"{words[0]}, {words[1]}, and {words[2]}"
+
+
 def compose_baseline_simple_expl(
     *,
     claim: str,
@@ -161,6 +241,9 @@ def compose_baseline_simple_expl(
         for line in lines:
             if line and line not in pattern_lines:
                 pattern_lines.append(line)
+
+    keywords = _extract_keywords(claim)
+    topic_phrase = _format_topic(keywords)
 
     if "ban" in claim_low or "banned" in claim_low:
         add(
@@ -215,10 +298,30 @@ def compose_baseline_simple_expl(
             "Without archival data, priors view sweeping percentage assertions as more rhetorical than factual.",
         )
 
-    verdict = (
-        "likely true" if prior_p >= 0.60 else ("likely false" if prior_p <= 0.40 else "uncertain")
-    )
+    verdict = "likely true" if prior_p >= 0.60 else ("likely false" if prior_p <= 0.40 else "uncertain")
     lines: List[str] = pattern_lines[:3]
+
+    def _generic_lines(direction: str) -> List[str]:
+        if direction == "likely true":
+            return [
+                f"Training data references {topic_phrase} and usually reports outcomes consistent with the claim.",
+                "Historical summaries in the corpus mention similar incentives and mechanisms, so GPT‑5 leans toward it being accurate.",
+                "Counterexamples exist, but they are outweighed by supporting accounts in its prior knowledge.",
+            ]
+        if direction == "likely false":
+            return [
+                f"Many references to {topic_phrase} describe scenarios where the claim breaks down or stays limited.",
+                "Definitions, precedent, and expert commentary in the corpus nudge GPT‑5 toward skepticism.",
+                "Supporting anecdotes appear, but contradictory evidence dominates the material it has seen.",
+            ]
+        return [
+            f"Examples about {topic_phrase} split between success and failure in GPT‑5’s training data.",
+            "Outcomes hinge on missing details or context, so the model keeps the prior near the middle.",
+            "Supporting and opposing references appear in roughly equal measure, preventing a decisive verdict.",
+        ]
+
+    if not lines:
+        lines.extend(_generic_lines(verdict)[:3])
 
     ci_lo_raw = prior_ci[0] if prior_ci and prior_ci[0] is not None else None
     ci_hi_raw = prior_ci[1] if prior_ci and prior_ci[1] is not None else None
