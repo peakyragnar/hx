@@ -16,6 +16,12 @@ from heretix.db.models import Check
 from heretix_api.routes_checks import evaluate_web_informed
 import hashlib
 from heretix.artifacts import ArtifactRecord, get_artifact_store, write_web_artifact
+from heretix.simple_expl import (
+    compose_baseline_simple_expl,
+    compose_deeper_expl,
+    compose_simple_expl,
+    summarize_evidence,
+)
 
 
 def _model_label(model: str | None) -> str:
@@ -63,6 +69,7 @@ class PipelineArtifacts:
     artifact_replicates_uri: Optional[str] = None
     artifact_docs_uri: Optional[str] = None
     simple_expl: Optional[Dict[str, Any]] = None
+    deeper_expl: Optional[Dict[str, Any]] = None
 
 
 logger = logging.getLogger(__name__)
@@ -97,6 +104,7 @@ def perform_run(
     Execute a single run (RPL baseline plus optional WEL) and persist results into `checks`.
     """
     prompt_file = resolve_prompt_file(cfg, options)
+    model_label = _model_label(cfg.model)
     result = run_single_version(cfg, prompt_file=str(prompt_file), mock=use_mock)
 
     aggregation = result.get("aggregation", {})
@@ -366,30 +374,40 @@ def perform_run(
         _assign(check, check_updates, "artifact_json_path", artifact_record.manifest_uri)
 
     normalized_reps = [_normalize_replica(rep) for rep in raw_replicates]
+    evidence_summary = summarize_evidence(normalized_reps) if normalized_reps else None
 
     # Backend-owned Simple View explanation
     simple_expl: Optional[Dict[str, Any]] = None
+    deeper_expl: Optional[Dict[str, Any]] = None
     if mode == "web_informed" and combined_block_payload is not None and (
         sanitized_web_block is not None or normalized_reps
     ):
         try:
-            from heretix.simple_expl import compose_simple_expl
-
             simple_expl = compose_simple_expl(
                 claim=cfg.claim or "",
                 combined_p=float(combined_block_payload.get("p", prior_p)),
                 web_block=sanitized_web_block,
                 replicates=normalized_reps,
                 prior_block=prior_block_payload,
-                model_label=_model_label(cfg.model),
+                model_label=model_label,
+                evidence_summary=evidence_summary,
+            )
+            deeper_expl = compose_deeper_expl(
+                claim=cfg.claim or "",
+                prior_block=prior_block_payload,
+                web_block=sanitized_web_block,
+                combined_p=float(combined_block_payload.get("p", prior_p)),
+                replicates=normalized_reps,
+                weights=weights_payload,
+                model_label=model_label,
+                evidence_summary=evidence_summary,
             )
         except Exception:  # pragma: no cover
             logger.exception("Failed to compose Simple View for run %s", run_id)
             simple_expl = None
+            deeper_expl = None
     elif mode == "baseline":
         try:
-            from heretix.simple_expl import compose_baseline_simple_expl
-
             simple_expl = compose_baseline_simple_expl(
                 claim=cfg.claim or "",
                 prior_p=prior_p,
@@ -397,7 +415,7 @@ def perform_run(
                 stability_score=stability_score,
                 template_count=sampling.get("T") or aggregation.get("n_templates"),
                 imbalance_ratio=aggregation.get("imbalance_ratio"),
-                model_label=_model_label(cfg.model),
+                model_label=model_label,
             )
         except Exception:  # pragma: no cover
             logger.exception("Failed to compose baseline Simple View for run %s", run_id)
@@ -418,6 +436,7 @@ def perform_run(
         artifact_replicates_uri=artifact_record.verdicts_uri if artifact_record else None,
         artifact_docs_uri=artifact_record.docs_uri if artifact_record else None,
         simple_expl=simple_expl,
+        deeper_expl=deeper_expl,
     )
 
 

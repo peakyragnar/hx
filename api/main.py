@@ -312,6 +312,7 @@ def run_check(
         wel_replicates=artifacts.wel_replicates or None,
         wel_debug_votes=artifacts.wel_debug_votes or None,
         simple_expl=artifacts.simple_expl or None,
+        deeper_expl=artifacts.deeper_expl or None,
     )
 @app.post(
     "/api/auth/magic-links",

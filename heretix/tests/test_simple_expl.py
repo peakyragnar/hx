@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from heretix.simple_expl import compose_simple_expl, compose_baseline_simple_expl, _sanitize
+from heretix.simple_expl import compose_simple_expl, compose_baseline_simple_expl, compose_deeper_expl, _sanitize
 
 
 class TestSanitize:
@@ -70,234 +70,89 @@ class TestSanitize:
 
 
 class TestComposeSimpleExpl:
-    """Test the compose_simple_expl function for generating explanations."""
+    """Tests for the narrative Simple View composer."""
 
-    def test_generic_claim_with_replicates(self):
-        """Generic claim should extract up to 3 distinct lines."""
+    def test_infrastructure_claim_blends_bar_and_evidence(self):
         replicates = [
             {
                 "support_bullets": [
-                    "First piece of evidence.",
-                    "Second piece of evidence.",
-                    "Third piece of evidence.",
-                ]
-            },
-            {
-                "support_bullets": [
-                    "Fourth piece of evidence.",
-                    "Fifth piece of evidence.",
-                ]
-            },
+                    "Construction contracts were awarded in March.",
+                    "Transmission upgrades break ground this summer.",
+                ],
+                "oppose_bullets": [
+                    "Permits are still pending at the federal level.",
+                ],
+                "notes": [
+                    "State officials warned about grid constraints next year.",
+                ],
+            }
         ]
         result = compose_simple_expl(
-            claim="The company will expand operations",
-            combined_p=0.55,
-            web_block=None,
-            replicates=replicates,
-        )
-
-        assert result["title"] == "Why the web‑informed verdict looks this way"
-        assert isinstance(result["lines"], list)
-        assert 1 <= len(result["lines"]) <= 3
-        assert result["summary"] == "Taken together, these points suggest the claim is uncertain."
-        # Should get 3 distinct lines
-        assert len(result["lines"]) == 3
-        assert result["lines"][0] == "First piece of evidence."
-        assert result["lines"][1] == "Second piece of evidence."
-        assert result["lines"][2] == "Third piece of evidence."
-
-    def test_generic_claim_fewer_than_3_bullets(self):
-        """Should handle when fewer than 3 bullets available."""
-        replicates = [
-            {
-                "support_bullets": [
-                    "Only one piece of evidence.",
-                ]
-            },
-        ]
-        result = compose_simple_expl(
-            claim="Some claim",
-            combined_p=0.5,
-            web_block=None,
-            replicates=replicates,
-        )
-
-        assert len(result["lines"]) == 1
-        assert result["lines"][0] == "Only one piece of evidence."
-
-    def test_ban_claim_pattern(self):
-        """Ban claims should use pattern-aware narrative."""
-        replicates = [
-            {
-                "support_bullets": [
-                    "Proposal was delayed at the meeting.",
-                ]
-            },
-        ]
-        result = compose_simple_expl(
-            claim="The NFL will ban guardian caps in 2025",
-            combined_p=0.25,
-            web_block=None,
+            claim="The US will build 10 new nuclear power plants in 2025",
+            combined_p=0.2,
+            web_block={},
             replicates=replicates,
         )
 
         assert len(result["lines"]) == 3
-        assert "ban would require formal approval" in result["lines"][0]
-        assert "in 2025" in result["lines"][0]
-        assert "Recent reporting points to debate" in result["lines"][1]
-        assert "Earlier proposals were discussed or tabled" in result["lines"][2]
-        assert result["summary"] == "Taken together, these points suggest the claim is likely false."
-
-    def test_domestic_percent_claim_pattern(self):
-        """Domestic % claims should use pattern-aware narrative."""
-        replicates = [
-            {
-                "support_bullets": [
-                    "Production capacity is limited.",
-                    "Import dependency remains high.",
-                ]
-            },
-        ]
-        result = compose_simple_expl(
-            claim="The US will source 50% of rare earth elements domestically by 2026",
-            combined_p=0.35,
-            web_block=None,
-            replicates=replicates,
-        )
-
-        assert len(result["lines"]) == 3
-        assert "Reaching 50% by 2026" in result["lines"][0]
-        assert "Production capacity is limited" in result["lines"][1]
-        assert "Import dependency remains high" in result["lines"][2]
-
-    def test_market_cap_claim_pattern(self):
-        """Market cap claims should use pattern-aware narrative."""
-        replicates = [
-            {
-                "support_bullets": [
-                    "Company crossed the milestone recently.",
-                    "Sustaining growth depends on margins.",
-                ]
-            },
-        ]
-        result = compose_simple_expl(
-            claim="Apple will reach $4 trillion market cap by 2025",
-            combined_p=0.65,
-            web_block=None,
-            replicates=replicates,
-        )
-
-        assert len(result["lines"]) == 3
-        assert "Hitting that milestone by 2025" in result["lines"][0]
-        # The pattern produces a standard message when it finds "crossed" in bullets
-        assert "milestone has already been reached" in result["lines"][1]
-        assert "Sustaining" in result["lines"][2]
-
-    def test_datacenter_electricity_claim_pattern(self):
-        """Datacenter electricity claims should use pattern-aware narrative."""
-        replicates = [
-            {
-                "support_bullets": [
-                    "Capacity price auctions show increases.",
-                    "Interconnection costs are rising.",
-                ]
-            },
-        ]
-        result = compose_simple_expl(
-            claim="Data center electricity demand will raise power bills",
-            combined_p=0.7,
-            web_block=None,
-            replicates=replicates,
-        )
-
-        assert len(result["lines"]) == 3
-        assert "data center build‑outs" in result["lines"][0]
-        assert "capacity price" in result["lines"][1].lower()
-        assert "connection" in result["lines"][2].lower()
-
-    def test_verdict_tie_in_likely_true(self):
-        """Should produce 'likely true' verdict for p >= 0.6."""
-        result = compose_simple_expl(
-            claim="Test claim",
-            combined_p=0.75,
-            web_block=None,
-            replicates=[],
-        )
-        assert "likely true" in result["summary"]
-
-    def test_verdict_tie_in_likely_false(self):
-        """Should produce 'likely false' verdict for p <= 0.4."""
-        result = compose_simple_expl(
-            claim="Test claim",
-            combined_p=0.25,
-            web_block=None,
-            replicates=[],
-        )
+        assert "would need permits" in result["lines"][0]
+        assert "grid constraints" in result["lines"][1]
+        assert "Construction contracts" in result["lines"][2]
         assert "likely false" in result["summary"]
 
-    def test_verdict_tie_in_uncertain(self):
-        """Should produce 'uncertain' verdict for 0.4 < p < 0.6."""
-        result = compose_simple_expl(
-            claim="Test claim",
-            combined_p=0.5,
-            web_block=None,
-            replicates=[],
-        )
-        assert "uncertain" in result["summary"]
-
-    def test_empty_replicates(self):
-        """Should fallback to generic lines when replicates missing."""
-        result = compose_simple_expl(
-            claim="Test claim",
-            combined_p=0.5,
-            web_block=None,
-            replicates=[],
-        )
-
-        assert result["title"] == "Why the web‑informed verdict looks this way"
-        assert isinstance(result["lines"], list)
-        assert len(result["lines"]) > 0
-        assert result["summary"] == "Taken together, these points suggest the claim is uncertain."
-
-    def test_none_replicates(self):
-        """Should handle None replicates gracefully."""
-        result = compose_simple_expl(
-            claim="Test claim",
-            combined_p=0.5,
-            web_block=None,
-            replicates=None,
-        )
-
-        assert result["title"] == "Why the web‑informed verdict looks this way"
-        assert isinstance(result["lines"], list)
-        assert result["summary"] == "Taken together, these points suggest the claim is uncertain."
-        assert result["lines"], "Expected fallback lines even when replicates are None"
-
-    def test_malformed_replicate_missing_bullets(self):
-        """Should handle replicates without support_bullets key."""
+    def test_progress_signals_surface_when_probability_high(self):
         replicates = [
-            {},  # Missing support_bullets
-            {"support_bullets": ["Valid bullet."]},
+            {
+                "support_bullets": [
+                    "Regulators approved the project last quarter.",
+                    "Construction is 70% complete with new lines going live this summer.",
+                ]
+            }
         ]
         result = compose_simple_expl(
-            claim="Test claim",
-            combined_p=0.5,
-            web_block=None,
+            claim="Company X will open five factories in 2025",
+            combined_p=0.82,
+            web_block={},
             replicates=replicates,
         )
 
-        assert isinstance(result["lines"], list)
-        assert len(result["lines"]) == 1
-        assert result["lines"][0] == "Valid bullet."
+        assert any("approved the project" in line for line in result["lines"])
+        assert any("Construction is 70% complete" in line for line in result["lines"])
+        assert "likely true" in result["summary"]
+
+    def test_obstacles_surface_when_probability_low(self):
+        replicates = [
+            {
+                "support_bullets": ["Developers announced intent to build."],
+                "oppose_bullets": ["No funding has been appropriated."],
+            }
+        ]
+        result = compose_simple_expl(
+            claim="The city will complete 1,000 affordable units in 2024",
+            combined_p=0.25,
+            web_block={},
+            replicates=replicates,
+        )
+
+        assert any("No funding" in line for line in result["lines"])
+        assert "likely false" in result["summary"]
+
+    def test_handles_missing_replicates_with_generic_context(self):
+        result = compose_simple_expl(
+            claim="Generic claim",
+            combined_p=0.5,
+            web_block={},
+            replicates=None,
+        )
+
+        assert len(result["lines"]) == 3
+        assert "Taken together" in result["summary"]
 
     def test_sanitization_applied_to_bullets(self):
-        """Should sanitize bullets during extraction."""
         replicates = [
             {
                 "support_bullets": [
-                    "example.com: Content with domain prefix",
-                    "BrandName: Content with brand prefix",
-                    "Contains $500 dollar amount",
+                    "example.com: BrandName: Contains $500 dollar amount",
                 ]
             },
         ]
@@ -309,25 +164,13 @@ class TestComposeSimpleExpl:
         )
 
         assert len(result["lines"]) == 3
-        assert "example.com" not in result["lines"][0]
-        assert "Content with domain prefix" in result["lines"][0]
-        assert "BrandName" not in result["lines"][1]
-        assert "$500" not in result["lines"][2]
-        assert "a high value" in result["lines"][2]
+        assert all("example.com" not in line for line in result["lines"])
+        assert all("BrandName" not in line for line in result["lines"])
+        assert any("a high value" in line for line in result["lines"])
 
-    def test_caps_lines_to_3_max(self):
-        """Should cap content lines to 3 maximum."""
+    def test_limits_lines_to_three(self):
         replicates = [
-            {
-                "support_bullets": [
-                    "Line 1",
-                    "Line 2",
-                    "Line 3",
-                    "Line 4",
-                    "Line 5",
-                    "Line 6",
-                ]
-            },
+            {"support_bullets": [f"Line {i}" for i in range(1, 10)]}
         ]
         result = compose_simple_expl(
             claim="Generic claim",
@@ -335,42 +178,45 @@ class TestComposeSimpleExpl:
             web_block=None,
             replicates=replicates,
         )
-
-        # Should have exactly 3 content lines (capped)
         assert len(result["lines"]) == 3
 
-    def test_stateful_grab_avoids_duplicates(self):
-        """Should extract distinct bullets, not duplicates."""
+    def test_summary_matches_probability_bucket(self):
+        assert "likely true" in compose_simple_expl("Claim", 0.8, {}, [])["summary"]
+        assert "likely false" in compose_simple_expl("Claim", 0.2, {}, [])["summary"]
+        assert "uncertain" in compose_simple_expl("Claim", 0.5, {}, [])["summary"]
+
+
+class TestComposeDeeperExpl:
+    def test_deeper_payload_shapes(self):
         replicates = [
             {
-                "support_bullets": [
-                    "First unique bullet.",
-                    "Second unique bullet.",
-                    "Third unique bullet.",
-                ]
-            },
+                "support_bullets": ["Construction is underway."],
+                "oppose_bullets": ["Permits still pending."],
+            }
         ]
-        result = compose_simple_expl(
-            claim="Generic claim",
-            combined_p=0.5,
-            web_block=None,
-            replicates=replicates,
-        )
+        prior_block = {"p": 0.3, "ci95": [0.2, 0.4], "stability": 0.5}
+        web_block = {"p": 0.55, "evidence": {"n_docs": 12, "n_domains": 5, "median_age_days": 30}}
+        weights = {"w_web": 0.4, "recency": 0.8, "strength": 0.7}
 
-        # All lines should be unique
-        assert len(result["lines"]) == len(set(result["lines"]))
-
-    def test_web_fallback_includes_model_label(self):
-        """Fallback lines should mention provided model label."""
-        result = compose_simple_expl(
+        result = compose_deeper_expl(
             claim="Claim",
-            combined_p=0.55,
-            web_block={"p": 0.45, "evidence": {"n_docs": 1, "n_domains": 1}},
-            replicates=None,
-            prior_block={"p": 0.6, "ci95": [0.4, 0.7], "stability": 0.2},
-            model_label="Grok 4",
+            prior_block=prior_block,
+            web_block=web_block,
+            combined_p=0.45,
+            replicates=replicates,
+            weights=weights,
+            model_label="GPT-5",
         )
-        assert any("Grok 4" in line for line in result["lines"])
+
+        assert result is not None
+        assert "prior" in result and "web" in result and "blend" in result
+        assert len(result["prior"]["lines"]) > 0
+        assert "Construction is underway." in result["web"]["support_lines"][0]
+        assert "Permits still pending." in result["web"]["contrary_lines"][0]
+        meta = result["web"]["meta"]
+        assert meta["docs"] == 12
+        assert meta["domains"] == 5
+        assert "web evidence" in result["blend"].lower()
 
 
 class TestComposeBaselineSimpleExpl:

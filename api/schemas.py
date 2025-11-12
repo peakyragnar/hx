@@ -113,6 +113,24 @@ class WebArtifactPointer(BaseModel):
     docs_uri: Optional[str] = None
 
 
+class DeeperPriorBlock(BaseModel):
+    p: Optional[float] = None
+    lines: List[str] = Field(default_factory=list)
+
+
+class DeeperWebBlock(BaseModel):
+    p: Optional[float] = None
+    support_lines: List[str] = Field(default_factory=list)
+    contrary_lines: List[str] = Field(default_factory=list)
+    meta: Dict[str, object] = Field(default_factory=dict)
+
+
+class DeeperExplanation(BaseModel):
+    prior: Optional[DeeperPriorBlock] = None
+    web: Optional[DeeperWebBlock] = None
+    blend: Optional[str] = None
+
+
 class RunResponse(BaseModel):
     execution_id: str
     run_id: str
@@ -143,6 +161,7 @@ class RunResponse(BaseModel):
     wel_debug_votes: Optional[List[Dict[str, object]]] = None
     # Backend-provided Simple View explanation block
     simple_expl: Optional[Dict[str, object]] = None
+    deeper_expl: Optional[DeeperExplanation] = None
 
 
 class MagicLinkPayload(BaseModel):

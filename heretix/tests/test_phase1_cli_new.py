@@ -134,6 +134,11 @@ def test_cli_web_mode_emits_simple_expl(tmp_path: Path):
     assert isinstance(simple.get("lines"), list)
     assert simple["lines"], "simple_expl should include at least one line"
     assert isinstance(simple.get("summary"), str) and simple["summary"]
+    deeper = run.get("deeper_expl")
+    assert deeper is not None, "deeper_expl missing from web run"
+    assert deeper.get("prior") and deeper.get("web")
+    assert isinstance(deeper["prior"].get("lines"), list) and deeper["prior"]["lines"]
+    assert isinstance(deeper["web"].get("support_lines"), list)
 
 
 def test_cli_baseline_emits_simple_expl(tmp_path: Path):

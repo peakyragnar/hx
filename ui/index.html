@@ -678,6 +678,7 @@
         }
 
         var simpleExpl = data.simple_expl;
+        var deeperExpl = data.deeper_expl;
         if (resultInterpretationMain) {
           if (simpleExpl && Array.isArray(simpleExpl.lines) && simpleExpl.lines.length) {
             resultInterpretationMain.textContent = '';
@@ -891,49 +892,63 @@
           if (resultDeeperBody) {
             var esc = function(s){ return String(s == null ? '' : s); };
             var htmlParts = [];
-            // Training-only block
-            htmlParts.push('<h4>Training‑only (model prior)</h4>');
-            htmlParts.push('<p>Prior: ' + (priorProb !== null ? formatPercent(priorProb) : '--') + '</p>');
-            var priorReasons = buildReasons(priorProb);
-            if (Array.isArray(priorReasons) && priorReasons.length) {
-              htmlParts.push('<ul>');
-              priorReasons.slice(0,3).forEach(function(r){ htmlParts.push('<li>' + esc(r) + '</li>'); });
-              htmlParts.push('</ul>');
-            }
-            // Web evidence block (only if web mode)
-            if (isWebMode) {
-              var webProbVal = (webBlock && typeof webBlock.p === 'number') ? webBlock.p : null;
-              htmlParts.push('<h4>Web evidence (recent)</h4>');
-              htmlParts.push('<p>Web estimate: ' + (webProbVal !== null ? formatPercent(webProbVal) : '--') + '</p>');
-              var webBullets = [];
-              if (welReplicates && welReplicates.length) {
-                for (var i = 0; i < welReplicates.length; i++) {
-                  var repx = welReplicates[i] || {};
-                  if (Array.isArray(repx.support_bullets)) {
-                    webBullets = repx.support_bullets.filter(function(x){ return typeof x === 'string' && x.trim(); });
-                    if (webBullets.length) break;
-                  }
-                }
+            if (deeperExpl) {
+              var priorBlock = deeperExpl.prior || {};
+              htmlParts.push('<h4>Training‑only (model prior)</h4>');
+              if (typeof priorBlock.p === 'number') {
+                htmlParts.push('<p>Prior: ' + formatPercent(priorBlock.p) + '</p>');
               }
-              if (webBullets.length) {
+              if (Array.isArray(priorBlock.lines) && priorBlock.lines.length) {
                 htmlParts.push('<ul>');
-                webBullets.slice(0,3).forEach(function(b){ htmlParts.push('<li>' + esc(b) + '</li>'); });
+                priorBlock.lines.slice(0,3).forEach(function(line){ htmlParts.push('<li>' + esc(line) + '</li>'); });
                 htmlParts.push('</ul>');
               }
-              var metrics2 = webBlock && webBlock.evidence ? webBlock.evidence : {};
-              var nDocs2 = Number(metrics2 && metrics2.n_docs || 0);
-              var nDomains2 = Number(metrics2 && metrics2.n_domains || 0);
-              var medAge = metrics2 && typeof metrics2.median_age_days === 'number' ? metrics2.median_age_days : null;
-              var metaBits = [];
-              if (nDocs2 || nDomains2) metaBits.push(nDocs2 + ' docs / ' + nDomains2 + ' domains');
-              if (medAge === medAge && medAge !== null) metaBits.push('median age ~' + Math.round(medAge) + ' days');
-              if (metaBits.length) htmlParts.push('<p class="note">' + esc(metaBits.join(' · ')) + '</p>');
-
-              var w = (weightsBlock && typeof weightsBlock.w_web === 'number') ? weightsBlock.w_web : null;
-              if (w !== null && priorProb !== null && (webProbVal !== null || combinedProb !== null)) {
-                var webShown = webProbVal !== null ? webProbVal : combinedProb;
+              if (deeperExpl.web) {
+                var webSection = deeperExpl.web;
+                htmlParts.push('<h4>Web evidence (recent)</h4>');
+                if (typeof webSection.p === 'number') {
+                  htmlParts.push('<p>Web estimate: ' + formatPercent(webSection.p) + '</p>');
+                }
+                if (Array.isArray(webSection.support_lines) && webSection.support_lines.length) {
+                  htmlParts.push('<ul>');
+                  webSection.support_lines.slice(0,3).forEach(function(line){ htmlParts.push('<li>' + esc(line) + '</li>'); });
+                  htmlParts.push('</ul>');
+                }
+                if (Array.isArray(webSection.contrary_lines) && webSection.contrary_lines.length) {
+                  htmlParts.push('<p class="note">Contrary evidence:</p><ul>');
+                  webSection.contrary_lines.slice(0,2).forEach(function(line){ htmlParts.push('<li>' + esc(line) + '</li>'); });
+                  htmlParts.push('</ul>');
+                }
+                var meta = webSection.meta || {};
+                var metaBits = [];
+                if (meta.docs) metaBits.push(meta.docs + ' docs');
+                if (meta.domains) metaBits.push(meta.domains + ' domains');
+                if (typeof meta.median_age_days === 'number') metaBits.push('median age ~' + Math.round(meta.median_age_days) + ' days');
+                if (typeof meta.support_snippets === 'number' && typeof meta.contrary_snippets === 'number') {
+                  metaBits.push(meta.support_snippets + ' supporting · ' + meta.contrary_snippets + ' contrary snippets');
+                }
+                if (metaBits.length) {
+                  htmlParts.push('<p class="note">' + esc(metaBits.join(' · ')) + '</p>');
+                }
+              }
+              if (deeperExpl.blend) {
                 htmlParts.push('<h4>How we combine</h4>');
-                htmlParts.push('<p>Weight ' + w.toFixed(2) + ' → ' + ( (1 - w).toFixed(2) ) + '×' + formatPercent(priorProb) + ' + ' + w.toFixed(2) + '×' + formatPercent(webShown) + '.</p>');
+                htmlParts.push('<p>' + esc(deeperExpl.blend) + '</p>');
+              }
+            } else {
+              // Fallback legacy rendering
+              htmlParts.push('<h4>Training‑only (model prior)</h4>');
+              htmlParts.push('<p>Prior: ' + (priorProb !== null ? formatPercent(priorProb) : '--') + '</p>');
+              var priorReasons = buildReasons(priorProb);
+              if (Array.isArray(priorReasons) && priorReasons.length) {
+                htmlParts.push('<ul>');
+                priorReasons.slice(0,3).forEach(function(r){ htmlParts.push('<li>' + esc(r) + '</li>'); });
+                htmlParts.push('</ul>');
+              }
+              if (isWebMode) {
+                var fallbackWeb = (webBlock && typeof webBlock.p === 'number') ? webBlock.p : null;
+                htmlParts.push('<h4>Web evidence (recent)</h4>');
+                htmlParts.push('<p>Web estimate: ' + (fallbackWeb !== null ? formatPercent(fallbackWeb) : '--') + '</p>');
               }
             }
             resultDeeperBody.innerHTML = htmlParts.join('\n');

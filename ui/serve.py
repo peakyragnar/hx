@@ -1071,13 +1071,66 @@ class Handler(BaseHTTPRequestHandler):
                     '</div>'
                 )
 
+        backend_deeper = run.get("deeper_expl") if isinstance(run, dict) else None
+
         # Build deeper explanation block (skip entirely when resolved)
-        deeper_parts: list[str] = []
+        deeper_block_html = ""
         if not resolved_flag:
-            deeper_parts.append("<details><summary>Deeper explanation</summary>")
-            deeper_parts.append("<div>")
-            deeper_parts.append("<h4>Training‑only (model prior)</h4>")
-            deeper_parts.append(f"<p>Model (training‑only): {prior_percent}</p>")
+            if backend_deeper:
+                parts: list[str] = ["<details><summary>Deeper explanation</summary>", "<div>"]
+                prior_section = backend_deeper.get("prior") or {}
+                parts.append("<h4>Training‑only (model prior)</h4>")
+                prior_val = prior_section.get("p")
+                if isinstance(prior_val, (int, float)):
+                    parts.append(f"<p>Prior: {prior_val*100:.1f}%</p>")
+                prior_lines_backend = [str(x) for x in (prior_section.get("lines") or []) if isinstance(x, (str, int, float))]
+                if prior_lines_backend:
+                    parts.append('<ul>')
+                    for s in prior_lines_backend[:3]:
+                        parts.append(f"<li>{html.escape(str(s), quote=True)}</li>")
+                    parts.append('</ul>')
+                web_section = backend_deeper.get("web") or {}
+                if web_section:
+                    parts.append("<h4>Web evidence (recent)</h4>")
+                    web_val = web_section.get("p")
+                    if isinstance(web_val, (int, float)):
+                        parts.append(f"<p>Web estimate: {web_val*100:.1f}%</p>")
+                    support_lines = [str(x) for x in (web_section.get("support_lines") or []) if isinstance(x, (str, int, float))]
+                    if support_lines:
+                        parts.append('<ul>')
+                        for s in support_lines[:3]:
+                            parts.append(f"<li>{html.escape(str(s), quote=True)}</li>")
+                        parts.append('</ul>')
+                    contrary_lines = [str(x) for x in (web_section.get("contrary_lines") or []) if isinstance(x, (str, int, float))]
+                    if contrary_lines:
+                        parts.append('<p class="note">Contrary evidence:</p><ul>')
+                        for s in contrary_lines[:2]:
+                            parts.append(f"<li>{html.escape(str(s), quote=True)}</li>")
+                        parts.append('</ul>')
+                    meta = web_section.get("meta") or {}
+                    meta_bits: list[str] = []
+                    if isinstance(meta.get("docs"), int) and meta["docs"]:
+                        meta_bits.append(f"{meta['docs']} docs")
+                    if isinstance(meta.get("domains"), int) and meta["domains"]:
+                        meta_bits.append(f"{meta['domains']} domains")
+                    if isinstance(meta.get("median_age_days"), (int, float)):
+                        meta_bits.append(f"median age ~{int(round(meta['median_age_days']))} days")
+                    supp = meta.get("support_snippets")
+                    contra = meta.get("contrary_snippets")
+                    if isinstance(supp, int) and isinstance(contra, int):
+                        meta_bits.append(f"{supp} supporting · {contra} contrary snippets")
+                    if meta_bits:
+                        parts.append('<p class="note">' + html.escape(' · '.join(meta_bits), quote=True) + '</p>')
+                blend_text = backend_deeper.get("blend")
+                if isinstance(blend_text, str) and blend_text.strip():
+                    parts.append("<h4>How we combine</h4>")
+                    parts.append(f"<p>{html.escape(blend_text.strip(), quote=True)}</p>")
+                parts.append("</div></details>")
+                deeper_block_html = "".join(parts)
+            else:
+                deeper_parts: list[str] = ["<details><summary>Deeper explanation</summary>", "<div>"]
+                deeper_parts.append("<h4>Training‑only (model prior)</h4>")
+                deeper_parts.append(f"<p>Model (training‑only): {prior_percent}</p>")
         # Up to four concise prior sentences
         prior_lines: list[str] = []
         if label == 'evil':

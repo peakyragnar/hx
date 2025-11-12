@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 
@@ -28,6 +29,250 @@ def _sanitize(text: str) -> str:
     return t if t.endswith((".", "!", "?")) else (t + ".")
 
 
+@dataclass
+class EvidenceSummary:
+    progress: List[str] = field(default_factory=list)
+    obstacles: List[str] = field(default_factory=list)
+    timeline: List[str] = field(default_factory=list)
+    authority: List[str] = field(default_factory=list)
+    generic_support: List[str] = field(default_factory=list)
+    generic_contrary: List[str] = field(default_factory=list)
+    support_count: int = 0
+    contrary_count: int = 0
+
+    def add_support(self, sentence: str) -> None:
+        self.support_count += 1
+        self._route_sentence(sentence, is_support=True)
+
+    def add_contrary(self, sentence: str) -> None:
+        self.contrary_count += 1
+        self._route_sentence(sentence, is_support=False)
+
+    def _route_sentence(self, sentence: str, *, is_support: bool) -> None:
+        bucket = _classify_sentence(sentence)
+        target_list = None
+        if bucket == "progress":
+            target_list = self.progress
+        elif bucket == "obstacle":
+            target_list = self.obstacles
+        elif bucket == "timeline":
+            target_list = self.timeline
+        elif bucket == "authority":
+            target_list = self.authority
+        elif is_support:
+            target_list = self.generic_support
+        else:
+            target_list = self.generic_contrary
+
+        if sentence and sentence not in target_list:
+            target_list.append(sentence)
+
+    def all_sentences(self) -> List[str]:
+        ordered = (
+            self.progress
+            + self.timeline
+            + self.authority
+            + self.obstacles
+            + self.generic_support
+            + self.generic_contrary
+        )
+        # preserve order but drop duplicates
+        seen: set[str] = set()
+        unique: List[str] = []
+        for sentence in ordered:
+            key = sentence.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(sentence)
+        return unique
+
+
+PROGRESS_PATTERNS = [
+    r"\b(began|begin|started|launched|announced|building|constructed|broke ground|approved|funded|contracted)\b",
+    r"\b(commissioned|installed|opened|operational|brought online|coming online)\b",
+]
+
+OBSTACLE_PATTERNS = [
+    r"\b(no plans|paused|canceled|cancelled|delayed|blocked|suspended|not approved)\b",
+    r"\b(shortage|lack|insufficient|bottleneck|backlog|over budget|funding gap)\b",
+    r"\b(opposition|lawsuit|challenge|denied|rejected)\b",
+]
+
+TIMELINE_PATTERNS = [
+    r"\b(by|in|before)\s+(20\d{2}|next year|this year|q[1-4]\s*20\d{2}|mid-\d{2}|late\s+\d{2})\b",
+    r"\b(deadline|timeline|schedule|expected|target|phase)\b",
+]
+
+AUTHORITY_PATTERNS = [
+    r"\b(agency|regulator|commission|authority|officials?|governor|congress|parliament|court|nrc|doe|ferc)\b",
+    r"\b(white house|administration|cabinet|ministry|secretary|president|prime minister)\b",
+]
+
+
+def _classify_sentence(sentence: str) -> str:
+    text = sentence.lower()
+    if any(re.search(pattern, text) for pattern in PROGRESS_PATTERNS):
+        return "progress"
+    if any(re.search(pattern, text) for pattern in OBSTACLE_PATTERNS):
+        return "obstacle"
+    if any(re.search(pattern, text) for pattern in TIMELINE_PATTERNS):
+        return "timeline"
+    if any(re.search(pattern, text) for pattern in AUTHORITY_PATTERNS):
+        return "authority"
+    return "generic"
+
+
+def summarize_evidence(replicates: Optional[List[Dict[str, Any]]]) -> EvidenceSummary:
+    summary = EvidenceSummary()
+    seen_sentences: set[str] = set()
+
+    def _ingest(items: List[str], *, is_support: bool) -> None:
+        for raw in items:
+            sentence = _sanitize(raw)
+            if not sentence:
+                continue
+            key = sentence.lower()
+            if key in seen_sentences:
+                continue
+            seen_sentences.add(key)
+            if is_support:
+                summary.add_support(sentence)
+            else:
+                summary.add_contrary(sentence)
+
+    for rep in replicates or []:
+        if not isinstance(rep, dict):
+            continue
+        support_items = rep.get("support_bullets") or []
+        oppose_items = rep.get("oppose_bullets") or []
+        notes_items = rep.get("notes") or []
+        if isinstance(support_items, list):
+            _ingest([str(x) for x in support_items], is_support=True)
+        else:
+            _ingest([str(support_items)], is_support=True)
+        if isinstance(oppose_items, list):
+            _ingest([str(x) for x in oppose_items], is_support=False)
+        else:
+            _ingest([str(oppose_items)], is_support=False)
+        if isinstance(notes_items, list):
+            # notes can contain contextual clues; treat them as whichever direction dominates support
+            dominant_support = summary.support_count >= summary.contrary_count
+            _ingest([str(x) for x in notes_items], is_support=dominant_support)
+
+    return summary
+
+
+@dataclass
+class ClaimFrame:
+    actor: str
+    action: str
+    timeframe: Optional[str] = None
+
+
+TIME_PATTERN = re.compile(r"\b(by|in|before)\s+(20\d{2}|next year|this year|q[1-4]\s*20\d{2}|mid-\d{2}|late\s+\d{2})\b", re.IGNORECASE)
+
+
+def _frame_claim(claim: str) -> ClaimFrame:
+    text = (claim or "").strip()
+    if not text:
+        return ClaimFrame(actor="The model", action="address the claim")
+
+    verb_pattern = re.compile(
+        r"^(?P<actor>[A-Z][^,]+?)\s+(?:will|plans to|aims to|expects to|is set to|is going to|intends to)\s+(?P<action>.+)$",
+        re.IGNORECASE,
+    )
+    match = verb_pattern.match(text)
+    actor = "The model"
+    action = text
+    if match:
+        actor = match.group("actor").strip()
+        action = match.group("action").strip()
+    timeframe = None
+    time_match = TIME_PATTERN.search(action) or TIME_PATTERN.search(text)
+    if time_match:
+        timeframe = time_match.group(0).strip()
+        if action.lower().startswith(timeframe.lower()):
+            action = action[len(timeframe) :].strip()
+        else:
+            action = TIME_PATTERN.sub("", action).strip()
+    action = action or "deliver on this claim"
+    return ClaimFrame(actor=actor, action=action, timeframe=timeframe)
+
+
+def _build_bar_sentence(frame: ClaimFrame) -> str:
+    action_lower = frame.action.lower()
+    timeframe = f" {frame.timeframe}" if frame.timeframe else ""
+    if any(word in action_lower for word in ("build", "construct", "open", "launch", "plant", "factory", "power plant", "reactor")):
+        return f"{frame.actor} would need permits, financing, and construction time to {frame.action}{timeframe}."
+    if any(word in action_lower for word in ("approve", "pass", "ban", "legalize", "regulate", "act", "bill")):
+        return f"{frame.actor} must navigate formal approvals and votes before {frame.action}{timeframe}."
+    if any(word in action_lower for word in ("produce", "reach", "hit", "achieve", "increase", "grow")):
+        return f"Hitting that mark requires sustained capacity, supply, and demand alignment for {frame.actor}{timeframe}."
+    return f"Delivering on this claim demands coordinated resources and follow-through from {frame.actor}{timeframe}."
+
+
+def _select_context_lines(summary: Optional[EvidenceSummary], verdict: str, max_lines: int = 2) -> List[str]:
+    if summary is None:
+        return []
+    priorities: List[List[str]]
+    if verdict == "likely true":
+        priorities = [summary.progress, summary.timeline, summary.authority, summary.obstacles, summary.generic_contrary]
+    elif verdict == "likely false":
+        priorities = [summary.obstacles, summary.timeline, summary.progress, summary.authority, summary.generic_support]
+    else:
+        priorities = [summary.timeline, summary.progress, summary.obstacles, summary.authority, summary.generic_support]
+
+    chosen: List[str] = []
+    for bucket in priorities:
+        for sentence in bucket:
+            if sentence and sentence not in chosen:
+                chosen.append(sentence)
+                if len(chosen) >= max_lines:
+                    return chosen
+    if len(chosen) < max_lines:
+        for sentence in summary.all_sentences():
+            if sentence not in chosen:
+                chosen.append(sentence)
+                if len(chosen) >= max_lines:
+                    break
+    return chosen[:max_lines]
+
+
+def _fallback_context_lines(frame: ClaimFrame, verdict: str) -> List[str]:
+    actor = frame.actor or "The model"
+    base = [
+        f"Stakeholders will need to align on funding, expertise, and logistics before {frame.action} is realistic.",
+        f"Signals so far are mixed, so {actor} has to prove real progress rather than projections.",
+        "Independent confirmation remains limited, so the verdict leans on prudence.",
+    ]
+    if verdict == "likely true":
+        base[1] = f"Existing announcements and early work hint that {frame.action} is underway even if it is unfinished."
+    elif verdict == "likely false":
+        base[1] = f"Missing approvals and public commitments keep {frame.action} in speculation territory for now."
+    return base
+
+
+def _prior_meta_sentences(prior_p: float, stability_score: float, template_count: Optional[int]) -> List[str]:
+    lines: List[str] = []
+    if prior_p >= 0.7:
+        lines.append("Similar stories in training usually succeed, so the model leans confident before new evidence.")
+    elif prior_p <= 0.3:
+        lines.append("Most historical references fall apart, so the model starts from a skeptical prior.")
+    else:
+        lines.append("Training material is split, keeping the prior near the middle until more context arrives.")
+
+    if stability_score >= 0.7:
+        lines.append("Different paraphrases agree with each other, suggesting the verdict is steady across wordings.")
+    elif stability_score <= 0.4:
+        lines.append("Paraphrases disagreed, flagging ambiguity in how the claim can be read.")
+
+    if template_count and len(lines) < 3:
+        lines.append(f"{template_count} paraphrases weighed in, so no single wording dominates the prior.")
+
+    return lines[:2]
+
+
 def compose_simple_expl(
     claim: str,
     combined_p: float,
@@ -35,174 +280,163 @@ def compose_simple_expl(
     replicates: Optional[List[Dict[str, Any]]],
     prior_block: Optional[Dict[str, Any]] = None,
     model_label: str = "the model",
+    evidence_summary: Optional[EvidenceSummary] = None,
 ) -> Dict[str, Any]:
-    claim_low = (claim or "").lower()
-    label = model_label or "the model"
-    year_m = re.search(r"(20\d{2})", claim or "")
-    pct_m = re.search(r"(\d{1,3})\s?%[^\d]*", claim or "")
-    year_txt = year_m.group(1) if year_m else None
-    pct_txt = pct_m.group(1) if pct_m else None
-
-    used_bullets = set()  # Track (rep_idx, item_idx) pairs to avoid repeats
-
-    def grab(regex: str) -> Optional[str]:
-        pat = re.compile(regex, re.IGNORECASE)
-        for rep_idx, rep in enumerate(replicates or []):
-            # Validate replicate structure and extract bullets
-            if not isinstance(rep, dict):
-                continue
-            bullets = rep.get("support_bullets")
-            if bullets is None:
-                items = []
-            elif isinstance(bullets, list):
-                items = bullets
-            else:
-                # Handle case where support_bullets is not a list (defensive)
-                items = [str(bullets)] if bullets else []
-
-            for item_idx, it in enumerate(items):
-                key = (rep_idx, item_idx)
-                if key in used_bullets:
-                    continue
-                s = _sanitize(str(it))
-                if pat.search(s):
-                    used_bullets.add(key)
-                    return s
-        return None
-
-    label = model_label or "the model"
+    summary = evidence_summary or summarize_evidence(replicates)
+    frame = _frame_claim(claim)
+    verdict = "likely true" if combined_p >= 0.60 else ("likely false" if combined_p <= 0.40 else "uncertain")
 
     lines: List[str] = []
-    # Patterns
-    if ("ban" in claim_low or "banned" in claim_low):
-        lines.append(
-            f"A ban would require formal approval by the owners at a rules meeting{(' in ' + year_txt) if year_txt else ''}."
-        )
-        lines.append("Recent reporting points to debate and expectations of a vote, not a finalized decision.")
-        hist = grab(r"delayed|tabled|no decision|not approved|postponed")
-        if hist:
-            lines.append("Earlier proposals were discussed or tabled; there is no announced rule change yet.")
-    elif (("source" in claim_low or "domestic" in claim_low) and pct_txt):
-        if year_txt:
-            lines.append(
-                f"Reaching {pct_txt}% by {year_txt} would need rapid build‑out of extraction, processing and magnet capacity."
-            )
-        else:
-            lines.append(f"Meeting a {pct_txt}% threshold would require substantial new domestic capacity.")
-        cap = grab(r"production|processing|refining|magnet|capacity|output|plant|factory")
-        if cap:
-            lines.append(cap)
-        dep = grab(r"import|depend|reliance|supply chain|bottleneck|intermediate")
-        if dep:
-            lines.append(dep)
-    elif ("market cap" in claim_low) or ("market capitalization" in claim_low) or ("trillion" in claim_low):
-        if year_txt:
-            lines.append(f"Hitting that milestone by {year_txt} depends on earnings and broader market conditions.")
-        else:
-            lines.append("Reaching that milestone depends on results and market conditions.")
-        crossed = grab(r"crossed|surpassed|joined|reached")
-        if crossed:
-            lines.append("Recent reporting notes the milestone has already been reached at times, showing it is attainable.")
-        sustain = grab(r"sustain|maintain|trajectory|growth|margin")
-        if sustain:
-            lines.append("Sustaining it will depend on the company’s trajectory over the next periods.")
-    elif ("data center" in claim_low or "datacenter" in claim_low) and (
-        "electric" in claim_low or "power" in claim_low or "rate" in claim_low or "bill" in claim_low or "inflation" in claim_low
-    ):
-        lines.append("Large data center build‑outs raise peak demand and capacity needs in some regions.")
-        cap_price = grab(r"capacity price|auction|monitor|PJM|MISO|ISO|market monitor")
-        if cap_price:
-            lines.append(
-                "Recent market reports attribute a sizable share of capacity price increases to data center demand, costs typically recovered from customers."
-            )
-        conn = grab(r"connection|interconnection|upgrade|transmission|rate case|bill impact|cost shift")
-        if conn:
-            lines.append(
-                "Reports describe higher connection and upgrade costs tied to data center hookups, often passed through to ratepayers under current rules."
-            )
-    else:
-        # Grab up to 3 distinct lines for generic claims
-        for _ in range(3):
-            line = grab(r".")
-            if line:
-                lines.append(line)
-            else:
+    lines.append(_build_bar_sentence(frame))
+
+    context_lines = _select_context_lines(summary, verdict)
+    if not context_lines:
+        context_lines = _fallback_context_lines(frame, verdict)[:2]
+    lines.extend(context_lines)
+
+    if len(lines) < 3:
+        remaining = summary.all_sentences() if summary else []
+        for sentence in remaining:
+            if sentence not in lines:
+                lines.append(sentence)
+            if len(lines) >= 3:
                 break
 
-    # Cap to 3 content lines
-    if len(lines) > 3:
-        lines = lines[:3]
+    if len(lines) < 3:
+        for sentence in _fallback_context_lines(frame, verdict):
+            if sentence not in lines:
+                lines.append(sentence)
+            if len(lines) >= 3:
+                break
 
-    # Verdict tie‑in
-    verdict = "likely true" if combined_p >= 0.6 else ("likely false" if combined_p <= 0.4 else "uncertain")
-    summary = f"Taken together, these points suggest the claim is {verdict}."
+    final_lines = [ln for ln in lines if ln][:3]
 
-    if not lines:
-        fallback_lines: List[str] = []
-        prior_p = None
-        prior_ci = None
-        if isinstance(prior_block, dict):
-            prior_p = prior_block.get("p")
-            prior_ci = prior_block.get("ci95")
-        web_p = None
-        if isinstance(web_block, dict):
-            web_p = web_block.get("p")
+    if len(final_lines) < 3 and prior_block:
         try:
-            if isinstance(prior_p, (int, float)) and isinstance(web_p, (int, float)):
-                fallback_lines.append(
-                    f"{label}’s training view was {prior_p*100:.1f}% and the web estimate landed at {web_p*100:.1f}%, so the blend sits between them."
-                )
-            evidence = (web_block or {}).get("evidence") if isinstance(web_block, dict) else None
-            if isinstance(evidence, dict):
-                n_docs = int(evidence.get("n_docs") or 0)
-                n_domains = int(evidence.get("n_domains") or 0)
-                median_age = evidence.get("median_age_days")
-                if n_docs or n_domains:
-                    fallback_lines.append(
-                        f"Web sampling pulled {n_docs} doc{'s' if n_docs != 1 else ''} across {n_domains} domains, showing a mix of perspectives."
-                    )
-                if isinstance(median_age, (int, float)) and median_age > 0:
-                    fallback_lines.append(
-                        f"The median publish date was about {median_age:.0f} day{'s' if median_age != 1 else ''} ago, so evidence is relatively recent."
-                    )
-            support_ct = len((web_block or {}).get("support") or [])
-            contradict_ct = len((web_block or {}).get("contradict") or [])
-            if support_ct or contradict_ct:
-                fallback_lines.append(
-                    f"Supporters contributed {support_ct} citing statements while contradicting evidence offered {contradict_ct}, keeping the verdict cautious."
-                )
-        except Exception:
-            fallback_lines = []
-
-        fallback_lines = [ln for ln in fallback_lines if ln][:3]
-
-        if not fallback_lines:
-            prior_ci_tuple: Tuple[float, float] = (combined_p, combined_p)
-            if isinstance(prior_ci, (list, tuple)) and len(prior_ci) == 2:
-                lo = prior_ci[0] if isinstance(prior_ci[0], (int, float)) else combined_p
-                hi = prior_ci[1] if isinstance(prior_ci[1], (int, float)) else combined_p
-                prior_ci_tuple = (lo, hi)
             fallback = compose_baseline_simple_expl(
                 claim=claim,
-                prior_p=float(prior_p) if isinstance(prior_p, (int, float)) else combined_p,
-                prior_ci=prior_ci_tuple,
-                stability_score=float((prior_block or {}).get("stability") or 0.0),
+                prior_p=float(prior_block.get("p", combined_p)),
+                prior_ci=tuple(prior_block.get("ci95", (combined_p, combined_p))),
+                stability_score=float(prior_block.get("stability") or 0.0),
                 template_count=None,
                 imbalance_ratio=None,
-                model_label=label,
+                model_label=model_label,
             )
-            fallback_lines = list(fallback.get("lines") or [])
-            if fallback.get("summary"):
-                summary = fallback["summary"]
+            for candidate in fallback.get("lines", []):
+                if candidate not in final_lines:
+                    final_lines.append(candidate)
+                if len(final_lines) >= 3:
+                    break
+        except Exception:
+            pass
+        final_lines = final_lines[:3]
 
-        lines = fallback_lines or lines
+    summary_text = f"Taken together, these points suggest the claim is {verdict}."
 
     return {
         "title": "Why the web‑informed verdict looks this way",
-        "lines": [ln for ln in lines if ln],
-        "summary": summary,
+        "lines": final_lines,
+        "summary": summary_text,
     }
 
+
+def compose_deeper_expl(
+    *,
+    claim: str,
+    prior_block: Optional[Dict[str, Any]],
+    web_block: Optional[Dict[str, Any]],
+    combined_p: float,
+    replicates: Optional[List[Dict[str, Any]]],
+    weights: Optional[Dict[str, Any]],
+    model_label: str,
+    evidence_summary: Optional[EvidenceSummary] = None,
+) -> Optional[Dict[str, Any]]:
+    if prior_block is None and web_block is None:
+        return None
+
+    summary = evidence_summary or summarize_evidence(replicates)
+    prior_p = float(prior_block.get("p", combined_p)) if prior_block else combined_p
+    prior_ci = tuple(prior_block.get("ci95", (prior_p, prior_p))) if prior_block else (prior_p, prior_p)
+    stability_score = float(prior_block.get("stability") or 0.0) if prior_block else 0.0
+
+    baseline = compose_baseline_simple_expl(
+        claim=claim,
+        prior_p=prior_p,
+        prior_ci=prior_ci,
+        stability_score=stability_score,
+        template_count=None,
+        imbalance_ratio=None,
+        model_label=model_label,
+    )
+
+    support_lines = summary.progress + summary.timeline + summary.authority
+    if not support_lines:
+        support_lines = summary.generic_support
+    support_lines = support_lines[:3]
+
+    contrary_lines = summary.obstacles or summary.generic_contrary
+    contrary_lines = contrary_lines[:3]
+
+    evidence_meta: Dict[str, Any] = {}
+    if isinstance(web_block, dict):
+        evidence = web_block.get("evidence") or {}
+        if isinstance(evidence, dict):
+            if evidence.get("n_docs") is not None:
+                evidence_meta["docs"] = int(evidence.get("n_docs"))
+            if evidence.get("n_domains") is not None:
+                evidence_meta["domains"] = int(evidence.get("n_domains"))
+            if evidence.get("median_age_days") is not None:
+                evidence_meta["median_age_days"] = evidence.get("median_age_days")
+    evidence_meta["support_snippets"] = summary.support_count
+    evidence_meta["contrary_snippets"] = summary.contrary_count
+
+    blend_sentence = _describe_blend(weights, prior_block, web_block, model_label)
+
+    return {
+        "prior": {"p": prior_p, "lines": baseline.get("lines", [])[:3]},
+        "web": {
+            "p": (web_block or {}).get("p"),
+            "support_lines": support_lines,
+            "contrary_lines": contrary_lines,
+            "meta": evidence_meta,
+        },
+        "blend": blend_sentence,
+    }
+
+
+def _describe_blend(
+    weights: Optional[Dict[str, Any]],
+    prior_block: Optional[Dict[str, Any]],
+    web_block: Optional[Dict[str, Any]],
+    model_label: str,
+) -> str:
+    prior_p = float(prior_block.get("p", 0.0)) if isinstance(prior_block, dict) else 0.0
+    web_p = float(web_block.get("p", prior_p)) if isinstance(web_block, dict) and web_block.get("p") is not None else prior_p
+    if not weights or "w_web" not in weights:
+        return f"We fall back to {model_label}’s training view because web weighting data was unavailable."
+
+    try:
+        w = max(0.0, min(1.0, float(weights.get("w_web", 0.0))))
+    except (TypeError, ValueError):
+        w = 0.0
+    weight_pct = int(round(w * 100))
+    prior_pct = int(round(prior_p * 100))
+    web_pct = int(round(web_p * 100))
+
+    reasons: List[str] = []
+    recency = weights.get("recency")
+    strength = weights.get("strength")
+    if isinstance(recency, (int, float)):
+        reasons.append(f"recent sources scored {recency:.2f} on recency")
+    if isinstance(strength, (int, float)):
+        reasons.append(f"strength scored {strength:.2f}")
+    if not reasons:
+        reasons.append("web evidence is limited, so the prior still anchors the blend")
+
+    return (
+        f"About {weight_pct}% of the verdict comes from web evidence (~{web_pct}%), while the training prior (~{prior_pct}%)"
+        f" fills the rest because {', '.join(reasons)}."
+    )
 
 STOPWORDS = {
     "the",
@@ -387,38 +621,17 @@ def compose_baseline_simple_expl(
             "Supporting and opposing references appear in roughly equal measure, preventing a decisive verdict.",
         ]
 
-    ci_lo_raw = prior_ci[0] if prior_ci and prior_ci[0] is not None else None
-    ci_hi_raw = prior_ci[1] if prior_ci and prior_ci[1] is not None else None
-    ci_lo = ci_lo_raw if isinstance(ci_lo_raw, (int, float)) else max(0.0, prior_p - 0.05)
-    ci_hi = ci_hi_raw if isinstance(ci_hi_raw, (int, float)) else min(1.0, prior_p + 0.05)
-    ci_sentence = (
-        f"The training-only probability is {prior_p*100:.1f}% with a 95% interval of {ci_lo*100:.1f}% to {ci_hi*100:.1f}%."
-    )
-    stability_sentence = (
-        f"Stability across paraphrases scores {stability_score:.2f}, meaning the verdict stays steady under rewordings."
-    )
-    template_sentence = None
-    if template_count:
-        if isinstance(imbalance_ratio, (int, float)):
-            template_sentence = (
-                f"{template_count} templates were balanced (imbalance ratio {imbalance_ratio:.2f}), so no single phrasing dominated."
-            )
-        else:
-            template_sentence = f"{template_count} paraphrases agreed on the direction of the verdict."
-
-    stats_sentence = next((s for s in (ci_sentence, stability_sentence, template_sentence) if s), None)
+    meta_lines = _prior_meta_sentences(prior_p, stability_score, template_count)
 
     if not lines:
         lines = _generic_lines(verdict)[:3]
-        if stats_sentence:
-            if len(lines) >= 3:
-                lines[-1] = stats_sentence
-            elif stats_sentence:
-                lines.append(stats_sentence)
     else:
         lines = lines[:3]
-        if stats_sentence and len(lines) < 3:
-            lines.append(stats_sentence)
+
+    for meta_line in meta_lines:
+        if len(lines) >= 3:
+            break
+        lines.append(meta_line)
 
     fallback_reasons = [
         f"{label} compares thousands of historical examples before settling on a prior.",
