@@ -378,6 +378,10 @@ def perform_run(
             simple_expl = compose_baseline_simple_expl(
                 claim=cfg.claim or "",
                 prior_p=prior_p,
+                prior_ci=(prior_ci[0], prior_ci[1]),
+                stability_score=stability_score,
+                template_count=sampling.get("T") or aggregation.get("n_templates"),
+                imbalance_ratio=aggregation.get("imbalance_ratio"),
             )
         except Exception:  # pragma: no cover
             logger.exception("Failed to compose baseline Simple View for run %s", run_id)
