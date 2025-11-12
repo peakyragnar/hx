@@ -750,14 +750,23 @@
           } else if (verdictInfo && verdictInfo.text) {
             simpleWhy = verdictInfo.text;
           }
+          var simpleExpl = data.simple_expl;
           if (resultInterpretationDetail) {
-            resultInterpretationDetail.textContent = simpleWhy;
+            if (simpleExpl && Array.isArray(simpleExpl.lines) && simpleExpl.lines.length) {
+              resultInterpretationDetail.textContent = '';
+              resultInterpretationDetail.classList.add('hidden');
+            } else if (simpleWhy) {
+              resultInterpretationDetail.textContent = simpleWhy;
+              resultInterpretationDetail.classList.remove('hidden');
+            } else {
+              resultInterpretationDetail.textContent = '';
+              resultInterpretationDetail.classList.add('hidden');
+            }
           }
 
           // Build simple lines: prefer backend-provided simple_expl
           if (resultSimpleLines) {
             resultSimpleLines.innerHTML = '';
-            var simpleExpl = data.simple_expl;
             if (simpleExpl && Array.isArray(simpleExpl.lines) && simpleExpl.lines.length) {
               var lines = simpleExpl.lines.slice(0, 3);
               if (typeof simpleExpl.summary === 'string' && simpleExpl.summary) {
