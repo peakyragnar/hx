@@ -658,7 +658,7 @@
 
         var simpleExpl = data.simple_expl;
         if (resultInterpretationMain) {
-          if (isWebMode && simpleExpl && Array.isArray(simpleExpl.lines) && simpleExpl.lines.length) {
+          if (simpleExpl && Array.isArray(simpleExpl.lines) && simpleExpl.lines.length) {
             resultInterpretationMain.textContent = '';
             resultInterpretationMain.classList.add('hidden');
           } else {

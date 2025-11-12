@@ -1049,6 +1049,7 @@ class Handler(BaseHTTPRequestHandler):
                     '</div>'
                     '</div>'
                 )
+                interpretation = ""
             else:
                 stack_block_html = (
                     '<div class="stack">'

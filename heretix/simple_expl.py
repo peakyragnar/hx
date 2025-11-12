@@ -138,3 +138,38 @@ def compose_simple_expl(
         "summary": summary,
     }
 
+
+def compose_baseline_simple_expl(
+    *,
+    claim: str,
+    prior_p: float,
+) -> Dict[str, Any]:
+    """Compose Simple View lines for baseline (model-only) runs."""
+
+    def _baseline_reasons(p: float) -> List[str]:
+        if p >= 0.60:
+            return [
+                "GPT‑5 has seen many supporting examples in its training data.",
+                "Typical definitions and historical references line up with the claim.",
+                "Counterexamples are rare compared to supporting evidence in its corpus.",
+            ]
+        if p <= 0.40:
+            return [
+                "GPT‑5’s training data contains many instances that contradict the claim.",
+                "Common usage and reference materials point the other way.",
+                "Supporting anecdotes are outweighed by counterexamples it has seen.",
+            ]
+        return [
+            "GPT‑5 finds mixed signals in its training data.",
+            "It depends on definitions or missing context.",
+            "Supporting and opposing examples appear in roughly equal measure.",
+        ]
+
+    verdict = "likely true" if prior_p >= 0.60 else ("likely false" if prior_p <= 0.40 else "uncertain")
+    lines = _baseline_reasons(prior_p)
+    summary = f"Taken together, these points suggest the claim is {verdict}."
+    return {
+        "title": "Why the model‑only verdict looks this way",
+        "lines": lines,
+        "summary": summary,
+    }

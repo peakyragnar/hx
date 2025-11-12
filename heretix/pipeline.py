@@ -356,12 +356,9 @@ def perform_run(
 
     # Backend-owned Simple View explanation
     simple_expl: Optional[Dict[str, Any]] = None
-    should_compose_simple = (
-        mode == "web_informed"
-        and combined_block_payload is not None
-        and (sanitized_web_block is not None or normalized_reps)
-    )
-    if should_compose_simple:
+    if mode == "web_informed" and combined_block_payload is not None and (
+        sanitized_web_block is not None or normalized_reps
+    ):
         try:
             from heretix.simple_expl import compose_simple_expl
 
@@ -373,6 +370,17 @@ def perform_run(
             )
         except Exception:  # pragma: no cover
             logger.exception("Failed to compose Simple View for run %s", run_id)
+            simple_expl = None
+    elif mode == "baseline":
+        try:
+            from heretix.simple_expl import compose_baseline_simple_expl
+
+            simple_expl = compose_baseline_simple_expl(
+                claim=cfg.claim or "",
+                prior_p=prior_p,
+            )
+        except Exception:  # pragma: no cover
+            logger.exception("Failed to compose baseline Simple View for run %s", run_id)
             simple_expl = None
 
     return PipelineArtifacts(

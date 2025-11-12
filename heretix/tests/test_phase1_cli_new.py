@@ -134,3 +134,36 @@ def test_cli_web_mode_emits_simple_expl(tmp_path: Path):
     assert isinstance(simple.get("lines"), list)
     assert simple["lines"], "simple_expl should include at least one line"
     assert isinstance(simple.get("summary"), str) and simple["summary"]
+
+
+def test_cli_baseline_emits_simple_expl(tmp_path: Path):
+    cfg_path = tmp_path / "cfg.yaml"
+    cfg_path.write_text(
+        "\n".join([
+            'claim: "Tariffs don\'t cause inflation"',
+            "model: gpt-5",
+            "prompt_version: rpl_g5_v2",
+            "K: 8",
+            "R: 2",
+            "T: 8",
+            "B: 5000",
+            "max_output_tokens: 512",
+        ])
+    )
+    out_path = tmp_path / "baseline_out.json"
+    env = {"DATABASE_URL": f"sqlite:///{tmp_path / 'baseline.sqlite'}"}
+    result = runner.invoke(app, [
+        "run",
+        "--config", str(cfg_path),
+        "--out", str(out_path),
+        "--mock",
+        "--mode", "baseline",
+    ], env=env)
+    assert result.exit_code == 0, result.output
+    payload = json.loads(out_path.read_text())
+    run = payload["runs"][0]
+    simple = run.get("simple_expl")
+    assert simple is not None, "baseline simple_expl missing"
+    assert isinstance(simple.get("lines"), list)
+    assert len(simple["lines"]) >= 1
+    assert isinstance(simple.get("summary"), str) and simple["summary"]
