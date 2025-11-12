@@ -656,8 +656,15 @@
           resultSubtitle.textContent = verdictLabel ? verdictLabel + ' · ' + subtitleBase : subtitleBase;
         }
 
+        var simpleExpl = data.simple_expl;
         if (resultInterpretationMain) {
-          resultInterpretationMain.textContent = interpretation;
+          if (isWebMode && simpleExpl && Array.isArray(simpleExpl.lines) && simpleExpl.lines.length) {
+            resultInterpretationMain.textContent = '';
+            resultInterpretationMain.classList.add('hidden');
+          } else {
+            resultInterpretationMain.textContent = interpretation;
+            resultInterpretationMain.classList.remove('hidden');
+          }
         }
 
         var apiReasons = Array.isArray(data.explanation_reasons) ? data.explanation_reasons.filter(Boolean) : [];
@@ -750,7 +757,6 @@
           } else if (verdictInfo && verdictInfo.text) {
             simpleWhy = verdictInfo.text;
           }
-          var simpleExpl = data.simple_expl;
           if (resultInterpretationDetail) {
             if (simpleExpl && Array.isArray(simpleExpl.lines) && simpleExpl.lines.length) {
               resultInterpretationDetail.textContent = '';
