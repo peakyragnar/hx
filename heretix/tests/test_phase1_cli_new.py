@@ -101,3 +101,36 @@ def test_cli_prompts_file_override(tmp_path: Path):
     assert result.exit_code == 0, result.output
     doc = json.loads(out_path.read_text())
     assert doc["runs"][0]["prompt_version"].startswith("rpl_g5_custom_2099-01-01")
+
+
+def test_cli_web_mode_emits_simple_expl(tmp_path: Path):
+    cfg_path = tmp_path / "cfg.yaml"
+    cfg_path.write_text(
+        "\n".join([
+            'claim: "The NFL will ban guardian caps in 2025"',
+            "model: gpt-5",
+            "prompt_version: rpl_g5_v2",
+            "K: 8",
+            "R: 2",
+            "T: 8",
+            "B: 5000",
+            "max_output_tokens: 512",
+        ])
+    )
+    out_path = tmp_path / "web_out.json"
+    env = {"DATABASE_URL": f"sqlite:///{tmp_path / 'web.sqlite'}"}
+    result = runner.invoke(app, [
+        "run",
+        "--config", str(cfg_path),
+        "--out", str(out_path),
+        "--mock",
+        "--mode", "web_informed",
+    ], env=env)
+    assert result.exit_code == 0, result.output
+    payload = json.loads(out_path.read_text())
+    run = payload["runs"][0]
+    simple = run.get("simple_expl")
+    assert simple is not None, "simple_expl missing from run output"
+    assert isinstance(simple.get("lines"), list)
+    assert simple["lines"], "simple_expl should include at least one line"
+    assert isinstance(simple.get("summary"), str) and simple["summary"]

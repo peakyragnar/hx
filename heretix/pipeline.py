@@ -354,19 +354,26 @@ def perform_run(
 
     normalized_reps = [_normalize_replica(rep) for rep in raw_replicates]
 
-    # Backend-owned Simple View explanation (skip for resolved cases)
+    # Backend-owned Simple View explanation
     simple_expl: Optional[Dict[str, Any]] = None
-    try:
-        if combined_block_payload and not (combined_block_payload.get("resolved") or (sanitized_web_block or {}).get("resolved")):
+    should_compose_simple = (
+        mode == "web_informed"
+        and combined_block_payload is not None
+        and (sanitized_web_block is not None or normalized_reps)
+    )
+    if should_compose_simple:
+        try:
             from heretix.simple_expl import compose_simple_expl
+
             simple_expl = compose_simple_expl(
                 claim=cfg.claim or "",
                 combined_p=float(combined_block_payload.get("p", prior_p)),
                 web_block=sanitized_web_block,
                 replicates=normalized_reps,
             )
-    except Exception:
-        simple_expl = None
+        except Exception:  # pragma: no cover
+            logger.exception("Failed to compose Simple View for run %s", run_id)
+            simple_expl = None
 
     return PipelineArtifacts(
         result=result,
