@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from heretix.simple_expl import compose_simple_expl, _sanitize
+from heretix.simple_expl import compose_simple_expl, compose_baseline_simple_expl, _sanitize
 
 
 class TestSanitize:
@@ -246,7 +246,7 @@ class TestComposeSimpleExpl:
         assert "uncertain" in result["summary"]
 
     def test_empty_replicates(self):
-        """Should handle empty replicates gracefully."""
+        """Should fallback to generic lines when replicates missing."""
         result = compose_simple_expl(
             claim="Test claim",
             combined_p=0.5,
@@ -256,7 +256,7 @@ class TestComposeSimpleExpl:
 
         assert result["title"] == "Why the web‑informed verdict looks this way"
         assert isinstance(result["lines"], list)
-        assert len(result["lines"]) == 0
+        assert len(result["lines"]) > 0
         assert result["summary"] == "Taken together, these points suggest the claim is uncertain."
 
     def test_none_replicates(self):
@@ -271,6 +271,7 @@ class TestComposeSimpleExpl:
         assert result["title"] == "Why the web‑informed verdict looks this way"
         assert isinstance(result["lines"], list)
         assert result["summary"] == "Taken together, these points suggest the claim is uncertain."
+        assert result["lines"], "Expected fallback lines even when replicates are None"
 
     def test_malformed_replicate_missing_bullets(self):
         """Should handle replicates without support_bullets key."""
@@ -358,6 +359,32 @@ class TestComposeSimpleExpl:
 
         # All lines should be unique
         assert len(result["lines"]) == len(set(result["lines"]))
+
+    def test_web_fallback_includes_model_label(self):
+        """Fallback lines should mention provided model label."""
+        result = compose_simple_expl(
+            claim="Claim",
+            combined_p=0.55,
+            web_block={"p": 0.45, "evidence": {"n_docs": 1, "n_domains": 1}},
+            replicates=None,
+            prior_block={"p": 0.6, "ci95": [0.4, 0.7], "stability": 0.2},
+            model_label="Grok 4",
+        )
+        assert any("Grok 4" in line for line in result["lines"])
+
+
+class TestComposeBaselineSimpleExpl:
+    def test_model_label_injected(self):
+        result = compose_baseline_simple_expl(
+            claim="Generic topic analysis",
+            prior_p=0.65,
+            prior_ci=(0.55, 0.72),
+            stability_score=0.3,
+            template_count=8,
+            imbalance_ratio=1.0,
+            model_label="Grok 4",
+        )
+        assert any("Grok 4" in line for line in result["lines"])
         assert result["lines"][0] != result["lines"][1]
         assert result["lines"][1] != result["lines"][2]
 

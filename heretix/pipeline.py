@@ -18,6 +18,19 @@ import hashlib
 from heretix.artifacts import ArtifactRecord, get_artifact_store, write_web_artifact
 
 
+def _model_label(model: str | None) -> str:
+    if not model:
+        return "the model"
+    key = model.lower()
+    if key == "gpt-5":
+        return "GPT‑5"
+    if key.startswith("grok-4"):
+        return "Grok 4 (xAI)"
+    if key.startswith("grok"):
+        return "Grok (xAI)"
+    return model
+
+
 @dataclass
 class PipelineOptions:
     """Configuration knobs shared between CLI and API execution paths."""
@@ -367,6 +380,8 @@ def perform_run(
                 combined_p=float(combined_block_payload.get("p", prior_p)),
                 web_block=sanitized_web_block,
                 replicates=normalized_reps,
+                prior_block=prior_block_payload,
+                model_label=_model_label(cfg.model),
             )
         except Exception:  # pragma: no cover
             logger.exception("Failed to compose Simple View for run %s", run_id)
@@ -382,6 +397,7 @@ def perform_run(
                 stability_score=stability_score,
                 template_count=sampling.get("T") or aggregation.get("n_templates"),
                 imbalance_ratio=aggregation.get("imbalance_ratio"),
+                model_label=_model_label(cfg.model),
             )
         except Exception:  # pragma: no cover
             logger.exception("Failed to compose baseline Simple View for run %s", run_id)
@@ -405,19 +421,38 @@ def perform_run(
     )
 
 
+def _coerce_bullets(values: Any) -> list[str]:
+    cleaned: list[str] = []
+    if not isinstance(values, list):
+        values = [values] if values else []
+    for val in values:
+        text = None
+        if isinstance(val, str):
+            text = val
+        elif isinstance(val, dict):
+            text = val.get("text") or val.get("statement") or val.get("summary")
+        elif val is not None:
+            text = str(val)
+        if text:
+            stripped = text.strip()
+            if stripped:
+                cleaned.append(stripped)
+    return cleaned
+
+
 def _normalize_replica(rep: Any) -> Dict[str, Any]:
-    support = []
-    oppose = []
-    notes = []
+    support: list[str] = []
+    oppose: list[str] = []
+    notes: list[str] = []
     json_valid = None
     replicate_idx = getattr(rep, "replicate_idx", None)
     p_web = getattr(rep, "p_web", None)
     if isinstance(rep, dict):
         replicate_idx = rep.get("replicate_idx")
         p_web = rep.get("p_web")
-        support = list(rep.get("support_bullets", []))
-        oppose = list(rep.get("oppose_bullets", []))
-        notes = list(rep.get("notes", []))
+        support = _coerce_bullets(rep.get("support_bullets", []))
+        oppose = _coerce_bullets(rep.get("oppose_bullets", []))
+        notes = _coerce_bullets(rep.get("notes", []))
         json_valid = rep.get("json_valid")
     else:
         support = list(getattr(rep, "support_bullets", []) or [])

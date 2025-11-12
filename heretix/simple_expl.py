@@ -33,8 +33,11 @@ def compose_simple_expl(
     combined_p: float,
     web_block: Optional[Dict[str, Any]],
     replicates: Optional[List[Dict[str, Any]]],
+    prior_block: Optional[Dict[str, Any]] = None,
+    model_label: str = "the model",
 ) -> Dict[str, Any]:
     claim_low = (claim or "").lower()
+    label = model_label or "the model"
     year_m = re.search(r"(20\d{2})", claim or "")
     pct_m = re.search(r"(\d{1,3})\s?%[^\d]*", claim or "")
     year_txt = year_m.group(1) if year_m else None
@@ -66,6 +69,8 @@ def compose_simple_expl(
                     used_bullets.add(key)
                     return s
         return None
+
+    label = model_label or "the model"
 
     lines: List[str] = []
     # Patterns
@@ -131,6 +136,66 @@ def compose_simple_expl(
     # Verdict tie‑in
     verdict = "likely true" if combined_p >= 0.6 else ("likely false" if combined_p <= 0.4 else "uncertain")
     summary = f"Taken together, these points suggest the claim is {verdict}."
+
+    if not lines:
+        fallback_lines: List[str] = []
+        prior_p = None
+        prior_ci = None
+        if isinstance(prior_block, dict):
+            prior_p = prior_block.get("p")
+            prior_ci = prior_block.get("ci95")
+        web_p = None
+        if isinstance(web_block, dict):
+            web_p = web_block.get("p")
+        try:
+            if isinstance(prior_p, (int, float)) and isinstance(web_p, (int, float)):
+                fallback_lines.append(
+                    f"{label}’s training view was {prior_p*100:.1f}% and the web estimate landed at {web_p*100:.1f}%, so the blend sits between them."
+                )
+            evidence = (web_block or {}).get("evidence") if isinstance(web_block, dict) else None
+            if isinstance(evidence, dict):
+                n_docs = int(evidence.get("n_docs") or 0)
+                n_domains = int(evidence.get("n_domains") or 0)
+                median_age = evidence.get("median_age_days")
+                if n_docs or n_domains:
+                    fallback_lines.append(
+                        f"Web sampling pulled {n_docs} doc{'s' if n_docs != 1 else ''} across {n_domains} domains, showing a mix of perspectives."
+                    )
+                if isinstance(median_age, (int, float)) and median_age > 0:
+                    fallback_lines.append(
+                        f"The median publish date was about {median_age:.0f} day{'s' if median_age != 1 else ''} ago, so evidence is relatively recent."
+                    )
+            support_ct = len((web_block or {}).get("support") or [])
+            contradict_ct = len((web_block or {}).get("contradict") or [])
+            if support_ct or contradict_ct:
+                fallback_lines.append(
+                    f"Supporters contributed {support_ct} citing statements while contradicting evidence offered {contradict_ct}, keeping the verdict cautious."
+                )
+        except Exception:
+            fallback_lines = []
+
+        fallback_lines = [ln for ln in fallback_lines if ln][:3]
+
+        if not fallback_lines:
+            prior_ci_tuple: Tuple[float, float] = (combined_p, combined_p)
+            if isinstance(prior_ci, (list, tuple)) and len(prior_ci) == 2:
+                lo = prior_ci[0] if isinstance(prior_ci[0], (int, float)) else combined_p
+                hi = prior_ci[1] if isinstance(prior_ci[1], (int, float)) else combined_p
+                prior_ci_tuple = (lo, hi)
+            fallback = compose_baseline_simple_expl(
+                claim=claim,
+                prior_p=float(prior_p) if isinstance(prior_p, (int, float)) else combined_p,
+                prior_ci=prior_ci_tuple,
+                stability_score=float((prior_block or {}).get("stability") or 0.0),
+                template_count=None,
+                imbalance_ratio=None,
+                model_label=label,
+            )
+            fallback_lines = list(fallback.get("lines") or [])
+            if fallback.get("summary"):
+                summary = fallback["summary"]
+
+        lines = fallback_lines or lines
 
     return {
         "title": "Why the web‑informed verdict looks this way",
@@ -227,6 +292,7 @@ def compose_baseline_simple_expl(
     stability_score: float,
     template_count: Optional[int],
     imbalance_ratio: Optional[float],
+    model_label: str = "the model",
 ) -> Dict[str, Any]:
     """Compose Simple View lines for baseline (model-only) runs."""
 
@@ -236,6 +302,7 @@ def compose_baseline_simple_expl(
     pct_m = re.search(r"(\\d{1,3})\\s?%[^\n]*", claim or "")
     year_txt = year_m.group(1) if year_m else None
     pct_txt = pct_m.group(1) if pct_m else None
+    label = model_label or "the model"
 
     def add(*lines: str) -> None:
         for line in lines:
@@ -275,7 +342,7 @@ def compose_baseline_simple_expl(
         add(
             "“Greatest” debates typically hinge on championships, sustained dominance, and historical impact.",
             "Model priors weigh how lists and historians balance rings, longevity, and era strength, not single stats.",
-            "Without agreed criteria, the claim depends on subjective definitions, so GPT‑5 stays skeptical.",
+            f"Without agreed criteria, the claim depends on subjective definitions, so {label} stays skeptical.",
         )
     elif "inflation" in claim_low and ("tariff" in claim_low or "tariffs" in claim_low):
         add(
@@ -294,7 +361,7 @@ def compose_baseline_simple_expl(
     elif pct_txt and any(word in claim_low for word in ["population", "people", "generation", "citizen", "share"]):
         add(
             f"Claims that {pct_txt}% of a population faced the same outcome trigger checks against census and mortality tables.",
-            "GPT‑5 recalls that demographic swings, migration, and reporting gaps make tidy percentages suspect.",
+            f"{label} recalls that demographic swings, migration, and reporting gaps make tidy percentages suspect.",
             "Without archival data, priors view sweeping percentage assertions as more rhetorical than factual.",
         )
 
@@ -305,17 +372,17 @@ def compose_baseline_simple_expl(
         if direction == "likely true":
             return [
                 f"Training data references {topic_phrase} and usually reports outcomes consistent with the claim.",
-                "Historical summaries in the corpus mention similar incentives and mechanisms, so GPT‑5 leans toward it being accurate.",
+                f"Historical summaries in the corpus mention similar incentives and mechanisms, so {label} leans toward it being accurate.",
                 "Counterexamples exist, but they are outweighed by supporting accounts in its prior knowledge.",
             ]
         if direction == "likely false":
             return [
                 f"Many references to {topic_phrase} describe scenarios where the claim breaks down or stays limited.",
-                "Definitions, precedent, and expert commentary in the corpus nudge GPT‑5 toward skepticism.",
+                f"Definitions, precedent, and expert commentary in the corpus nudge {label} toward skepticism.",
                 "Supporting anecdotes appear, but contradictory evidence dominates the material it has seen.",
             ]
         return [
-            f"Examples about {topic_phrase} split between success and failure in GPT‑5’s training data.",
+            f"Examples about {topic_phrase} split between success and failure in {label}’s training data.",
             "Outcomes hinge on missing details or context, so the model keeps the prior near the middle.",
             "Supporting and opposing references appear in roughly equal measure, preventing a decisive verdict.",
         ]
@@ -347,7 +414,7 @@ def compose_baseline_simple_expl(
             lines.append(sentence)
 
     fallback_reasons = [
-        "GPT‑5 compares thousands of historical examples before settling on a prior.",
+        f"{label} compares thousands of historical examples before settling on a prior.",
         "Definitions and context matter; priors stay cautious when a claim needs extra assumptions.",
         "Counterexamples in its training data keep the probability from moving into confident territory.",
     ]
