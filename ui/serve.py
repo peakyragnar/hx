@@ -13,11 +13,20 @@ from typing import Optional, List
 import logging
 import re
 import html
+from contextlib import contextmanager
 
 # Provider adapters (reuse existing harness adapters)
 from heretix.provider.openai_gpt5 import score_claim as _score_claim_live
 from heretix.provider.mock import score_claim_mock as _score_claim_mock
 from openai import OpenAI
+
+# Direct pipeline imports for local/production parity
+from heretix.pipeline import perform_run, PipelineOptions
+from heretix.config import RunConfig
+
+# Database imports
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
 
 
 
@@ -35,6 +44,26 @@ logging.basicConfig(level=logging.INFO)
 
 
 ENABLE_GROK = os.getenv("HERETIX_ENABLE_GROK", "0") == "1"
+USE_DIRECT_PIPELINE = os.getenv("HERETIX_UI_DIRECT_PIPELINE", "1") == "1"
+
+# Database setup for direct pipeline mode
+_db_url = os.getenv("DATABASE_URL", "sqlite:///runs/heretix_ui.sqlite")
+_engine = create_engine(_db_url, future=True, pool_pre_ping=True)
+_SessionLocal = sessionmaker(bind=_engine, autoflush=False, autocommit=False, expire_on_commit=False)
+
+
+@contextmanager
+def get_session():
+    """Create a database session for UI operations."""
+    session: Session = _SessionLocal()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 
 
@@ -310,26 +339,86 @@ class Handler(BaseHTTPRequestHandler):
             logging.error("UI job config missing: %s", cfg_path)
             self._err("This run expired. Please try again."); return
 
-        env = os.environ.copy()
-        env.setdefault("DATABASE_URL", f"sqlite:///{Path('runs/heretix_ui.sqlite').resolve()}")
-        env.setdefault("HERETIX_RPL_SEED", "42")
-
         mode_flag = "web_informed" if ui_mode_value == "internet-search" else "baseline"
-        cmd = ["uv", "run", "heretix", "run", "--config", str(cfg_path), "--out", str(out_path), "--mode", mode_flag]
-        timeout = min(RUN_TIMEOUT_SEC, 600)
-        try:
-            start = time.time()
-            cp = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=timeout, check=True)
-            logging.info("UI run ok in %.1fs", time.time()-start)
-            if cp.stderr:
-                logging.info("UI stderr: %s", cp.stderr[:500])
-        except subprocess.CalledProcessError as e:
-            msg = (e.stderr or e.stdout or str(e))[:2000]
-            logging.error("UI run failed: %s", msg)
-            self._err("The run failed. Please try again.", headline="The run failed"); return
-        except subprocess.TimeoutExpired:
-            logging.error("UI run timed out after %ss", timeout)
-            self._err("The run exceeded our time limit.", headline="This took too long"); return
+
+        # Use direct pipeline call for local/production parity (default)
+        if USE_DIRECT_PIPELINE:
+            try:
+                start = time.time()
+                # Load config from file
+                cfg_data = json.loads(cfg_path.read_text(encoding="utf-8"))
+
+                # Build RunConfig
+                cfg = RunConfig(
+                    claim=cfg_data.get("claim", ""),
+                    model=cfg_data.get("model", "gpt-5"),
+                    prompt_version=cfg_data.get("prompt_version", PROMPT_VERSION_DEFAULT),
+                    K=cfg_data.get("K", 16),
+                    R=cfg_data.get("R", 2),
+                    T=cfg_data.get("T", 8),
+                    B=cfg_data.get("B", 5000),
+                    max_output_tokens=cfg_data.get("max_output_tokens", 1024),
+                    seed=cfg_data.get("seed", 42),
+                )
+
+                # Build pipeline options
+                options = PipelineOptions(
+                    app_env="local",
+                    wel_provider="tavily",
+                    wel_model=os.getenv("WEL_MODEL", "gpt-5"),
+                    wel_docs=16,
+                    wel_replicates=2,
+                    wel_per_domain_cap=3,
+                    wel_recency_days=None,
+                    prompt_root=None,
+                )
+
+                # Execute via direct pipeline (same as production API)
+                with get_session() as session:
+                    artifacts = perform_run(
+                        session=session,
+                        cfg=cfg,
+                        mode=mode_flag,
+                        options=options,
+                        use_mock=False,
+                        user_id=None,
+                        anon_token=None,
+                    )
+                    result_json = artifacts.result
+
+                # Write to output file for compatibility with existing rendering logic
+                out_path.write_text(json.dumps({"runs": [result_json]}, indent=2), encoding="utf-8")
+
+                logging.info("UI run ok (direct pipeline) in %.1fs", time.time() - start)
+
+            except Exception as e:
+                logging.error("UI run failed (direct pipeline): %s", str(e)[:2000])
+                self._err("The run failed. Please try again.", headline="The run failed")
+                return
+        else:
+            # Fallback to subprocess (old behavior)
+            env = os.environ.copy()
+            env.setdefault("DATABASE_URL", f"sqlite:///{Path('runs/heretix_ui.sqlite').resolve()}")
+            env.setdefault("HERETIX_RPL_SEED", "42")
+            env.setdefault("WEL_MODEL", "gpt-5")
+
+            cmd = ["uv", "run", "heretix", "run", "--config", str(cfg_path), "--out", str(out_path), "--mode", mode_flag]
+            timeout = min(RUN_TIMEOUT_SEC, 600)
+            try:
+                start = time.time()
+                cp = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=timeout, check=True)
+                logging.info("UI run ok (subprocess) in %.1fs", time.time()-start)
+                if cp.stderr:
+                    logging.info("UI stderr: %s", cp.stderr[:500])
+            except subprocess.CalledProcessError as e:
+                msg = (e.stderr or e.stdout or str(e))[:2000]
+                logging.error("UI run failed (subprocess): %s", msg)
+                self._err("The run failed. Please try again.", headline="The run failed")
+                return
+            except subprocess.TimeoutExpired:
+                logging.error("UI run timed out after %ss", timeout)
+                self._err("The run exceeded our time limit.", headline="This took too long")
+                return
 
         try:
             # Sanity limit to prevent huge/malformed file issues
@@ -1073,8 +1162,114 @@ class Handler(BaseHTTPRequestHandler):
 
         backend_deeper = run.get("deeper_expl") if isinstance(run, dict) else None
 
+        def _compose_default_deeper_block() -> str:
+            parts: list[str] = ["<details><summary>Deeper explanation</summary>", "<div>"]
+            parts.append("<h4>Training‑only (model prior)</h4>")
+            parts.append(f"<p>Model (training‑only): {prior_percent}</p>")
+            prior_lines: list[str] = []
+            if label == 'evil':
+                prior_lines = [
+                    '“Evil” is a moral label rather than a factual category.',
+                    'The model sees mixed rhetoric and lacks a clear rule for labeling a person “evil.”',
+                    'Without explicit criteria (e.g., intent to cause severe harm), it doesn’t infer that label from disagreements or controversy.',
+                    'As a factual statement, the claim is not established under common definitions.',
+                ]
+            elif label == 'nazi':
+                prior_lines = [
+                    '“Nazi” is a specific historical/political designation.',
+                    'The model treats it as requiring evidence of party membership or explicit neo‑Nazi self‑identification.',
+                    'Rhetoric, comparisons, or associations do not meet that threshold.',
+                    'On that basis, it does not infer the label from controversies alone.',
+                ]
+            else:
+                base = [_strip_parens(r) for r in (prior_reasons[:4] if prior_reasons else [])]
+                prior_lines = [s for s in base if s][:4]
+                if not prior_lines:
+                    prior_lines = [
+                        'This view uses only the model’s internal knowledge; no web sources.',
+                        'It reflects typical usage and references the model has seen rather than a formal definition.',
+                    ]
+            parts.append('<ul>')
+            for s in prior_lines[:4]:
+                parts.append(f"<li>{html.escape(s, quote=True)}</li>")
+            parts.append('</ul>')
+            if is_web_mode:
+                parts.append("<h4>Web evidence (recent)</h4>")
+                parts.append(f"<p>Web evidence: {web_percent}</p>")
+                web_lines: list[str] = []
+                if label == 'evil':
+                    web_lines = [
+                        'Recent pieces mostly offer opinions or rhetoric rather than verifiable criteria for “evil.”',
+                        'Coverage cites controversies and harsh language but doesn’t show deliberate severe harm that meets a clear standard.',
+                        'Credible outlets do not converge on a shared definition or threshold for this label.',
+                        'Taken together, web sources support treating the statement as a value judgment, not a verified fact.',
+                    ]
+                elif label == 'nazi':
+                    web_lines = [
+                        'Reporting highlights Nazi‑related rhetoric or comparisons but no credible evidence of party membership or neo‑Nazi affiliation.',
+                        'Major outlets do not document self‑identification or organizational ties that would satisfy the label.',
+                        'References are largely opinion or metaphor rather than documentation of affiliation.',
+                        'Together, sources support treating the statement as factually false rather than a proven designation.',
+                    ]
+                else:
+                    base_web = [_strip_parens(r) for r in (web_reasons[:4] if web_reasons else [])]
+                    web_lines = [s for s in base_web if s][:4]
+                    if not web_lines:
+                        web_lines = [
+                            'Recent coverage mostly restates the same prior context without decisive new facts.',
+                            'No single source provided a definitive resolution.',
+                        ]
+                parts.append('<ul>')
+                for s in web_lines[:4]:
+                    parts.append(f"<li>{html.escape(s, quote=True)}</li>")
+                parts.append('</ul>')
+                try:
+                    summary = backend_web or {}
+                    if isinstance(summary, dict):
+                        web_summary = summary.get('summary', {})
+                        if isinstance(web_summary, dict):
+                            src_names = [s for s in summary.get('domains', []) if isinstance(s, str)]
+                            if src_names:
+                                def _friendly_name2(domain: str) -> str:
+                                    d = (domain or '').lower().strip()
+                                    mapping = {
+                                        'virginia.edu': 'University of Virginia', 'harvard.edu': 'Harvard University', 'law.harvard.edu': 'Harvard Law',
+                                        'mit.edu': 'MIT', 'stanford.edu': 'Stanford University', 'yale.edu': 'Yale University', 'ox.ac.uk': 'University of Oxford',
+                                        'cam.ac.uk': 'University of Cambridge', 'wm.edu': 'William & Mary', 'brennancenter.org': 'Brennan Center for Justice',
+                                        'aclu.org': 'ACLU', 'cato.org': 'Cato Institute', 'heritage.org': 'Heritage Foundation', 'brookings.edu': 'Brookings Institution',
+                                        'nih.gov': 'NIH', 'cdc.gov': 'CDC', 'who.int': 'WHO', 'supremecourt.gov': 'Supreme Court', 'congress.gov': 'US Congress',
+                                        'whitehouse.gov': 'White House', 'gao.gov': 'GAO', 'oecd.org': 'OECD', 'imf.org': 'IMF', 'worldbank.org': 'World Bank',
+                                        'bbc.com': 'BBC', 'cnn.com': 'CNN', 'reuters.com': 'Reuters', 'apnews.com': 'AP News', 'bloomberg.com': 'Bloomberg',
+                                        'politico.com': 'Politico', 'foxnews.com': 'Fox News', 'nbcnews.com': 'NBC News', 'abcnews.go.com': 'ABC News',
+                                        'cbsnews.com': 'CBS News', 'latimes.com': 'LA Times', 'nytimes.com': 'New York Times', 'washingtonpost.com': 'Washington Post',
+                                        'wsj.com': 'Wall Street Journal', 'ft.com': 'Financial Times', 'economist.com': 'The Economist', 'theguardian.com': 'The Guardian',
+                                        'guardian.com': 'The Guardian', 'guardian.co.uk': 'The Guardian', 'techcrunch.com': 'TechCrunch', 'nature.com': 'Nature',
+                                        'sciencemag.org': 'Science', 'npr.org': 'NPR', 'aljazeera.com': 'Al Jazeera', 'axios.com': 'Axios', 'usatoday.com': 'USA Today', 'msn.com': 'MSN (syndicated)'
+                                    }
+                                    return mapping.get(d, domain)
+                                def _is_preferred_domain2(domain: str) -> bool:
+                                    d = (domain or '').lower().strip()
+                                    if d.endswith('.edu') or d.endswith('.gov'):
+                                        return True
+                                    preferred = {'bbc.com','cnn.com','reuters.com','apnews.com','nytimes.com','washingtonpost.com','wsj.com','ft.com','economist.com','nature.com','sciencemag.org','npr.org','bloomberg.com','politico.com','foxnews.com','nbcnews.com','abcnews.go.com','cbsnews.com','latimes.com','theguardian.com','guardian.co.uk','techcrunch.com','brennancenter.org','aclu.org','cato.org','heritage.org','brookings.edu','who.int'}
+                                    return d in preferred
+                                preferred = [s for s in src_names if _is_preferred_domain2(s)]
+                                names_to_show = preferred[:3] if preferred else src_names[:3]
+                                friendly = [_friendly_name2(s) for s in names_to_show]
+                                more_total = int(web_summary.get('metrics', {}).get('n_domains') or len(src_names)) if isinstance(web_summary, dict) else len(src_names)
+                                more = ' (+ more)' if more_total > len(names_to_show) else ''
+                                parts.append('<li>Sources: ' + ', '.join([html.escape(x, quote=True) for x in friendly]) + more + '</li>')
+                except Exception:
+                    pass
+                parts.append('</ul>')
+            parts.append("<h4>How we combine</h4>")
+            parts.append("<p>We blend the model’s training view with recent, consistent sources. When sources agree and are current, the web view gets slightly more say; otherwise the training view dominates.</p>")
+            parts.append("</div></details>")
+            return "".join(parts)
+
         # Build deeper explanation block (skip entirely when resolved)
         deeper_block_html = ""
+        deeper_parts: list[str] = []
         if not resolved_flag:
             if backend_deeper:
                 parts: list[str] = ["<details><summary>Deeper explanation</summary>", "<div>"]
@@ -1128,170 +1323,7 @@ class Handler(BaseHTTPRequestHandler):
                 parts.append("</div></details>")
                 deeper_block_html = "".join(parts)
             else:
-                deeper_parts: list[str] = ["<details><summary>Deeper explanation</summary>", "<div>"]
-                deeper_parts.append("<h4>Training‑only (model prior)</h4>")
-                deeper_parts.append(f"<p>Model (training‑only): {prior_percent}</p>")
-        # Up to four concise prior sentences
-        prior_lines: list[str] = []
-        if label == 'evil':
-            prior_lines = [
-                '“Evil” is a moral label rather than a factual category.',
-                'The model sees mixed rhetoric and lacks a clear rule for labeling a person “evil.”',
-                'Without explicit criteria (e.g., intent to cause severe harm), it doesn’t infer that label from disagreements or controversy.',
-                'As a factual statement, the claim is not established under common definitions.',
-            ]
-        elif label == 'nazi':
-            prior_lines = [
-                '“Nazi” is a specific historical/political designation.',
-                'The model treats it as requiring evidence of party membership or explicit neo‑Nazi self‑identification.',
-                'Rhetoric, comparisons, or associations do not meet that threshold.',
-                'On that basis, it does not infer the label from controversies alone.',
-            ]
-        else:
-            # Use neutral explainer reasons (prior-only), padded to four if short
-            base = [ _strip_parens(r) for r in (prior_reasons[:4] if prior_reasons else []) ]
-            prior_lines = [s for s in base if s][:4]
-            if not prior_lines:
-                prior_lines = [
-                    'This view uses only the model’s internal knowledge; no web sources.',
-                    'It reflects typical usage and references the model has seen rather than a formal definition.',
-                ]
-        deeper_parts.append('<ul>')
-        for s in prior_lines[:4]:
-            deeper_parts.append(f"<li>{html.escape(s, quote=True)}</li>")
-        deeper_parts.append('</ul>')
-        if not resolved_flag and is_web_mode:
-            deeper_parts.append("<h4>Web evidence (recent)</h4>")
-            deeper_parts.append(f"<p>Web evidence: {web_percent}</p>")
-            # Distill up to four web bullets (favor substantive statements), or normative set
-            web_lines: list[str] = []
-            if label == 'evil':
-                web_lines = [
-                    'Recent pieces mostly offer opinions or rhetoric rather than verifiable criteria for “evil.”',
-                    'Coverage cites controversies and harsh language but doesn’t show deliberate severe harm that meets a clear standard.',
-                    'Credible outlets do not converge on a shared definition or threshold for this label.',
-                    'Taken together, web sources support treating the statement as a value judgment, not a verified fact.',
-                ]
-            elif label == 'nazi':
-                web_lines = [
-                    'Reporting highlights Nazi‑related rhetoric or comparisons but no credible evidence of party membership or neo‑Nazi affiliation.',
-                    'Major outlets do not document self‑identification or organizational ties that would satisfy the label.',
-                    'References are largely opinion or metaphor rather than documentation of affiliation.',
-                    'Together, sources support treating the statement as factually false rather than a proven designation.',
-                ]
-            else:
-                distilled: list[str] = []
-                try:
-                    for rep in (web_summary.get('replicates') or []):
-                        items = rep.get('support_bullets', []) if isinstance(rep, dict) else getattr(rep, 'support_bullets', [])
-                        for it in (items or []):
-                            s = _strip_parens(it)
-                            if s and s not in distilled:
-                                distilled.append(s)
-                            if len(distilled) >= 4:
-                                break
-                        if len(distilled) >= 4:
-                            break
-                except Exception:
-                    pass
-                web_lines = distilled[:4]
-            if web_lines:
-                deeper_parts.append('<ul>')
-                for s in web_lines[:4]:
-                    deeper_parts.append(f"<li>{html.escape(s, quote=True)}</li>")
-                # Add one-line sources summary using friendly names
-                try:
-                    src_names: list[str] = []
-                    if resolved_flag and resolved_citations:
-                        for cite in resolved_citations:
-                            dom = (cite.get('domain') or '').strip()
-                            if dom and dom not in src_names:
-                                src_names.append(dom)
-                            if len(src_names) >= 6:
-                                break
-                    if not src_names and web_summary and web_summary.get('replicates'):
-                        seen = set()
-                        for rep in web_summary['replicates']:
-                            docs = rep.get('docs') if isinstance(rep, dict) else getattr(rep, 'docs', [])
-                            for d in (docs or []):
-                                # Prefer explicit domain; fall back to URL hostname
-                                if isinstance(d, dict):
-                                    dom = (d.get('domain') or '').strip()
-                                    if not dom:
-                                        u = (d.get('url') or '').strip()
-                                        try:
-                                            host = urllib.parse.urlparse(u).hostname or ''
-                                            dom = host.replace('www.', '').strip('. ')
-                                        except Exception:
-                                            dom = ''
-                                else:
-                                    dom = (getattr(d, 'domain', '') or '').strip()
-                                    if not dom:
-                                        u = (getattr(d, 'url', '') or '').strip()
-                                        try:
-                                            host = urllib.parse.urlparse(u).hostname or ''
-                                            dom = host.replace('www.', '').strip('. ')
-                                        except Exception:
-                                            dom = ''
-                                if dom and dom not in seen:
-                                    seen.add(dom)
-                                    src_names.append(dom)
-                                if len(src_names) >= 12:
-                                    break
-                            if len(src_names) >= 12:
-                                break
-                    # Fallback: extract domains mentioned in reason text (e.g., "(bbc.com; reuters.com)")
-                    if not src_names and reasons:
-                        import re as _re_dom
-                        seen2 = set()
-                        for rtxt in reasons:
-                            for m in _re_dom.findall(r"\b([A-Za-z0-9.-]+\.(?:com|org|net|gov|edu|news|io|co|uk|us|ca|au|de|fr))\b", rtxt):
-                                dom = m.lower().strip('.').strip()
-                                if dom and dom not in seen2:
-                                    seen2.add(dom)
-                                    src_names.append(dom)
-                                if len(src_names) >= 12:
-                                    break
-                            if len(src_names) >= 12:
-                                break
-                    if src_names:
-                        # Local friendly mapping and preference filter
-                        def _friendly_name2(domain: str) -> str:
-                            d = (domain or '').lower().strip()
-                            mapping = {
-                                'virginia.edu': 'University of Virginia', 'harvard.edu': 'Harvard University', 'law.harvard.edu': 'Harvard Law',
-                                'mit.edu': 'MIT', 'stanford.edu': 'Stanford University', 'yale.edu': 'Yale University', 'ox.ac.uk': 'University of Oxford',
-                                'cam.ac.uk': 'University of Cambridge', 'wm.edu': 'William & Mary', 'brennancenter.org': 'Brennan Center for Justice',
-                                'aclu.org': 'ACLU', 'cato.org': 'Cato Institute', 'heritage.org': 'Heritage Foundation', 'brookings.edu': 'Brookings Institution',
-                                'nih.gov': 'NIH', 'cdc.gov': 'CDC', 'who.int': 'WHO', 'supremecourt.gov': 'Supreme Court', 'congress.gov': 'US Congress',
-                                'whitehouse.gov': 'White House', 'gao.gov': 'GAO', 'oecd.org': 'OECD', 'imf.org': 'IMF', 'worldbank.org': 'World Bank',
-                                'bbc.com': 'BBC', 'cnn.com': 'CNN', 'reuters.com': 'Reuters', 'apnews.com': 'AP News', 'bloomberg.com': 'Bloomberg',
-                                'politico.com': 'Politico', 'foxnews.com': 'Fox News', 'nbcnews.com': 'NBC News', 'abcnews.go.com': 'ABC News',
-                                'cbsnews.com': 'CBS News', 'latimes.com': 'LA Times', 'nytimes.com': 'New York Times', 'washingtonpost.com': 'Washington Post',
-                                'wsj.com': 'Wall Street Journal', 'ft.com': 'Financial Times', 'economist.com': 'The Economist', 'theguardian.com': 'The Guardian',
-                                'guardian.com': 'The Guardian', 'guardian.co.uk': 'The Guardian', 'techcrunch.com': 'TechCrunch', 'nature.com': 'Nature',
-                                'sciencemag.org': 'Science', 'npr.org': 'NPR', 'aljazeera.com': 'Al Jazeera', 'axios.com': 'Axios', 'usatoday.com': 'USA Today', 'msn.com': 'MSN (syndicated)'
-                            }
-                            return mapping.get(d, domain)
-                        def _is_preferred_domain2(domain: str) -> bool:
-                            d = (domain or '').lower().strip()
-                            if d.endswith('.edu') or d.endswith('.gov'): return True
-                            preferred = {'bbc.com','cnn.com','reuters.com','apnews.com','nytimes.com','washingtonpost.com','wsj.com','ft.com','economist.com','nature.com','sciencemag.org','npr.org','bloomberg.com','politico.com','foxnews.com','nbcnews.com','abcnews.go.com','cbsnews.com','latimes.com','theguardian.com','guardian.com','guardian.co.uk','techcrunch.com','brennancenter.org','aclu.org','cato.org','heritage.org','brookings.edu','who.int'}
-                            return d in preferred
-                        preferred = [s for s in src_names if _is_preferred_domain2(s)]
-                        names_to_show = preferred[:3] if preferred else src_names[:3]
-                        friendly = [_friendly_name2(s) for s in names_to_show]
-                        more_total = int(web_summary.get('metrics', {}).get('n_domains') or len(src_names)) if isinstance(web_summary, dict) else len(src_names)
-                        more = ' (+ more)' if more_total > len(names_to_show) else ''
-                        deeper_parts.append('<li>Sources: ' + ', '.join([html.escape(x, quote=True) for x in friendly]) + more + '</li>')
-                except Exception:
-                    pass
-                deeper_parts.append('</ul>')
-            # Plain-language combination rule
-            deeper_parts.append("<h4>How we combine</h4>")
-            deeper_parts.append("<p>We blend the model’s training view with recent, consistent sources. When sources agree and are current, the web view gets slightly more say; otherwise the training view dominates.</p>")
-            deeper_parts.append("</div></details>")
-        deeper_block_html = "".join(deeper_parts) if deeper_parts else ""
+                deeper_block_html = _compose_default_deeper_block()
         body = _render(
             ROOT / "results.html",
             {

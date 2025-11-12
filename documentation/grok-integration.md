@@ -16,6 +16,12 @@ Requirements
   - Optional rate limits: `HERETIX_XAI_RPS=1`, `HERETIX_XAI_BURST=2`.
   - `HERETIX_GROK_MODEL` (optional override of the model id; defaults to `grok-4-fast-non-reasoning`).
   - Feature flag to expose in UI/API: `HERETIX_ENABLE_GROK=1`.
+  - Context tuning knobs:
+    - `HERETIX_GROK_REQUIRE_CONTEXT` (default `1`): enable/disable Grok-only context enforcement.
+    - `HERETIX_GROK_CONTEXT_MIN_ITEMS` (default `3`): minimum reasoning bullets that must contain concrete context.
+    - `HERETIX_GROK_CONTEXT_MIN_WORDS` (default `9`): minimum word count per reasoning bullet to count as “contextual”.
+    - `HERETIX_GROK_MAX_ATTEMPTS` (default `2`): number of times the adapter will re-ask Grok when context is missing.
+    - `HERETIX_GROK_DEBUG_DIR` (optional path): when set, every Grok attempt writes a JSON transcript (instructions + raw text) for debugging.
 - Runtime: Python 3.10+, uv, existing Heretix stack.
 
 Target Model (Grok 4 fast non-reasoning)
@@ -90,6 +96,10 @@ Operational Notes
 - No estimator/schema changes. Aggregation stays in logit space with equal-by-template weighting and 20% trim when T≥5.
 - Cache identity already includes `model` + `max_output_tokens`; no collisions with GPT‑5 samples/runs.
 - Seeds unaffected; provenance continues to record `bootstrap_seed` and prompt version.
+- Context enforcement lives inside `heretix/provider/grok_xai.py` only:
+  - Every Responses/Chat call includes an additional instruction block demanding concrete, multi-sentence reasoning bullets.
+  - If Grok still returns thin bullets, the adapter automatically re-prompts (up to `HERETIX_GROK_MAX_ATTEMPTS`) with a follow-up reminder. GPT‑5 code paths are untouched.
+  - When `HERETIX_GROK_DEBUG_DIR` is set, each attempt is logged (`attempt`, `instructions`, `raw_text`, `needs_context`) so we can inspect why Grok dropped context without touching GPT‑5 transcripts.
 
 Rollout Plan
 1. Merge behind flag (`HERETIX_ENABLE_GROK=0`).

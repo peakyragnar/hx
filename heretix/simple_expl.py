@@ -1,14 +1,62 @@
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
+
+
+# Comprehensive error patterns to filter from explanations
+_ERROR_PATTERNS = {
+    "invalid_response",
+    "error code:",
+    "error code",
+    "model_not_found",
+    "does not exist",
+    "traceback",
+    "api error",
+    "authentication failed",
+    "authentication error",
+    "rate limit",
+    "status code",
+    "exception",
+    "failed to",
+    "could not",
+    "unable to",
+    "invalid model",
+    "model does not exist",
+    "not found",
+    "permission denied",
+    "access denied",
+    "unauthorized",
+    "forbidden",
+    "bad request",
+    "internal server error",
+    "service unavailable",
+    "timeout",
+    "connection error",
+    "network error",
+}
 
 
 def _sanitize(text: str) -> str:
     if not isinstance(text, str):
         return ""
     t = text.strip()
+
+    # Drop internal error/provenance lines that may leak provider failures
+    lower = t.lower()
+    if any(k in lower for k in _ERROR_PATTERNS):
+        return ""
+
+    # Drop lines that look like JSON error objects
+    if lower.startswith("{") and ("error" in lower or "message" in lower or "code" in lower):
+        try:
+            obj = json.loads(t)
+            if isinstance(obj, dict) and any(key in obj for key in ("error", "message", "code", "status")):
+                return ""
+        except (json.JSONDecodeError, ValueError):
+            pass
     # strip leading domain or Brand:
     t = re.sub(r"^\s*(?:[A-Za-z0-9.-]+\.(?:com|org|net|gov|edu|news|io|co|uk|us|ca|au|de|fr))\s*[:—-]\s*", "", t)
     t = re.sub(r"^\s*[A-Z][\w&-]*(?:\s+[A-Z][\w&-]*){0,3}\s*:\s*", "", t)
@@ -253,6 +301,51 @@ def _fallback_context_lines(frame: ClaimFrame, verdict: str) -> List[str]:
     return base
 
 
+def _validate_explanation_quality(lines: List[str], min_avg_words: int = 12) -> bool:
+    """
+    Validate that explanation lines meet quality bar for non-technical users.
+
+    Requirements:
+    - At least 2 lines present
+    - Each line must be 10+ words
+    - Average length must exceed min_avg_words
+    - No technical jargon or error messages
+
+    Returns True if explanation meets quality standards.
+    """
+    if not lines or len(lines) < 2:
+        return False
+
+    word_counts = [len(line.split()) for line in lines if line]
+    if not word_counts or min(word_counts) < 10:
+        return False
+
+    avg_words = sum(word_counts) / len(word_counts)
+    if avg_words < min_avg_words:
+        return False
+
+    # Check for forbidden technical language or error indicators
+    jargon_patterns = [
+        "econometric",
+        "exogenous",
+        "endogenous",
+        "heteroskedastic",
+        "stochastic",
+        "autoregressive",
+        "bayesian prior",
+        "monte carlo",
+        "error",
+        "exception",
+        "failed",
+        "invalid",
+    ]
+    combined = " ".join(lines).lower()
+    if any(pattern in combined for pattern in jargon_patterns):
+        return False
+
+    return True
+
+
 def _prior_meta_sentences(prior_p: float, stability_score: float, template_count: Optional[int]) -> List[str]:
     lines: List[str] = []
     if prior_p >= 0.7:
@@ -311,7 +404,26 @@ def compose_simple_expl(
 
     final_lines = [ln for ln in lines if ln][:3]
 
-    if len(final_lines) < 3 and prior_block:
+    # Apply quality gate: if lines are too short/generic/technical, use fallback
+    if not _validate_explanation_quality(final_lines):
+        if prior_block:
+            try:
+                fallback = compose_baseline_simple_expl(
+                    claim=claim,
+                    prior_p=float(prior_block.get("p", combined_p)),
+                    prior_ci=tuple(prior_block.get("ci95", (combined_p, combined_p))),
+                    stability_score=float(prior_block.get("stability") or 0.0),
+                    template_count=None,
+                    imbalance_ratio=None,
+                    model_label=model_label,
+                )
+                final_lines = fallback.get("lines", [])[:3]
+            except Exception:
+                final_lines = _fallback_context_lines(frame, verdict)[:3]
+        else:
+            final_lines = _fallback_context_lines(frame, verdict)[:3]
+    elif len(final_lines) < 3 and prior_block:
+        # Pad with baseline explanations if needed
         try:
             fallback = compose_baseline_simple_expl(
                 claim=claim,
@@ -642,6 +754,10 @@ def compose_baseline_simple_expl(
     while len(lines) < 3 and idx < len(fallback_reasons):
         lines.append(fallback_reasons[idx])
         idx += 1
+
+    # Apply quality gate: if lines fail validation, use generic fallback
+    if not _validate_explanation_quality(lines):
+        lines = _generic_lines(verdict)[:3]
 
     summary = f"Taken together, these points suggest the claim is {verdict}."
     return {
