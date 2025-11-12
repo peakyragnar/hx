@@ -387,9 +387,6 @@ def compose_baseline_simple_expl(
             "Supporting and opposing references appear in roughly equal measure, preventing a decisive verdict.",
         ]
 
-    if not lines:
-        lines.extend(_generic_lines(verdict)[:3])
-
     ci_lo_raw = prior_ci[0] if prior_ci and prior_ci[0] is not None else None
     ci_hi_raw = prior_ci[1] if prior_ci and prior_ci[1] is not None else None
     ci_lo = ci_lo_raw if isinstance(ci_lo_raw, (int, float)) else max(0.0, prior_p - 0.05)
@@ -409,9 +406,19 @@ def compose_baseline_simple_expl(
         else:
             template_sentence = f"{template_count} paraphrases agreed on the direction of the verdict."
 
-    for sentence in (ci_sentence, stability_sentence, template_sentence):
-        if sentence and len(lines) < 3:
-            lines.append(sentence)
+    stats_sentence = next((s for s in (ci_sentence, stability_sentence, template_sentence) if s), None)
+
+    if not lines:
+        lines = _generic_lines(verdict)[:3]
+        if stats_sentence:
+            if len(lines) >= 3:
+                lines[-1] = stats_sentence
+            elif stats_sentence:
+                lines.append(stats_sentence)
+    else:
+        lines = lines[:3]
+        if stats_sentence and len(lines) < 3:
+            lines.append(stats_sentence)
 
     fallback_reasons = [
         f"{label} compares thousands of historical examples before settling on a prior.",
