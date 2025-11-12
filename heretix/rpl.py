@@ -37,8 +37,7 @@ from .storage import (
     update_run_ci,
     update_execution_ci,
 )
-from .provider.openai_gpt5 import score_claim
-from .provider.mock import score_claim_mock
+from .provider.registry import get_scorer
 from .telemetry import timed, est_tokens, est_cost, log
 from .finalizer import kick_off_final_ci
 
@@ -262,6 +261,9 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             rows_ready.append(row)
 
     # Define a worker to call provider and build a sample row
+    # Resolve provider scorer once per run (mock/live determined by provider_mode)
+    scorer = get_scorer(cfg.model, use_mock=(provider_mode == "MOCK"))
+
     def _call_and_build(w: _Work) -> Dict[str, Any]:
         nonlocal total_tokens_in, total_tokens_out
 
@@ -270,16 +272,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             total_tokens_in += prompt_tokens_est
 
         def _once() -> Dict[str, Any]:
-            if provider_mode == "MOCK":
-                return score_claim_mock(
-                    claim=cfg.claim,
-                    system_text=system_text,
-                    user_template=user_template,
-                    paraphrase_text=w.paraphrase_text,
-                    model=cfg.model,
-                    max_output_tokens=cfg.max_output_tokens,
-                )
-            return score_claim(
+            return scorer(
                 claim=cfg.claim,
                 system_text=system_text,
                 user_template=user_template,

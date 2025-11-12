@@ -34,6 +34,9 @@ PORT_DEFAULT = 7799
 logging.basicConfig(level=logging.INFO)
 
 
+ENABLE_GROK = os.getenv("HERETIX_ENABLE_GROK", "0") == "1"
+
+
 
 def _render(path: Path, mapping: dict[str, str]) -> bytes:
     html_text = path.read_text(encoding="utf-8")
@@ -65,7 +68,8 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             self._err(f"Failed to read {CFG_PATH_DEFAULT}: {e}"); return
 
-        model = str(cfg_base.get("model") or "gpt-5")
+        default_model = "gpt-5"
+        model = str(cfg_base.get("model") or default_model)
         prompt_version = str(cfg_base.get("prompt_version") or PROMPT_VERSION_DEFAULT)
 
         # Pull defaults from config; fall back sensibly
@@ -82,12 +86,19 @@ class Handler(BaseHTTPRequestHandler):
         max_out = get_int("max_output_tokens", 1024)
 
         # UI selections (front-end only; for display on results page)
-        ui_model_val = (form.get("ui_model") or "gpt-5").strip()
+        ui_model_val = (form.get("ui_model") or default_model).strip().lower()
         ui_mode_val = (form.get("ui_mode") or "prior").strip()
+        allowed_models = {"gpt-5"}
+        grok_model_id = "grok-4-fast-non-reasoning"
+        if ENABLE_GROK:
+            allowed_models.add(grok_model_id)
+        if ui_model_val not in allowed_models:
+            ui_model_val = default_model
+        model = ui_model_val
         model_labels = {
             "gpt-5": "GPT‑5",
+            grok_model_id: "Grok 4 (xAI)",
             "claude-4.1": "Claude 4.1",
-            "grok-4": "Grok 4",
             "deepseek-r1": "DeepSeek R1",
         }
         mode_labels = {
@@ -140,19 +151,19 @@ class Handler(BaseHTTPRequestHandler):
         # Return a running page with meta refresh to /wait
         is_web_mode = ui_mode_val == "internet-search"
         loading_headline = (
-            "Synthesizing GPT‑5’s web-informed view of this claim…"
+            f"Synthesizing {ui_model_label}’s web-informed view of this claim…"
             if is_web_mode
-            else "Measuring how GPT‑5’s training data anchors this claim…"
+            else f"Measuring how {ui_model_label}’s training data anchors this claim…"
         )
         step2_text = (
             "Gathering and filtering fresh web snippets."
             if is_web_mode
-            else "Asking GPT‑5 with internal knowledge only."
+            else f"Asking {ui_model_label} with internal knowledge only."
         )
         step3_text = (
             "Preparing the web-informed verdict."
             if is_web_mode
-            else "Preparing the explanation for the verdict."
+            else f"Preparing {ui_model_label}’s explanation."
         )
         # Prefer user-provided image at ui/assets/running_bg.(png|jpg|jpeg); otherwise fallback SVG scene
         bg = None
@@ -1271,7 +1282,11 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 text = html_path.read_text(encoding="utf-8")
                 marker = "</head>"
-                inject = "<script>window.HERETIX_UI_LOCAL = true;</script>"
+                enable_flag = "true" if ENABLE_GROK else "false"
+                inject = (
+                    "<script>window.HERETIX_UI_LOCAL = true; "
+                    f"window.HERETIX_ENABLE_GROK = {enable_flag};</script>"
+                )
                 if marker in text:
                     text = text.replace(marker, inject + marker, 1)
                 else:

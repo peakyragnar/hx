@@ -177,11 +177,11 @@
 <body>
   <div class="loading-overlay hidden" id="loading-overlay" aria-live="polite">
     <div class="loading-content">
-      <h2 id="loading-headline">Measuring how GPT‑5’s training data anchors this claim…</h2>
+      <h2 id="loading-headline">Measuring how the model’s training data anchors this claim…</h2>
       <div class="loading-claim" id="loading-claim"></div>
       <ol class="loading-steps">
         <li class="active" id="loading-step-1">Planning the different phrasings.</li>
-        <li id="loading-step-2">Asking GPT‑5 with internal knowledge only.</li>
+        <li id="loading-step-2">Asking the model with internal knowledge only.</li>
         <li id="loading-step-3">Preparing the explanation for the verdict.</li>
       </ol>
       <div class="loading-hero">
@@ -224,8 +224,8 @@
           <div class="form-meta">
             <select name="ui_model" aria-label="Model selection">
               <option value="gpt-5" selected>GPT‑5</option>
+              <option value="grok-4-fast-non-reasoning" disabled>Grok 4 (xAI) · coming soon</option>
               <option value="claude-4.1" disabled>Claude 4.1 · coming soon</option>
-              <option value="grok-4" disabled>Grok 4 · coming soon</option>
               <option value="deepseek-r1" disabled>DeepSeek R1 · coming soon</option>
             </select>
             <select name="ui_mode" aria-label="Mode selection">
@@ -244,7 +244,7 @@
     <section id="result-card" class="result-card hidden" aria-live="polite">
       <div class="result-hero">
         <div>
-          <div class="result-pill" id="result-pill">GPT‑5 · Internal knowledge only</div>
+          <div class="result-pill" id="result-pill">Model · Internal knowledge only</div>
           <div class="result-percent" id="result-percentage">--%</div>
           <div class="result-verdict-tag" id="result-subtitle">Probability this claim is true</div>
         </div>
@@ -444,6 +444,7 @@
       var claimForm = document.getElementById('claim-form');
       var claimInput = document.getElementById('claim');
       var submitBtn = claimForm ? claimForm.querySelector('button.primary') : null;
+      var modelSelect = claimForm ? claimForm.querySelector('select[name="ui_model"]') : null;
       var modeSelect = claimForm ? claimForm.querySelector('select[name="ui_mode"]') : null;
       var statusEl = claimForm ? claimForm.querySelector('.footnote') : null;
       var usageEl = document.getElementById('usage-meter');
@@ -472,6 +473,25 @@
       var loadingStep3 = document.getElementById('loading-step-3');
       var resultNewButton = document.getElementById('result-new');
       var resultCopyButton = document.getElementById('result-copy');
+      var enableGrok = Boolean(window.HERETIX_ENABLE_GROK);
+      var MODEL_LABELS = {
+        'gpt-5': 'GPT‑5',
+        'grok-4-fast-non-reasoning': 'Grok 4 (xAI)',
+      };
+
+      function formatModelLabel(modelId) {
+        if (!modelId) return 'GPT‑5';
+        var key = String(modelId).toLowerCase();
+        return MODEL_LABELS[key] || modelId;
+      }
+
+      if (modelSelect) {
+        var grokOption = modelSelect.querySelector('option[value="grok-4-fast-non-reasoning"]');
+        if (grokOption) {
+          grokOption.disabled = !enableGrok;
+          grokOption.textContent = enableGrok ? 'Grok 4 (xAI)' : 'Grok 4 (xAI) · coming soon';
+        }
+      }
 
       var signInModal = document.getElementById('signin-modal');
       var signInForm = document.getElementById('signin-form');
@@ -604,6 +624,7 @@
         }
         // Defensive guards so a partial/malformed payload never blanks the page
         var isWebMode = data.mode === 'web_informed';
+        var modelLabel = formatModelLabel(data.model || 'gpt-5');
         var combinedProb = data.combined && typeof data.combined.p === 'number' ? data.combined.p : null;
         var aggregatesSafe = (data && typeof data === 'object' && data.aggregates) ? data.aggregates : {};
         var priorProb = (typeof aggregatesSafe.prob_true_rpl === 'number')
@@ -617,7 +638,7 @@
         if (resultClaimEl && data.claim) { resultClaimEl.textContent = '“' + data.claim + '”'; }
 
         if (resultPill) {
-          var pillText = (data.model || 'GPT‑5') + (isWebMode ? ' · Web-informed' : ' · Internal knowledge only');
+          var pillText = modelLabel + (isWebMode ? ' · Web-informed' : ' · Internal knowledge only');
           resultPill.textContent = pillText;
         }
 
@@ -722,7 +743,7 @@
             var shiftLine = priorText
               ? 'Web evidence across ' + nDocs + ' document' + (nDocs === 1 ? '' : 's') +
                 ' from ' + nDomains + ' domain' + (nDomains === 1 ? '' : 's') +
-                ' moved GPT‑5’s prior from ' + priorText + ' to ' + percentText + '.'
+                ' moved ' + modelLabel + '’s prior from ' + priorText + ' to ' + percentText + '.'
               : null;
             if (shiftLine) collected.push(shiftLine);
             var medianAge = metrics.median_age_days;
@@ -735,7 +756,7 @@
             var weightVal = typeof weightsBlock.w_web === 'number' ? weightsBlock.w_web : null;
             if (weightVal !== null) {
               collected.push('Web weighting was ' + weightVal.toFixed(2) +
-                ', combining web evidence with GPT‑5’s prior to produce the final probability.'
+                ', combining web evidence with ' + modelLabel + '’s prior to produce the final probability.'
               );
             }
           }
@@ -937,7 +958,7 @@
             verdict: verdictLabel,
             percent: percentText,
             reasons: reasonList,
-            modelText: resultPill ? resultPill.textContent : (data.model || 'GPT‑5'),
+            modelText: resultPill ? resultPill.textContent : modelLabel,
           });
           resultCopyButton.dataset.summary = summaryText;
           resultCopyButton.textContent = 'Copy summary';
@@ -1188,21 +1209,23 @@
       function toggleLoading(show, claimText, modeValue) {
         if (!loadingOverlay) return;
         var mode = modeValue || (modeSelect ? modeSelect.value : 'prior');
+        var selectedModelId = (modelSelect && modelSelect.value) || 'gpt-5';
+        var selectedModelLabel = formatModelLabel(selectedModelId);
         var isWeb = mode === 'internet-search' || mode === 'web_informed';
         if (loadingHeadline) {
           loadingHeadline.textContent = isWeb
-            ? "Synthesizing GPT‑5’s web-informed view of this claim…"
-            : "Measuring how GPT‑5’s training data anchors this claim…";
+            ? ("Synthesizing " + selectedModelLabel + "’s web-informed view of this claim…")
+            : ("Measuring how " + selectedModelLabel + "’s training data anchors this claim…");
         }
         if (loadingStep2) {
           loadingStep2.textContent = isWeb
             ? "Gathering and filtering fresh web snippets."
-            : "Asking GPT‑5 with internal knowledge only.";
+            : ("Asking " + selectedModelLabel + " with internal knowledge only.");
         }
         if (loadingStep3) {
           loadingStep3.textContent = isWeb
             ? "Preparing the web-informed verdict."
-            : "Preparing the explanation for the verdict.";
+            : ("Preparing " + selectedModelLabel + "’s explanation.");
         }
         if (show) {
           loadingOverlay.classList.remove('hidden');
@@ -1406,20 +1429,20 @@
         return {
           title: 'Likely true',
           headline: 'Why it’s likely true',
-          text: 'GPT‑5 leans toward this claim being true based on its training data.'
+          text: 'This model leans toward the claim being true based on its training data.'
         };
       }
       if (value <= 0.4) {
         return {
           title: 'Likely false',
           headline: 'Why it’s likely false',
-          text: 'GPT‑5 leans toward this claim being false based on its training data.'
+          text: 'This model leans toward the claim being false based on its training data.'
         };
       }
       return {
         title: 'Uncertain',
         headline: 'Why it’s uncertain',
-        text: 'GPT‑5 did not express a strong prior either way; responses were mixed.'
+        text: 'This model did not express a strong prior either way; responses were mixed.'
       };
     }
 
@@ -1427,20 +1450,20 @@
       var value = typeof probability === 'number' ? probability : 0.5;
       if (value >= 0.6) {
         return [
-          'GPT‑5 has seen many supporting examples in its training data.',
+          'The model has seen many supporting examples in its training data.',
           'Typical definitions and historical references line up with the claim.',
           'Counterexamples are rare compared to supporting evidence in its corpus.'
         ];
       }
       if (value <= 0.4) {
         return [
-          'GPT‑5’s training data contains many instances that contradict the claim.',
+          'The model’s training data contains many instances that contradict the claim.',
           'Common usage and reference materials point the other way.',
           'Supporting anecdotes are outweighed by counterexamples it has seen.'
         ];
       }
       return [
-        'GPT‑5 finds mixed signals in its training data.',
+        'The model finds mixed signals in its training data.',
         'It depends on definitions or missing context.',
         'Supporting and opposing examples appear in roughly equal measure.'
       ];
