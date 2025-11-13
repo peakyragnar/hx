@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     )
     api_url: str = Field("http://127.0.0.1:8000", alias="API_URL")
     app_url: str = Field("http://127.0.0.1:3000", alias="APP_URL")
+    rpl_provider: str = Field("openai", alias="RPL_PROVIDER")
     rpl_model: str = Field("gpt-5", alias="RPL_MODEL")
     rpl_prompt_version: str = Field("rpl_g5_v2", alias="RPL_PROMPT_VERSION")
     rpl_k: int = Field(16, alias="RPL_K")

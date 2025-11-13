@@ -15,7 +15,10 @@ from sqlalchemy.orm import Session
 from heretix.config import RunConfig
 from heretix.provider.openai_gpt5 import score_claim as score_claim_live
 from heretix.provider.mock import score_claim_mock
+from heretix.provider.utils import infer_provider_from_model
 from heretix.pipeline import PipelineOptions, perform_run
+from heretix.constants import SCHEMA_VERSION
+from heretix.schemas import CombinedBlockV1, PriorBlockV1, SimpleExplV1, WebBlockV1
 
 from .auth import complete_magic_link, get_current_user, handle_magic_link, sign_out
 from .config import settings
@@ -31,9 +34,6 @@ from .schemas import (
     RunRequest,
     RunResponse,
     SamplingInfo,
-    PriorBlock,
-    WebEvidence,
-    CombinedResult,
     WeightInfo,
     WebArtifactPointer,
 )
@@ -124,9 +124,15 @@ def run_check(
         reason = "require_subscription" if user else "require_signin"
         raise HTTPException(status_code=402, detail={"reason": reason, "plan": usage_state.plan.name})
 
+    logical_model = payload.logical_model or payload.model or settings.rpl_model
+    provider = getattr(payload, "provider", None) or getattr(settings, "rpl_provider", None)
+    if not provider:
+        provider = infer_provider_from_model(logical_model)
+
     cfg = RunConfig(
         claim=claim,
-        model=payload.model or settings.rpl_model,
+        model=logical_model,
+        provider=provider,
         prompt_version=payload.prompt_version or settings.rpl_prompt_version,
         K=payload.K or settings.rpl_k,
         R=payload.R or settings.rpl_r,
@@ -251,14 +257,25 @@ def run_check(
         session.rollback()
         raise
 
-    prior_block_model = PriorBlock(**prior_block_payload)
-    web_block_model = WebEvidence(**web_block_payload) if web_block_payload else None
-    combined_block_model = CombinedResult(**combined_block_payload) if combined_block_payload else None
+    provider_id = result.get("provider") or cfg.provider or infer_provider_from_model(cfg.model)
+    logical_model_result = result.get("logical_model", result.get("model", cfg.model))
+    provider_model_id = result.get("provider_model_id")
+    schema_version = result.get("schema_version", SCHEMA_VERSION)
+    tokens_in = result.get("tokens_in")
+    tokens_out = result.get("tokens_out")
+    cost_usd = result.get("cost_usd")
+
+    prior_block_model = _build_prior_block_v1(prior_block_payload, rpl_compliance_rate)
+    web_block_model = _build_web_block_v1(web_block_payload, weights_payload)
+    combined_block_model = _build_combined_block_v1(combined_block_payload)
     weights_model = WeightInfo(**weights_payload) if weights_payload else None
     provenance_payload: dict[str, object] = {
         "rpl": {
             "prompt_version": result.get("prompt_version", cfg.prompt_version),
-            "model": result.get("model", cfg.model),
+            "model": logical_model_result,
+            "provider": provider_id,
+            "provider_model_id": provider_model_id,
+            "schema_version": schema_version,
         }
     }
     if wel_provenance:
@@ -272,12 +289,18 @@ def run_check(
             docs_uri=artifacts.artifact_docs_uri,
         )
 
+    simple_expl_model = _build_simple_expl_v1(artifacts.simple_expl)
+
     return RunResponse(
         execution_id=result.get("execution_id"),
         run_id=run_id,
         claim=result.get("claim"),
         model=result.get("model", cfg.model),
+        logical_model=logical_model_result,
+        provider=provider_id,
+        provider_model_id=provider_model_id,
         prompt_version=result.get("prompt_version", cfg.prompt_version),
+        schema_version=schema_version,
         sampling=SamplingInfo(**sampling),
         aggregation=AggregationInfo(
             method=aggregation.get("method"),
@@ -311,8 +334,90 @@ def run_check(
         web_artifact=web_artifact_pointer,
         wel_replicates=artifacts.wel_replicates or None,
         wel_debug_votes=artifacts.wel_debug_votes or None,
-        simple_expl=artifacts.simple_expl or None,
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        cost_usd=cost_usd,
+        simple_expl=simple_expl_model,
     )
+
+
+def _build_prior_block_v1(payload: Dict[str, object], compliance_rate: float) -> PriorBlockV1:
+    ci_vals = payload.get("ci95") or [payload.get("p", 0.0), payload.get("p", 0.0)]
+    ci_lo = float(ci_vals[0]) if len(ci_vals) >= 1 and ci_vals[0] is not None else float(payload.get("p", 0.0))
+    ci_hi = float(ci_vals[1]) if len(ci_vals) >= 2 and ci_vals[1] is not None else float(payload.get("p", 0.0))
+    prob_true = float(payload.get("p", 0.0))
+    width = max(0.0, ci_hi - ci_lo)
+    stability = float(payload.get("stability", 0.0))
+    compliance = max(0.0, min(1.0, float(compliance_rate)))
+    return PriorBlockV1(
+        prob_true=prob_true,
+        ci_lo=ci_lo,
+        ci_hi=ci_hi,
+        width=width,
+        stability=stability,
+        compliance_rate=compliance,
+    )
+
+
+def _build_web_block_v1(payload: Optional[Dict[str, object]], weights: Optional[Dict[str, float]]) -> Optional[WebBlockV1]:
+    if not payload:
+        return None
+    ci_vals = payload.get("ci95") or [payload.get("p", 0.0), payload.get("p", 0.0)]
+    ci_lo = float(ci_vals[0]) if len(ci_vals) >= 1 and ci_vals[0] is not None else float(payload.get("p", 0.0))
+    ci_hi = float(ci_vals[1]) if len(ci_vals) >= 2 and ci_vals[1] is not None else float(payload.get("p", 0.0))
+    prob_true = float(payload.get("p", 0.0))
+    strength_val = (weights or {}).get("strength")
+    evidence_strength = _evidence_strength_label(strength_val)
+    return WebBlockV1(
+        prob_true=prob_true,
+        ci_lo=ci_lo,
+        ci_hi=ci_hi,
+        evidence_strength=evidence_strength,
+    )
+
+
+def _build_combined_block_v1(payload: Optional[Dict[str, object]]) -> Optional[CombinedBlockV1]:
+    if not payload:
+        return None
+    prob_true = float(payload.get("p", 0.0))
+    ci_lo = float(payload.get("ci_lo", prob_true))
+    ci_hi = float(payload.get("ci_hi", prob_true))
+    label = str(payload.get("label", "Uncertain"))
+    weight_prior = float(payload.get("weight_prior", 1.0))
+    weight_web = float(payload.get("weight_web", 0.0))
+    return CombinedBlockV1(
+        prob_true=prob_true,
+        ci_lo=ci_lo,
+        ci_hi=ci_hi,
+        label=label,
+        weight_prior=weight_prior,
+        weight_web=weight_web,
+    )
+
+
+def _build_simple_expl_v1(simple_block: Optional[Dict[str, object]]) -> Optional[SimpleExplV1]:
+    if not simple_block:
+        return None
+    title = str(simple_block.get("title") or "Why this verdict looks this way").strip()
+    summary = str(simple_block.get("summary") or "The model provided no additional explanation.").strip()
+    body_paragraphs = [summary] if summary else ["Explanation not available."]
+    raw_lines = simple_block.get("lines") or []
+    bullets = [str(line).strip() for line in raw_lines if str(line).strip()]
+    if not bullets:
+        bullets = ["No supporting bullets were generated."]
+    return SimpleExplV1(title=title, body_paragraphs=body_paragraphs, bullets=bullets)
+
+
+def _evidence_strength_label(value: Optional[float]) -> str:
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        score = 0.0
+    if score >= 0.66:
+        return "strong"
+    if score >= 0.33:
+        return "moderate"
+    return "weak"
 @app.post(
     "/api/auth/magic-links",
     status_code=status.HTTP_204_NO_CONTENT,

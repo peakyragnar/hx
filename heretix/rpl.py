@@ -38,8 +38,10 @@ from .storage import (
     update_execution_ci,
 )
 from .provider.factory import get_rpl_adapter
+from .provider.utils import infer_provider_from_model
 from .telemetry import timed, est_tokens, est_cost, log
 from .finalizer import kick_off_final_ci
+from .constants import SCHEMA_VERSION
 
 
 def _logit(p: float) -> float:
@@ -123,6 +125,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
     # Decide provider mode and target DB path once per run
     provider_mode = "MOCK" if (mock or os.getenv("HERETIX_MOCK")) else "LIVE"
     adapter = get_rpl_adapter(provider_mode=provider_mode, model=cfg.model)
+    provider_id = cfg.provider or infer_provider_from_model(cfg.model)
     db_path = Path("runs/heretix_mock.sqlite") if provider_mode == "MOCK" else Path("runs/heretix.sqlite")
 
     final_B = max(1, int(cfg.B))
@@ -576,15 +579,29 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
     ]
     insert_execution_samples(conn, exec_maps)
 
+    provider_model_id = next(
+        (it["row"].get("provider_model_id") for it in runs if it["row"].get("provider_model_id")),
+        None,
+    )
+
     ci_status = {"phase": "final", "B_used": fast_B, "job_id": None}
     if runtime.fast_then_final and final_B > fast_B:
         ci_status = {"phase": "fast", "B_used": fast_B, "job_id": execution_id}
+
+    estimated_cost = est_cost(
+        total_tokens_in,
+        total_tokens_out,
+        runtime.price_per_1k_prompt,
+        runtime.price_per_1k_output,
+    )
 
     run_payload: Dict[str, Any] = {
         "execution_id": execution_id,
         "run_id": run_id,
         "claim": cfg.claim,
         "model": cfg.model,
+        "logical_model": cfg.model,
+        "provider": provider_id,
         "prompt_version": prompt_version_full,
         "sampling": {"K": cfg.K, "R": cfg.R, "T": T_stage},
         "aggregation": {
@@ -610,6 +627,11 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             "cache_hit_rate": cache_hit_rate,
         },
         "ci_status": ci_status,
+        "provider_model_id": provider_model_id,
+        "schema_version": SCHEMA_VERSION,
+        "tokens_in": total_tokens_in,
+        "tokens_out": total_tokens_out,
+        "cost_usd": estimated_cost,
     }
 
     if run_cache_key and not cfg.no_cache:
@@ -675,12 +697,6 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
         )
 
     total_ms = int((time.perf_counter() - run_start) * 1000)
-    estimated_cost = est_cost(
-        total_tokens_in,
-        total_tokens_out,
-        runtime.price_per_1k_prompt,
-        runtime.price_per_1k_output,
-    )
     log.info(
         "run_summary",
         extra={

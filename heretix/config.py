@@ -7,11 +7,14 @@ import os
 import json
 import yaml
 
+from heretix.provider.utils import infer_provider_from_model
+
 
 @dataclass
 class RunConfig:
     claim: Optional[str] = None
     model: str = "gpt-5"
+    provider: Optional[str] = None
     models: Optional[List[str]] = None
     prompt_version: str = "rpl_g5_v2"
     K: int = 8
@@ -49,6 +52,8 @@ def load_run_config(path: str | Path) -> RunConfig:
     cfg.models = _normalize_models(cfg.models)
     if cfg.models:
         cfg.model = cfg.models[0]
+    if not cfg.provider:
+        cfg.provider = infer_provider_from_model(cfg.model)
     # Env fallback (config takes precedence)
     if cfg.seed is None and os.getenv("HERETIX_RPL_SEED") is not None:
         try:

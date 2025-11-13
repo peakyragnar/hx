@@ -19,6 +19,7 @@ from .seed import make_bootstrap_seed
 import yaml
 from heretix.pipeline import PipelineOptions, perform_run
 from heretix.db.models import Check
+from heretix.provider.utils import infer_provider_from_model
 
 
 app = typer.Typer(help="Heretix (new) RPL harness")
@@ -103,6 +104,7 @@ def cmd_run(
             for v in versions:
                 local_cfg = RunConfig(**{**cfg.__dict__})
                 local_cfg.model = model
+                local_cfg.provider = local_cfg.provider or infer_provider_from_model(model)
                 local_cfg.prompt_version = v
                 prompt_file = (
                     Path(local_cfg.prompt_file_path)
@@ -157,6 +159,7 @@ def cmd_run(
         for v in versions:
             local_cfg = RunConfig(**{**cfg.__dict__})
             local_cfg.model = model
+            local_cfg.provider = local_cfg.provider or infer_provider_from_model(model)
             local_cfg.prompt_version = v
             typer.echo(f"Running {model}  K={local_cfg.K} R={local_cfg.R}  mode={mode_normalized}  version={v}")
 

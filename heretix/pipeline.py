@@ -339,7 +339,8 @@ def perform_run(
         _assign(check, check_updates, "resolved_citations", None)
 
     _assign(check, check_updates, "was_cached", cache_hit_rate >= 0.999)
-    _assign(check, check_updates, "provider_model_id", result.get("model", cfg.model))
+    provider_model_value = result.get("provider_model_id") or result.get("model", cfg.model)
+    _assign(check, check_updates, "provider_model_id", provider_model_value)
     _assign(check, check_updates, "anon_token", anon_token if user_id is None else None)
     _assign(check, check_updates, "created_at", now)
     _assign(check, check_updates, "finished_at", now)
