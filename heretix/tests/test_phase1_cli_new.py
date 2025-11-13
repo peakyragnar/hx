@@ -167,3 +167,81 @@ def test_cli_baseline_emits_simple_expl(tmp_path: Path):
     assert isinstance(simple.get("lines"), list)
     assert len(simple["lines"]) >= 1
     assert isinstance(simple.get("summary"), str) and simple["summary"]
+
+
+def test_cli_run_multi_model_from_config(tmp_path: Path):
+    cfg_path = tmp_path / "cfg.yaml"
+    cfg_path.write_text(
+        "\n".join(
+            [
+                'claim: "Sample multi-model claim"',
+                "models:",
+                "  - gpt-5",
+                "  - grok-4",
+                "prompt_version: rpl_g5_v2",
+                "K: 4",
+                "R: 1",
+                "T: 4",
+                "B: 100",
+                "max_output_tokens: 256",
+            ]
+        )
+    )
+    out_path = tmp_path / "multi.json"
+    env = {"DATABASE_URL": f"sqlite:///{tmp_path / 'multi.sqlite'}"}
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "--config",
+            str(cfg_path),
+            "--out",
+            str(out_path),
+            "--mock",
+        ],
+        env=env,
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(out_path.read_text())
+    assert payload.get("requested_models") == ["gpt-5", "grok-4"]
+    assert [run["model"] for run in payload["runs"]] == ["gpt-5", "grok-4"]
+
+
+def test_cli_run_multi_model_override_flag(tmp_path: Path):
+    cfg_path = tmp_path / "cfg.yaml"
+    cfg_path.write_text(
+        "\n".join(
+            [
+                'claim: "Override flag claim"',
+                "model: gpt-5",
+                "prompt_version: rpl_g5_v2",
+                "K: 4",
+                "R: 1",
+                "T: 4",
+                "B: 100",
+                "max_output_tokens: 256",
+            ]
+        )
+    )
+    out_path = tmp_path / "override.json"
+    env = {"DATABASE_URL": f"sqlite:///{tmp_path / 'override.sqlite'}"}
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "--config",
+            str(cfg_path),
+            "--out",
+            str(out_path),
+            "--mock",
+            "--model",
+            "grok-4",
+            "--model",
+            "deepseek-r1",
+        ],
+        env=env,
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(out_path.read_text())
+    assert payload.get("requested_models") == ["grok-4", "deepseek-r1"]
+    assert [run["model"] for run in payload["runs"]] == ["grok-4", "deepseek-r1"]
