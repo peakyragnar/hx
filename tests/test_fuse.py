@@ -1,3 +1,5 @@
+import pytest
+
 from heretix_api.fuse import fuse_prior_web
 from heretix_wel.weights import fuse_probabilities
 
@@ -30,3 +32,7 @@ def test_fuse_prior_web_combines_weights():
     combined, weights = fuse_prior_web("Earnings release tomorrow", prior, web)
     assert combined["p"] > prior["p"]
     assert 0.2 <= weights["w_web"] <= 0.90
+    assert combined["prob_true"] == combined["p"]
+    assert combined["weight_web"] == weights["w_web"]
+    assert combined["weight_prior"] == pytest.approx(1.0 - weights["w_web"])
+    assert combined["label"] in {"Likely true", "Likely false", "Uncertain"}
