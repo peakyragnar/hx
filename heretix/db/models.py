@@ -111,6 +111,9 @@ class Check(Base):  # noqa: D401 - simple data container
     claim: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     claim_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     model: Mapped[str] = mapped_column(String(64), nullable=False)
+    provider: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    logical_model: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    schema_version: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     prompt_version: Mapped[str] = mapped_column(String(64), nullable=False)
     k: Mapped[int] = mapped_column("K", BigInteger, nullable=False)
     r: Mapped[int] = mapped_column("R", BigInteger, nullable=False)
@@ -176,6 +179,9 @@ class Check(Base):  # noqa: D401 - simple data container
     resolved_citations: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     was_cached: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     provider_model_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    tokens_in: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    tokens_out: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    cost_usd: Mapped[Optional[float]] = mapped_column(Numeric(12, 6), nullable=True)
     anon_token: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

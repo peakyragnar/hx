@@ -472,6 +472,13 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
     digest = hashlib.sha256(f"{cfg.claim}|{cfg.model}|{prompt_version_full}|K={cfg.K}|R={cfg.R}".encode("utf-8")).hexdigest()[:12]
     run_id = f"heretix-rpl-{digest}"
 
+    estimated_cost = est_cost(
+        total_tokens_in,
+        total_tokens_out,
+        runtime.price_per_1k_prompt,
+        runtime.price_per_1k_output,
+    )
+
     # persist
     conn = _ensure_db(db_path)
     # Persist prompt text for provenance (once per version)
@@ -504,7 +511,10 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             "created_at": int(time.time()),
             "claim": cfg.claim,
             "model": cfg.model,
+            "provider": provider_id,
+            "logical_model": cfg.model,
             "prompt_version": prompt_version_full,
+            "schema_version": SCHEMA_VERSION,
             "K": cfg.K,
             "R": cfg.R,
             "T": T_stage,
@@ -531,6 +541,9 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             "gate_stability_ok": gate_stability_ok,
             "gate_precision_ok": gate_precision_ok,
             "pqs_version": pqs_version,
+            "tokens_in": total_tokens_in,
+            "tokens_out": total_tokens_out,
+            "cost_usd": estimated_cost,
         },
     )
 
@@ -587,13 +600,6 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
     ci_status = {"phase": "final", "B_used": fast_B, "job_id": None}
     if runtime.fast_then_final and final_B > fast_B:
         ci_status = {"phase": "fast", "B_used": fast_B, "job_id": execution_id}
-
-    estimated_cost = est_cost(
-        total_tokens_in,
-        total_tokens_out,
-        runtime.price_per_1k_prompt,
-        runtime.price_per_1k_output,
-    )
 
     run_payload: Dict[str, Any] = {
         "execution_id": execution_id,

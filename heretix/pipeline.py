@@ -17,6 +17,8 @@ from heretix_api.routes_checks import evaluate_web_informed
 import hashlib
 from heretix.artifacts import ArtifactRecord, get_artifact_store, write_web_artifact
 from heretix.verdicts import finalize_combined_block
+from heretix.provider.utils import infer_provider_from_model
+from heretix.constants import SCHEMA_VERSION
 
 
 @dataclass
@@ -90,6 +92,13 @@ def perform_run(
     aggregation = result.get("aggregation", {})
     aggregates = dict(result.get("aggregates", {}))
     sampling = dict(result.get("sampling", {}))
+
+    provider_id = result.get("provider") or cfg.provider or infer_provider_from_model(cfg.model)
+    logical_model_value = result.get("logical_model", result.get("model", cfg.model))
+    schema_version = result.get("schema_version", SCHEMA_VERSION)
+    tokens_in = result.get("tokens_in")
+    tokens_out = result.get("tokens_out")
+    cost_usd = result.get("cost_usd")
 
     ci95 = aggregates.get("ci95", [None, None])
     rpl_compliance_rate = float(aggregates.get("rpl_compliance_rate", 0.0))
@@ -223,7 +232,10 @@ def perform_run(
         hashlib.sha256((cfg.claim or "").encode("utf-8")).hexdigest() if cfg.claim else None,
     )
     _assign(check, check_updates, "model", result.get("model", cfg.model))
+    _assign(check, check_updates, "provider", provider_id)
+    _assign(check, check_updates, "logical_model", logical_model_value)
     _assign(check, check_updates, "prompt_version", result.get("prompt_version", cfg.prompt_version))
+    _assign(check, check_updates, "schema_version", schema_version)
     _assign(check, check_updates, "k", int(cfg.K))
     _assign(check, check_updates, "r", int(cfg.R))
     _assign(check, check_updates, "t", sampling.get("T"))
@@ -341,6 +353,9 @@ def perform_run(
     _assign(check, check_updates, "was_cached", cache_hit_rate >= 0.999)
     provider_model_value = result.get("provider_model_id") or result.get("model", cfg.model)
     _assign(check, check_updates, "provider_model_id", provider_model_value)
+    _assign(check, check_updates, "tokens_in", int(tokens_in) if tokens_in is not None else None)
+    _assign(check, check_updates, "tokens_out", int(tokens_out) if tokens_out is not None else None)
+    _assign(check, check_updates, "cost_usd", float(cost_usd) if cost_usd is not None else None)
     _assign(check, check_updates, "anon_token", anon_token if user_id is None else None)
     _assign(check, check_updates, "created_at", now)
     _assign(check, check_updates, "finished_at", now)
