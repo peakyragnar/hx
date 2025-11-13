@@ -39,6 +39,9 @@ heretix-artifacts-key.json
 .DS_Store
 Thumbs.db
 
+# Local planning/cache
+.beads/
+
 # Distribution / packaging
 dist/
 build/
