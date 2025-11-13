@@ -37,8 +37,7 @@ from .storage import (
     update_run_ci,
     update_execution_ci,
 )
-from .provider.openai_gpt5 import score_claim
-from .provider.mock import score_claim_mock
+from .provider.factory import get_rpl_adapter
 from .telemetry import timed, est_tokens, est_cost, log
 from .finalizer import kick_off_final_ci
 
@@ -123,6 +122,8 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
 
     # Decide provider mode and target DB path once per run
     provider_mode = "MOCK" if (mock or os.getenv("HERETIX_MOCK")) else "LIVE"
+    # Resolve provider adapter once to minimize call-site changes when adding providers
+    adapter = get_rpl_adapter(provider_mode=provider_mode, model=cfg.model)
     db_path = Path("runs/heretix_mock.sqlite") if provider_mode == "MOCK" else Path("runs/heretix.sqlite")
 
     final_B = max(1, int(cfg.B))
@@ -270,16 +271,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             total_tokens_in += prompt_tokens_est
 
         def _once() -> Dict[str, Any]:
-            if provider_mode == "MOCK":
-                return score_claim_mock(
-                    claim=cfg.claim,
-                    system_text=system_text,
-                    user_template=user_template,
-                    paraphrase_text=w.paraphrase_text,
-                    model=cfg.model,
-                    max_output_tokens=cfg.max_output_tokens,
-                )
-            return score_claim(
+            return adapter.score_claim(
                 claim=cfg.claim,
                 system_text=system_text,
                 user_template=user_template,

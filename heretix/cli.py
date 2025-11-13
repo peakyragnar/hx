@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, List, Optional
 import json
@@ -67,6 +68,7 @@ def _plan_summary(cfg_local: RunConfig, prompt_path: Path) -> dict:
 def cmd_run(
     config: Path = typer.Option(..., exists=True, dir_okay=False, help="Path to run config YAML/JSON"),
     prompt_version: List[str] = typer.Option(None, help="Override prompt versions to run (one or many)"),
+    model_name: List[str] = typer.Option(None, "--model", "-m", help="Override models to run (repeatable)"),
     out: Path = typer.Option(Path("runs/rpl_run.json"), help="Output JSON file (A/B summary)"),
     mock: bool = typer.Option(False, help="Use deterministic mock provider (no network) for smoke tests"),
     dry_run: bool = typer.Option(False, help="Preview effective plan without running or writing to DB"),
@@ -85,19 +87,33 @@ def cmd_run(
         raise typer.Exit(1)
 
     cfg = load_run_config(str(config))
+    override_models = _normalize_model_list(model_name)
+    models_to_run = override_models or (cfg.models or [cfg.model])
+    models_to_run = _normalize_model_list(models_to_run)
+    if not models_to_run:
+        typer.echo("ERROR: No models specified", err=True)
+        raise typer.Exit(1)
+    cfg.models = models_to_run
+    cfg.model = models_to_run[0]
     versions = prompt_version if prompt_version else [cfg.prompt_version]
 
     if dry_run:
-        v = versions[0]
-        local_cfg = RunConfig(**{**cfg.__dict__})
-        local_cfg.prompt_version = v
-        prompt_file = (
-            Path(local_cfg.prompt_file_path)
-            if local_cfg.prompts_file
-            else Path(__file__).parent / "prompts" / f"{v}.yaml"
-        )
-        plan = _plan_summary(local_cfg, prompt_file)
-        typer.echo(json.dumps({"mode": "single", "plan": plan}, indent=2))
+        plans: List[dict[str, Any]] = []
+        for model in models_to_run:
+            for v in versions:
+                local_cfg = RunConfig(**{**cfg.__dict__})
+                local_cfg.model = model
+                local_cfg.prompt_version = v
+                prompt_file = (
+                    Path(local_cfg.prompt_file_path)
+                    if local_cfg.prompts_file
+                    else Path(__file__).parent / "prompts" / f"{v}.yaml"
+                )
+                plans.append(_plan_summary(local_cfg, prompt_file))
+        if len(plans) == 1:
+            typer.echo(json.dumps({"mode": "single", "plan": plans[0]}, indent=2))
+        else:
+            typer.echo(json.dumps({"mode": "multi", "plans": plans}, indent=2))
         return
 
     effective_db_url = database_url or os.getenv("DATABASE_URL", "sqlite:///runs/heretix.sqlite")
@@ -137,36 +153,49 @@ def cmd_run(
     )
 
     runs_output: list[dict] = []
-    for v in versions:
-        local_cfg = RunConfig(**{**cfg.__dict__})
-        local_cfg.prompt_version = v
-        typer.echo(f"Running {local_cfg.model}  K={local_cfg.K} R={local_cfg.R}  mode={mode_normalized}  version={v}")
+    for model in models_to_run:
+        for v in versions:
+            local_cfg = RunConfig(**{**cfg.__dict__})
+            local_cfg.model = model
+            local_cfg.prompt_version = v
+            typer.echo(f"Running {model}  K={local_cfg.K} R={local_cfg.R}  mode={mode_normalized}  version={v}")
 
-        with SessionLocal() as session:
-            artifacts = perform_run(
-                session=session,
-                cfg=local_cfg,
-                mode=mode_normalized,
-                options=pipeline_options,
-                use_mock=mock,
-                user_id=None,
-                anon_token=None,
-            )
-            session.commit()
+            run_options = replace(pipeline_options, wel_model=model)
+            with SessionLocal() as session:
+                artifacts = perform_run(
+                    session=session,
+                    cfg=local_cfg,
+                    mode=mode_normalized,
+                    options=run_options,
+                    use_mock=mock,
+                    user_id=None,
+                    anon_token=None,
+                )
+                session.commit()
 
-        run_entry = _build_run_entry(local_cfg, mode_normalized, mock, artifacts)
-        runs_output.append(run_entry)
+            run_entry = _build_run_entry(local_cfg, mode_normalized, mock, artifacts)
+            runs_output.append(run_entry)
 
-        combined_block = run_entry.get("combined") or run_entry.get("prior")
-        ci = combined_block.get("ci95", [None, None]) or [None, None]
-        p_val = combined_block.get("p")
-        if p_val is not None:
-            ci_lo = f"{ci[0]:.3f}" if ci[0] is not None else "nan"
-            ci_hi = f"{ci[1]:.3f}" if ci[1] is not None else "nan"
-            typer.echo(f"  combined_p={p_val:.3f}  CI95=[{ci_lo},{ci_hi}]")
+            combined_block = run_entry.get("combined") or run_entry.get("prior")
+            ci = combined_block.get("ci95", [None, None]) or [None, None]
+            p_val = combined_block.get("p")
+            if p_val is not None:
+                ci_lo = f"{ci[0]:.3f}" if ci[0] is not None else "nan"
+                ci_hi = f"{ci[1]:.3f}" if ci[1] is not None else "nan"
+                typer.echo(f"  combined_p={p_val:.3f}  CI95=[{ci_lo},{ci_hi}]")
+            weight_block = run_entry.get("weights") or {}
+            w_web = weight_block.get("w_web")
+            if w_web is not None:
+                try:
+                    w_web_value = float(w_web)
+                except (TypeError, ValueError):
+                    w_web_value = 0.0
+                w_web_value = max(0.0, min(1.0, w_web_value))
+                typer.echo(f"  weights: web={w_web_value:.2f}  prior={(1.0 - w_web_value):.2f}")
 
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps({"mode": mode_normalized, "runs": runs_output}, indent=2))
+    payload = {"mode": mode_normalized, "requested_models": models_to_run, "runs": runs_output}
+    out.write_text(json.dumps(payload, indent=2))
     typer.echo(f"Wrote {out}")
 
 
@@ -391,6 +420,7 @@ def cmd_describe(
         "config": {
             "claim": cfg.claim,
             "model": cfg.model,
+            "models": cfg.models,
             "prompt_version": cfg.prompt_version,
             "prompt_version_full": str(doc.get("version")),
             "K": cfg.K,
@@ -414,6 +444,26 @@ def cmd_describe(
         },
     }
     typer.echo(json.dumps(summary, indent=2))
+
+
+def _normalize_model_list(values: Any) -> List[str]:
+    if not values:
+        return []
+    if isinstance(values, (list, tuple, set)):
+        candidates = list(values)
+    else:
+        candidates = [values]
+
+    normalized: List[str] = []
+    for candidate in candidates:
+        if candidate is None:
+            continue
+        text = str(candidate).strip()
+        if not text:
+            continue
+        if text not in normalized:
+            normalized.append(text)
+    return normalized
 
 
 if __name__ == "__main__":

@@ -9,14 +9,13 @@ import subprocess
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 import yaml
-from typing import Optional, List
+from typing import Any, List, Optional
 import logging
 import re
 import html
 
 # Provider adapters (reuse existing harness adapters)
-from heretix.provider.openai_gpt5 import score_claim as _score_claim_live
-from heretix.provider.mock import score_claim_mock as _score_claim_mock
+from heretix.provider.factory import get_rpl_adapter
 from openai import OpenAI
 
 
@@ -344,6 +343,17 @@ class Handler(BaseHTTPRequestHandler):
         combined_block_data = run.get("combined") or {}
         web_block = run.get("web")
         weights_block = run.get("weights") or {}
+
+        def _weight_val(raw: object) -> float | None:
+            try:
+                val = float(raw)
+            except (TypeError, ValueError):
+                return None
+            if val != val:  # NaN
+                return None
+            return max(0.0, min(1.0, val))
+
+        combined_weight = _weight_val(combined_block_data.get("weight_web"))
         wel_replicates = run.get("wel_replicates") or []
         wel_debug_votes = run.get("wel_debug_votes") or []
 
@@ -380,7 +390,7 @@ class Handler(BaseHTTPRequestHandler):
                 "p": float(web_block.get("p", combined_p)),
                 "ci": (_safe_float(web_ci_values[0]), _safe_float(web_ci_values[1])),
                 "metrics": evidence,
-                "weight": weights_block.get("w_web"),
+                "weight": combined_weight if combined_weight is not None else weights_block.get("w_web"),
                 "recency": weights_block.get("recency"),
                 "strength": weights_block.get("strength"),
                 "replicates": wel_replicates,
@@ -652,6 +662,14 @@ class Handler(BaseHTTPRequestHandler):
             paraphrase = phrs[0] if phrs else "Without retrieval, estimate P(true) for: {CLAIM}"
 
             use_mock = bool(os.getenv("HERETIX_MOCK")) or (os.getenv("OPENAI_API_KEY") is None)
+            raw: dict[str, Any] = {}
+            adapter = None
+            if not use_mock:
+                try:
+                    adapter = get_rpl_adapter(provider_mode="LIVE", model=model)
+                except Exception as exc:
+                    print(f"[ui] provider adapter unavailable: {exc}")
+                    adapter = None
             try:
                 # First attempt: dedicated live explainer (JSON reasons), only in live mode
                 reasons: list[str] = []
@@ -665,8 +683,8 @@ class Handler(BaseHTTPRequestHandler):
                     return reasons
                 if use_mock:
                     reasons = []  # avoid mock placeholder text
-                else:
-                    out = _score_claim_live(
+                elif adapter is not None:
+                    out = adapter.score_claim(
                         claim=claim,
                         system_text=sys_text,
                         user_template=user_tmpl,
@@ -985,67 +1003,65 @@ class Handler(BaseHTTPRequestHandler):
             if line2:
                 simple_items.append(line2)
         # Add a plain, non-technical stance summary
-        def _stance(prob: float) -> str:
-            try:
-                v = float(prob)
-            except Exception:
-                v = 0.5
-            if v >= 0.6:
-                return 'leans true'
-            if v <= 0.4:
-                return 'leans false'
-            return 'is mixed'
-
-        prior_stance = _stance(prior_p)
-        web_stance = _stance(float(web_summary.get('p')) if (is_web_mode and isinstance(web_summary, dict) and web_summary.get('p') is not None) else prior_p)
-        # verdict already computed above; convert to lowercase friendly label
         verdict_phrase = (verdict or '').lower()
-        agreement = 'agree' if ((prior_stance == 'leans true' and web_stance == 'leans true') or (prior_stance == 'leans false' and web_stance == 'leans false')) else ('disagree' if ((prior_stance == 'leans true' and web_stance == 'leans false') or (prior_stance == 'leans false' and web_stance == 'leans true')) else 'are mixed')
-        # Final summary (no model/source stance line; concise verdict tie-in)
-        simple_items.append(f"Taken together, these points suggest the claim is {verdict_phrase}.")
-
-        # Ensure summary appears last and cap to 4 lines
+        summary_sentence = f"Taken together, these points suggest the claim is {verdict_phrase}."
         if len(simple_items) > 3:
             simple_items = simple_items[:3]
-        simple_items.append(f"Taken together, these points suggest the claim is {verdict_phrase}.")
+        simple_items.append(summary_sentence)
 
-        # Prepare summary lines for copy button
-        if simple_items:
+        backend_simple = run.get("simple_expl") or {}
+        simple_backend_lines: list[str] = []
+        backend_summary_line = ""
+        backend_simple_title = ""
+        if isinstance(backend_simple, dict):
+            lines_field = backend_simple.get("lines")
+            if isinstance(lines_field, list):
+                for entry in lines_field:
+                    if entry is None:
+                        continue
+                    text = str(entry).strip()
+                    if text:
+                        simple_backend_lines.append(text)
+            summary_field = backend_simple.get("summary")
+            if isinstance(summary_field, str):
+                backend_summary_line = summary_field.strip()
+            title_field = backend_simple.get("title")
+            if isinstance(title_field, str):
+                backend_simple_title = title_field.strip()
+
+        if simple_backend_lines or backend_summary_line:
+            summary_lines.append('Reasons:')
+            summary_lines.extend(f'- {line}' for line in simple_backend_lines[:3])
+            if backend_summary_line:
+                summary_lines.append(f'- {backend_summary_line}')
+        elif simple_items:
             summary_lines.append('Reasons:')
             summary_lines.extend(f'- {i}' for i in simple_items[:4])
         else:
             summary_lines.append('Reasons: (none)')
         summary_attr = html.escape("\n".join(summary_lines), quote=True)
 
-        # Escape for HTML for the simple view list (guard: empty when resolved)
         why_items_html = "" if resolved_flag else "\n".join(
             f"<li>{html.escape(item, quote=True)}</li>" for item in simple_items
         )
-
-        # Prefer backend-provided simple explanation when available
-        backend_simple = run.get("simple_expl") or {}
-        lines_from_backend = []
-        if backend_simple and isinstance(backend_simple.get("lines"), list):
-            try:
-                lines_from_backend = [str(x) for x in backend_simple.get("lines") if isinstance(x, (str, int, float))]
-                summary_line = backend_simple.get("summary")
-                if isinstance(summary_line, str) and summary_line:
-                    lines_from_backend.append(summary_line)
-            except Exception:
-                lines_from_backend = []
 
         # Build the stack block (omit entirely when resolved)
         if resolved_flag:
             stack_block_html = ""
         else:
-            if lines_from_backend:
-                simple_title = backend_simple.get("title") or why_head
-                list_html = "".join(f"<li>{html.escape(str(x), quote=True)}</li>" for x in lines_from_backend)
+            if simple_backend_lines or backend_summary_line:
+                simple_title = backend_simple_title or why_head
+                list_html = "".join(f"<li>{html.escape(str(x), quote=True)}</li>" for x in simple_backend_lines[:3])
+                summary_html = (
+                    f'<p class="simple-summary">{html.escape(backend_summary_line, quote=True)}</p>'
+                    if backend_summary_line else ""
+                )
                 stack_block_html = (
                     '<div class="stack">'
                     '<div class="card">'
                     f"<h2>{html.escape(str(simple_title), quote=True)}</h2>"
                     '<ul>' + list_html + '</ul>'
+                    f"{summary_html}"
                     '</div>'
                     '</div>'
                 )

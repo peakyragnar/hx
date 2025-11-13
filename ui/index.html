@@ -64,6 +64,14 @@
 
     .result-card { margin-top:40px; padding:32px; border:1px solid rgba(0,255,65,0.35); border-radius:20px; background:radial-gradient(circle at top,#112311 0%, #080c08 65%); box-shadow:0 0 42px rgba(0,255,65,0.24); }
     .result-hero { display:flex; gap:34px; flex-wrap:wrap; align-items:center; justify-content:space-between; border-bottom:1px solid rgba(0,255,65,0.18); padding-bottom:24px; }
+    .result-weights { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:16px; margin:20px 0 10px; padding:18px 22px; border-radius:18px; border:1px solid rgba(0,255,65,0.2); background:rgba(0,255,65,0.05); }
+    .result-weight-label { font-size:12px; letter-spacing:2px; text-transform:uppercase; color:var(--muted); margin-bottom:4px; }
+    .result-weight-value { font-size:24px; font-weight:600; color:var(--fg); }
+    .result-weight-note { font-size:13px; color:var(--muted); margin-top:4px; line-height:1.4; }
+    .result-weight-equation { border-left:1px dashed rgba(0,255,65,0.25); border-right:1px dashed rgba(0,255,65,0.25); padding:0 18px; }
+    @media (max-width:640px) {
+      .result-weight-equation { border:none; padding:0; }
+    }
     .result-pill { display:inline-flex; align-items:center; gap:8px; padding:8px 14px; border-radius:999px; border:1px solid rgba(0,255,65,0.35); background:rgba(0,255,65,0.1); font-size:12px; letter-spacing:1px; text-transform:uppercase; color:var(--bright); margin-bottom:16px; }
     .result-percent { font-size:clamp(56px, 10vw, 112px); font-weight:700; color:var(--bright); text-shadow:0 0 36px rgba(0,255,65,0.35); line-height:1; }
     .result-verdict-tag { font-size:16px; text-transform:uppercase; letter-spacing:3px; color:var(--muted); margin-top:8px; }
@@ -74,6 +82,7 @@
     .result-explainer h3 { margin:0 0 12px; font-size:20px; color:var(--bright); }
     .result-explainer p { margin:0 0 14px; color:var(--muted); line-height:1.6; }
     .result-explainer ul { margin:0; padding-left:22px; color:var(--muted); line-height:1.6; list-style:disc; }
+    .simple-summary { margin-top:12px; font-weight:600; color:var(--fg); }
     .result-advanced { margin-top:28px; }
     .result-advanced .advanced-grid { margin-top:18px; display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:18px; color:var(--muted); }
     .metric-label { font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); margin-bottom:6px; }
@@ -253,11 +262,29 @@
           <p class="result-interpretation" id="result-interpretation-main"></p>
         </div>
       </div>
+      <div class="result-weights hidden" id="result-weights" aria-live="polite">
+        <div>
+          <div class="result-weight-label">Prior (training only)</div>
+          <div class="result-weight-value" id="result-weight-prior">--</div>
+          <div class="result-weight-note">Model without web context</div>
+        </div>
+        <div class="result-weight-equation">
+          <div class="result-weight-label">Weighting</div>
+          <div class="result-weight-value" id="result-weight-formula">--</div>
+          <div class="result-weight-note" id="result-weight-note">--</div>
+        </div>
+        <div>
+          <div class="result-weight-label">Web evidence</div>
+          <div class="result-weight-value" id="result-weight-web">--</div>
+          <div class="result-weight-note">Recent reporting + citations</div>
+        </div>
+      </div>
       <div class="result-explainer hidden" id="result-explainer">
         <h3 id="result-verdict">—</h3>
         <p id="result-interpretation-detail"></p>
         <!-- Simple view lines: model prior, web estimate, sources -->
         <ul id="result-simple-lines" class="simple-lines"></ul>
+        <p id="result-simple-summary" class="simple-summary hidden"></p>
         <!-- Keep legacy reasons list hidden for concise simple view; deeper panel will include details -->
         <ul id="result-reasons" class="hidden"></ul>
       </div>
@@ -457,12 +484,18 @@
       var resultStability = document.getElementById('result-stability');
       var resultBand = document.getElementById('result-stability-band');
       var resultCompliance = document.getElementById('result-compliance');
+      var resultWeights = document.getElementById('result-weights');
+      var resultWeightPrior = document.getElementById('result-weight-prior');
+      var resultWeightWeb = document.getElementById('result-weight-web');
+      var resultWeightFormula = document.getElementById('result-weight-formula');
+      var resultWeightNote = document.getElementById('result-weight-note');
       var resultExplainer = document.getElementById('result-explainer');
       var resultVerdict = document.getElementById('result-verdict');
       var resultInterpretationMain = document.getElementById('result-interpretation-main');
       var resultInterpretationDetail = document.getElementById('result-interpretation-detail');
       var resultReasons = document.getElementById('result-reasons');
       var resultSimpleLines = document.getElementById('result-simple-lines');
+      var resultSimpleSummary = document.getElementById('result-simple-summary');
       var resultDeeper = document.getElementById('result-deeper');
       var resultDeeperBody = document.getElementById('result-deeper-body');
       var loadingOverlay = document.getElementById('loading-overlay');
@@ -604,7 +637,8 @@
         }
         // Defensive guards so a partial/malformed payload never blanks the page
         var isWebMode = data.mode === 'web_informed';
-        var combinedProb = data.combined && typeof data.combined.p === 'number' ? data.combined.p : null;
+        var combinedBlock = data.combined && typeof data.combined === 'object' ? data.combined : null;
+        var combinedProb = combinedBlock && typeof combinedBlock.p === 'number' ? combinedBlock.p : null;
         var aggregatesSafe = (data && typeof data === 'object' && data.aggregates) ? data.aggregates : {};
         var priorProb = (typeof aggregatesSafe.prob_true_rpl === 'number')
           ? aggregatesSafe.prob_true_rpl
@@ -646,8 +680,9 @@
           }
         }
 
+        var combinedLabel = combinedBlock && typeof combinedBlock.label === 'string' ? combinedBlock.label : null;
         var verdictInfo = buildVerdict(probValue);
-        var verdictLabel = data.verdict_label || verdictInfo.title;
+        var verdictLabel = data.verdict_label || combinedLabel || verdictInfo.title;
         var headline = data.explanation_headline || verdictInfo.headline;
         var interpretation = data.explanation_text || verdictInfo.text;
 
@@ -656,16 +691,55 @@
           resultSubtitle.textContent = verdictLabel ? verdictLabel + ' · ' + subtitleBase : subtitleBase;
         }
 
-        var simpleExpl = data.simple_expl;
-        if (resultInterpretationMain) {
-          if (simpleExpl && Array.isArray(simpleExpl.lines) && simpleExpl.lines.length) {
-            resultInterpretationMain.textContent = '';
-            resultInterpretationMain.classList.add('hidden');
-          } else {
-            resultInterpretationMain.textContent = interpretation;
-            resultInterpretationMain.classList.remove('hidden');
+        function ensureSentence(value) {
+          if (value === null || value === undefined) return '';
+          var text = String(value).trim();
+          if (!text) return '';
+          if (!/[.!?]$/.test(text)) {
+            text += '.';
+          }
+          return text;
+        }
+
+        function sanitizeFallbackLine(value) {
+          if (typeof value !== 'string') return '';
+          var t = value.trim();
+          if (!t) return '';
+          t = t.replace(/^\s*(?:[A-Za-z0-9.-]+\.(?:com|org|net|gov|edu|news|io|co|uk|us|ca|au|de|fr))\s*[:—-]\s*/, '');
+          t = t.replace(/^\s*[A-Z][\w&-]*(?:\s+[A-Z][\w&-]*){0,3}\s*:\s*/, '');
+          t = t.replace(
+            /^\s*[A-Z][\w&-]*(?:\s+[A-Z][\w&-]*){0,3}\s+(states|reports|says|announces|notes|claims|plans|projects|indicates)\b[:,]?\s*/i,
+            ''
+          );
+          t = t.replace(/\s*\([^)]*\b(?:com|org|net|gov|edu|news|io|co|uk|us|ca|au|de|fr)\b[^)]*\)\s*$/i, '');
+          t = t.replace(/\s*\[[^\]]*\b(?:com|org|net|gov|edu|news|io|co|uk|us|ca|au|de|fr)\b[^\]]*\]\s*$/i, '');
+          if (!t) return '';
+          return ensureSentence(t);
+        }
+
+        var backendSimpleExpl = (data && data.simple_expl && typeof data.simple_expl === 'object') ? data.simple_expl : null;
+        var backendSimpleLines = [];
+        var simpleExplSummary = '';
+        var simpleExplTitle = '';
+        if (backendSimpleExpl) {
+          if (Array.isArray(backendSimpleExpl.lines)) {
+            backendSimpleLines = backendSimpleExpl.lines
+              .map(function(line){
+                if (line === null || line === undefined) return '';
+                return ensureSentence(line);
+              })
+              .filter(function(line){ return !!line; });
+          }
+          if (typeof backendSimpleExpl.summary === 'string') {
+            simpleExplSummary = ensureSentence(backendSimpleExpl.summary);
+          }
+          if (typeof backendSimpleExpl.title === 'string') {
+            simpleExplTitle = backendSimpleExpl.title.trim();
           }
         }
+        var hasBackendSimpleExpl = (backendSimpleLines.length > 0) || !!simpleExplSummary;
+        var renderedSimpleLines = hasBackendSimpleExpl ? backendSimpleLines.slice(0, 3) : [];
+        var simpleBlockActive = hasBackendSimpleExpl;
 
         var apiReasons = Array.isArray(data.explanation_reasons) ? data.explanation_reasons.filter(Boolean) : [];
         var reasonList;
@@ -673,6 +747,49 @@
         var webBlock = data.web && typeof data.web === 'object' ? data.web : null;
         var weightsBlock = data.weights && typeof data.weights === 'object' ? data.weights : {};
         var resolvedFlag = Boolean(isWebMode && webBlock && webBlock.resolved);
+        var webProb = (webBlock && typeof webBlock.p === 'number') ? webBlock.p : null;
+        var combinedWeightWeb = (combinedBlock && typeof combinedBlock.weight_web === 'number') ? combinedBlock.weight_web : null;
+        var combinedWeightPrior = (combinedBlock && typeof combinedBlock.weight_prior === 'number') ? combinedBlock.weight_prior : null;
+        if (resultWeights) {
+          var wWeb = null;
+          if (typeof combinedWeightWeb === 'number') {
+            wWeb = Math.min(Math.max(combinedWeightWeb, 0), 1);
+          } else if (typeof weightsBlock.w_web === 'number') {
+            wWeb = Math.min(Math.max(weightsBlock.w_web, 0), 1);
+          }
+          var recencyVal = (typeof weightsBlock.recency === 'number') ? weightsBlock.recency : null;
+          var strengthVal = (typeof weightsBlock.strength === 'number') ? weightsBlock.strength : null;
+          if (isWebMode && wWeb !== null && priorProb !== null) {
+            var weightPrior;
+            if (typeof combinedWeightPrior === 'number') {
+              weightPrior = Math.max(0, Math.min(1, combinedWeightPrior));
+            } else {
+              weightPrior = Math.max(0, Math.min(1, 1 - wWeb));
+            }
+            var rightProb = webProb !== null ? webProb : combinedProb;
+            if (resultWeightPrior) { resultWeightPrior.textContent = formatPercent(priorProb); }
+            if (resultWeightWeb) { resultWeightWeb.textContent = rightProb !== null ? formatPercent(rightProb) : '--'; }
+            if (resultWeightFormula) {
+              resultWeightFormula.textContent = weightPrior.toFixed(2) + '×prior + ' + wWeb.toFixed(2) + '×web';
+            }
+            if (resultWeightNote) {
+              var noteBits = [];
+              if (resolvedFlag) { noteBits.push('Resolved fact'); }
+              noteBits.push(Math.round(weightPrior * 100) + '% prior');
+              noteBits.push(Math.round(wWeb * 100) + '% web');
+              if (recencyVal !== null && recencyVal === recencyVal) {
+                noteBits.push('recency ' + recencyVal.toFixed(2));
+              }
+              if (strengthVal !== null && strengthVal === strengthVal) {
+                noteBits.push('strength ' + strengthVal.toFixed(2));
+              }
+              resultWeightNote.textContent = noteBits.join(' · ');
+            }
+            resultWeights.classList.remove('hidden');
+          } else {
+            resultWeights.classList.add('hidden');
+          }
+        }
         if (resolvedFlag) {
           reasonList = [];
         } else if (apiReasons.length) {
@@ -732,7 +849,9 @@
                 ' ago, so fresher coverage could tighten the estimate.'
               );
             }
-            var weightVal = typeof weightsBlock.w_web === 'number' ? weightsBlock.w_web : null;
+            var weightVal = typeof combinedWeightWeb === 'number'
+              ? combinedWeightWeb
+              : (typeof weightsBlock.w_web === 'number' ? weightsBlock.w_web : null);
             if (weightVal !== null) {
               collected.push('Web weighting was ' + weightVal.toFixed(2) +
                 ', combining web evidence with GPT‑5’s prior to produce the final probability.'
@@ -742,13 +861,14 @@
           reasonList = collected.length ? collected : buildReasons(probValue);
         }
 
+        var summaryUsesSimpleBlock = false;
+        var summarySimpleLines = [];
+        var summarySimpleSummary = '';
+
         // Simple/deeper presentation
         if (!resolvedFlag && resultExplainer && resultVerdict) {
-          // Mode-aware headline
           var simpleHeadline = isWebMode ? 'Why the web‑informed verdict looks this way' : 'Why the model‑only verdict looks this way';
-          resultVerdict.textContent = simpleHeadline;
-
-          // Simple "why" sentence: prefer first reason from collected web bullets if available
+          var appliedTitle = simpleExplTitle || simpleHeadline;
           var simpleWhy = '';
           if (isWebMode && Array.isArray(reasonList) && reasonList.length) {
             simpleWhy = reasonList[0];
@@ -757,8 +877,35 @@
           } else if (verdictInfo && verdictInfo.text) {
             simpleWhy = verdictInfo.text;
           }
+          var finalSimpleLines = renderedSimpleLines.slice(0, 3);
+          var finalSimpleSummary = simpleExplSummary;
+          var displaySimpleBlock = simpleBlockActive;
+
+          if (!displaySimpleBlock) {
+            var fallbackReasons = Array.isArray(reasonList) && reasonList.length
+              ? reasonList
+              : buildReasons(probValue);
+            if (Array.isArray(fallbackReasons)) {
+              finalSimpleLines = fallbackReasons
+                .map(sanitizeFallbackLine)
+                .filter(function(line){ return !!line; })
+                .slice(0, 3);
+            } else {
+              finalSimpleLines = [];
+            }
+            if (!finalSimpleSummary) {
+              finalSimpleSummary = simpleWhy ? ensureSentence(simpleWhy) : '';
+              if (!finalSimpleSummary && verdictInfo && verdictInfo.text) {
+                finalSimpleSummary = ensureSentence(verdictInfo.text);
+              }
+            }
+            displaySimpleBlock = finalSimpleLines.length > 0 || !!finalSimpleSummary;
+          }
+
+          resultVerdict.textContent = appliedTitle;
+
           if (resultInterpretationDetail) {
-            if (simpleExpl && Array.isArray(simpleExpl.lines) && simpleExpl.lines.length) {
+            if (displaySimpleBlock) {
               resultInterpretationDetail.textContent = '';
               resultInterpretationDetail.classList.add('hidden');
             } else if (simpleWhy) {
@@ -770,93 +917,27 @@
             }
           }
 
-          // Build simple lines: prefer backend-provided simple_expl
           if (resultSimpleLines) {
             resultSimpleLines.innerHTML = '';
-            if (simpleExpl && Array.isArray(simpleExpl.lines) && simpleExpl.lines.length) {
-              var lines = simpleExpl.lines.slice(0, 3);
-              if (typeof simpleExpl.summary === 'string' && simpleExpl.summary) {
-                lines.push(simpleExpl.summary);
-              }
-              for (var i = 0; i < lines.length && i < 4; i++) {
+            if (finalSimpleLines.length) {
+              finalSimpleLines.forEach(function(line){
                 var li = document.createElement('li');
-                li.textContent = String(lines[i] || '');
+                li.textContent = line;
                 resultSimpleLines.appendChild(li);
-              }
+              });
+              resultSimpleLines.classList.remove('hidden');
             } else {
-            function sanitizeReason(s) {
-              if (typeof s !== 'string') return '';
-              var t = s.trim();
-              t = t.replace(/^\s*(?:[A-Za-z0-9.-]+\.(?:com|org|net|gov|edu|news|io|co|uk|us|ca|au|de|fr))\s*[:—-]\s*/i, '');
-              // strip leading BrandName: (with colon)
-              t = t.replace(/^\s*[A-Z][\w&-]*(?:\s+[A-Z][\w&-]*){0,3}\s*:\s*/i, '');
-              t = t.replace(/\s*\([^)]*\b(?:com|org|net|gov|edu|news|io|co|uk|us|ca|au|de|fr)\b[^)]*\)\s*$/i, '');
-              t = t.replace(/\s*\[[^\]]*\b(?:com|org|net|gov|edu|news|io|co|uk|us|ca|au|de|fr)\b[^\]]*\]\s*$/i, '');
-              // Strip leading brand names before reporting verbs
-              t = t.replace(/^\s*[A-Z][\w&-]*(?:\s+[A-Z][\w&-]*){0,3}\s+(?:states|reports|says|announces|notes|claims|plans|projects)\b[:,]?\s*/i, '');
-              // Soften heavy numerics
-              t = t.replace(/\b(\d{3,}|\d+\.?\d*%|\$\d[\d,]*)\b/g, 'initial capacity');
-              if (!t) return '';
-              return /[.!?]$/.test(t) ? t : (t + '.');
+              resultSimpleLines.classList.add('hidden');
             }
-            var lines = [];
-            // Compose narrative for web mode
-            if (isWebMode && welReplicates && welReplicates.length) {
-              // Parse basic target (year, percent) from claim
-              var yearMatch = (data.claim || '').match(/(20\d{2})/);
-              var pctMatch = (data.claim || '').match(/(\d{1,3})\s?%/);
-              var yearTxt = yearMatch ? yearMatch[1] : null;
-              var pctTxt = pctMatch ? pctMatch[1] : null;
-              var claimLow = (data.claim || '').toLowerCase();
-              if (claimLow.includes('ban')) {
-                lines.push('A ban would require formal approval by the owners at a rules meeting' + (yearTxt ? (' in ' + yearTxt) : '') + '.');
-              } else if ((claimLow.includes('source') || claimLow.includes('domestic')) && pctTxt) {
-                lines.push((yearTxt ? ('Reaching ' + pctTxt + '% by ' + yearTxt) : ('Meeting a ' + pctTxt + '% threshold')) + ' would need rapid build‑out of extraction, processing and magnet capacity.');
-              } else if (claimLow.includes('market cap') || claimLow.includes('market capitalization') || claimLow.includes('trillion')) {
-                lines.push((yearTxt ? ('Hitting that milestone by ' + yearTxt) : 'Reaching that milestone') + ' depends on earnings and broader market conditions.');
-              } else {
-                // no generic filler sentence
-              }
+          }
 
-              // Gather signals from support bullets
-              var timeline = null, capacity = null, dependency = null, policy = null;
-              for (var r = 0; r < welReplicates.length; r++) {
-                var rep = welReplicates[r] || {};
-                var items = Array.isArray(rep.support_bullets) ? rep.support_bullets : [];
-                for (var k = 0; k < items.length; k++) {
-                  var s0 = sanitizeReason(items[k]);
-                  var low = s0.toLowerCase();
-                  if (!timeline && /(early|late|by\s+20\d{2}|next year|this year|startup|begin)/.test(low)) { timeline = s0; continue; }
-                  if (!capacity && /(production|processing|refining|magnet|output|capacity|plant|factory|mill)/.test(low)) { capacity = s0; continue; }
-                  if (!dependency && /(import|depend|reliance|supply chain|bottleneck|intermediate)/.test(low)) { dependency = s0; continue; }
-                  if (!policy && /(funding|policy|act|bill|incentive|approval|permitting)/.test(low)) { policy = s0; continue; }
-                  if (!crossed && /(crossed|surpassed|joined|reached)/.test(low)) { var crossed = s0; continue; }
-                }
-              }
-              if (capacity && timeline) {
-                lines.push('Recent reporting points to projects starting around ' + (yearTxt || 'this period') + ' with ' + capacity.toLowerCase());
-              } else if (capacity) {
-                lines.push(capacity);
-              } else if (timeline) {
-                lines.push(timeline);
-              }
-              if (dependency) {
-                lines.push(dependency);
-              } else if (policy) {
-                lines.push('Policy support exists, but build‑out typically lags approvals.');
-              } else if (crossed) {
-                lines.push('Recent reporting notes the milestone has already been reached at times, showing it is attainable.');
-              }
-            }
-            // Keep at most 3 content lines, then add summary last
-            if (lines.length > 3) lines = lines.slice(0, 3);
-            lines.push('Taken together, these points suggest the claim is ' + verdictLabel.toLowerCase() + '.');
-            // Render up to 4
-            for (var i = 0; i < lines.length && i < 4; i++) {
-              var li = document.createElement('li');
-              li.textContent = lines[i];
-              resultSimpleLines.appendChild(li);
-            }
+          if (resultSimpleSummary) {
+            if (finalSimpleSummary) {
+              resultSimpleSummary.textContent = finalSimpleSummary;
+              resultSimpleSummary.classList.remove('hidden');
+            } else {
+              resultSimpleSummary.textContent = '';
+              resultSimpleSummary.classList.add('hidden');
             }
           }
 
@@ -865,6 +946,10 @@
             resultReasons.innerHTML = '';
             resultReasons.classList.add('hidden');
           }
+
+          summaryUsesSimpleBlock = displaySimpleBlock;
+          summarySimpleLines = finalSimpleLines.slice(0, 3);
+          summarySimpleSummary = finalSimpleSummary;
 
           // Deeper explanation panel
           if (resultDeeperBody) {
@@ -908,7 +993,9 @@
               if (medAge === medAge && medAge !== null) metaBits.push('median age ~' + Math.round(medAge) + ' days');
               if (metaBits.length) htmlParts.push('<p class="note">' + esc(metaBits.join(' · ')) + '</p>');
 
-              var w = (weightsBlock && typeof weightsBlock.w_web === 'number') ? weightsBlock.w_web : null;
+              var w = typeof combinedWeightWeb === 'number'
+                ? combinedWeightWeb
+                : (weightsBlock && typeof weightsBlock.w_web === 'number' ? weightsBlock.w_web : null);
               if (w !== null && priorProb !== null && (webProbVal !== null || combinedProb !== null)) {
                 var webShown = webProbVal !== null ? webProbVal : combinedProb;
                 htmlParts.push('<h4>How we combine</h4>');
@@ -931,12 +1018,16 @@
           if (resultDeeperBody) { resultDeeperBody.innerHTML=''; }
         }
 
+        var summaryReasons = summaryUsesSimpleBlock
+          ? summarySimpleLines.concat(summarySimpleSummary ? [summarySimpleSummary] : [])
+          : reasonList;
+
         if (resultCopyButton) {
           var summaryText = buildSummary({
             claim: data.claim,
             verdict: verdictLabel,
             percent: percentText,
-            reasons: reasonList,
+            reasons: summaryReasons,
             modelText: resultPill ? resultPill.textContent : (data.model || 'GPT‑5'),
           });
           resultCopyButton.dataset.summary = summaryText;

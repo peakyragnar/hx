@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional
 import os
 import json
 import yaml
@@ -12,6 +12,7 @@ import yaml
 class RunConfig:
     claim: Optional[str] = None
     model: str = "gpt-5"
+    models: Optional[List[str]] = None
     prompt_version: str = "rpl_g5_v2"
     K: int = 8
     R: int = 2
@@ -45,6 +46,9 @@ def load_run_config(path: str | Path) -> RunConfig:
     p = Path(path)
     data = yaml.safe_load(p.read_text()) if p.suffix in {".yaml", ".yml"} else json.loads(p.read_text())
     cfg = RunConfig(**data)
+    cfg.models = _normalize_models(cfg.models)
+    if cfg.models:
+        cfg.model = cfg.models[0]
     # Env fallback (config takes precedence)
     if cfg.seed is None and os.getenv("HERETIX_RPL_SEED") is not None:
         try:
@@ -64,3 +68,25 @@ def load_run_config(path: str | Path) -> RunConfig:
 def load_runtime_settings() -> RuntimeSettings:
     """Return runtime execution settings (concurrency, cache TTLs, CI budgets)."""
     return RuntimeSettings()
+
+
+def _normalize_models(raw: Any) -> Optional[List[str]]:
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        values = [raw]
+    elif isinstance(raw, (list, tuple, set)):
+        values = list(raw)
+    else:
+        return None
+
+    normalized: List[str] = []
+    for item in values:
+        if item is None:
+            continue
+        text = str(item).strip()
+        if not text:
+            continue
+        if text not in normalized:
+            normalized.append(text)
+    return normalized or None

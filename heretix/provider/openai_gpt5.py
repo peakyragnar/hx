@@ -7,6 +7,11 @@ from typing import Dict, Any
 
 import os
 from heretix.ratelimit import RateLimiter
+try:
+    # Optional provider-config support; falls back to env/defaults if absent
+    from .config import get_rate_limits  # type: ignore
+except Exception:  # pragma: no cover - defensive import guard
+    get_rate_limits = None  # type: ignore
 
 from openai import OpenAI
 
@@ -108,7 +113,23 @@ def score_claim(
             "latency_ms": latency_ms,
         },
     }
-_OPENAI_RATE_LIMITER = RateLimiter(
-    rate_per_sec=float(os.getenv("HERETIX_OPENAI_RPS", "2")),
-    burst=int(os.getenv("HERETIX_OPENAI_BURST", "2")),
+_rps: float
+_burst: int
+if get_rate_limits is not None:
+    try:
+        _rps, _burst = get_rate_limits("openai", "gpt-5")  # defaults for this adapter
+    except Exception:  # pragma: no cover - config failures fall back to env/defaults
+        _rps = float(os.getenv("HERETIX_OPENAI_RPS", "2"))
+        _burst = int(os.getenv("HERETIX_OPENAI_BURST", "2"))
+else:
+    _rps = float(os.getenv("HERETIX_OPENAI_RPS", "2"))
+    _burst = int(os.getenv("HERETIX_OPENAI_BURST", "2"))
+
+_OPENAI_RATE_LIMITER = RateLimiter(rate_per_sec=float(_rps), burst=int(_burst))
+
+from .registry import register_score_fn
+
+register_score_fn(
+    aliases=("gpt-5", "openai-gpt5", "openai:gpt-5", "openai"),
+    fn=score_claim,
 )

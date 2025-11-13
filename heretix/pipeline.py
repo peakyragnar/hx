@@ -16,6 +16,7 @@ from heretix.db.models import Check
 from heretix_api.routes_checks import evaluate_web_informed
 import hashlib
 from heretix.artifacts import ArtifactRecord, get_artifact_store, write_web_artifact
+from heretix.verdicts import finalize_combined_block
 
 
 @dataclass
@@ -110,8 +111,13 @@ def perform_run(
     }
 
     web_block_payload: Optional[Dict[str, Any]] = None
-    combined_block_payload: Dict[str, Any] = {"p": prior_p, "ci95": list(prior_ci), "resolved": False}
+    combined_block_payload: Dict[str, Any] = finalize_combined_block(
+        {"p": prior_p, "ci95": list(prior_ci), "resolved": False},
+        weight_web=0.0,
+    )
     weights_payload: Optional[Dict[str, Any]] = None
+    if mode != "web_informed":
+        weights_payload = {"w_web": 0.0, "recency": 0.0, "strength": 0.0}
     wel_provenance: Optional[Dict[str, Any]] = None
     raw_replicates: list[Any] = []
     debug_votes: Optional[list[Dict[str, Any]]] = None
@@ -140,8 +146,11 @@ def perform_run(
                 "contradict": None,
                 "domains": None,
             }
-            combined_block_payload = {"p": prior_p, "ci95": list(prior_ci), "resolved": False}
             weights_payload = {"w_web": 0.0, "recency": 0.0, "strength": 0.0}
+            combined_block_payload = finalize_combined_block(
+                {"p": prior_p, "ci95": list(prior_ci), "resolved": False},
+                weight_web=weights_payload["w_web"],
+            )
             wel_provenance = {
                 "provider": options.wel_provider,
                 "model": options.wel_model,
@@ -173,6 +182,11 @@ def perform_run(
                 sanitized_web_block.pop("resolved_debug_votes", None)
                 if debug_votes is not None:
                     sanitized_web_block["resolved_debug_votes"] = debug_votes
+
+    combined_block_payload = finalize_combined_block(
+        combined_block_payload,
+        weight_web=(weights_payload or {}).get("w_web"),
+    )
 
     aggregation_counts = aggregation.get("counts_by_template", {})
     config_json = json.dumps(
@@ -432,6 +446,8 @@ def _normalize_replica(rep: Any) -> Dict[str, Any]:
         "notes": [str(x) for x in notes],
         "json_valid": bool(json_valid) if json_valid is not None else None,
     }
+
+
 def _get_or_create_check(session: Session, run_id: str, env: str) -> Check:
     check = session.scalar(select(Check).where(Check.run_id == run_id))
     if check is None:

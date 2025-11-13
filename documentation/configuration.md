@@ -6,6 +6,11 @@ mock run: uv run heretix run --config runs/rpl_example.yaml --out runs/pick_name
 SQLite access: RUN_ID=$(jq -r '.runs[0].run_id' runs/k12_mock.json). command saved the run ID into a shell variable, then run: sqlite3 -header -column runs/heretix.sqlite "SELECT run_id, prompt_sha256, paraphrase_idx, replicate_idx, prob_true, logit, json_valid FROM samples
 WHERE run_id='$(jq -r '.runs[0].run_id' runs/k12_mock.json)' LIMIT 5;"
 
+Multi-model runs:
+- Add `models:` to the config (list of strings) to evaluate the same claim across several providers/models sequentially.
+- Or override from the CLI with repeated `--model <name>` options (these take precedence over the config list).
+- The CLI writes a single JSON artifact with `requested_models` plus one record per model under `runs[]`.
+
 ****imbalance_ratio: Imbalance ratio = max/min on the number of times a template is run.  T=8 templates and K=12 slots, 
     - per = floor(12/8) = 1, rem = 4
     - First rem (4) templates get reps=2 → [0,0,1,1,2,2,3,3]

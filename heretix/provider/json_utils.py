@@ -1,0 +1,65 @@
+from __future__ import annotations
+
+import json
+import re
+from typing import List, Tuple, Type
+
+from pydantic import BaseModel, ValidationError
+
+_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.IGNORECASE | re.DOTALL)
+
+
+def strip_markdown_json(text: str) -> str:
+    """Remove Markdown fences and discard text outside the first JSON block."""
+
+    if text is None:
+        raise ValueError("Input text must not be None")
+    trimmed = text.strip()
+    if not trimmed:
+        raise ValueError("Input text must not be empty")
+
+    match = _FENCE_RE.search(trimmed)
+    if match:
+        trimmed = match.group(1).strip()
+
+    start_char = "{" if "{" in trimmed else ("[" if "[" in trimmed else None)
+    if start_char is None:
+        raise ValueError("No JSON object/array found in text")
+    end_char = "}" if start_char == "{" else "]"
+    start_idx = trimmed.find(start_char)
+    end_idx = trimmed.rfind(end_char)
+    if start_idx == -1 or end_idx == -1 or end_idx < start_idx:
+        raise ValueError("Malformed JSON payload")
+    return trimmed[start_idx : end_idx + 1]
+
+
+def extract_and_validate(
+    raw_text: str,
+    schema_model: Type[BaseModel],
+) -> Tuple[BaseModel, List[str]]:
+    """Parse raw provider output, returning the schema object and warnings."""
+
+    if not raw_text:
+        raise ValueError("raw_text must be non-empty")
+    warnings: List[str] = []
+
+    try:
+        data = json.loads(raw_text)
+    except json.JSONDecodeError:
+        cleaned = strip_markdown_json(raw_text)
+        data = json.loads(cleaned)
+        warnings.append("json_repaired_simple")
+
+    try:
+        obj = schema_model.model_validate(data, strict=True)
+        return obj, warnings
+    except ValidationError as strict_exc:
+        try:
+            obj = schema_model.model_validate(data, strict=False)
+        except ValidationError as exc:
+            raise exc from strict_exc
+        warnings.append("validation_coerced")
+        return obj, warnings
+
+
+__all__ = ["strip_markdown_json", "extract_and_validate"]

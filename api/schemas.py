@@ -83,6 +83,12 @@ class WebEvidence(BaseModel):
 class CombinedResult(BaseModel):
     p: float
     ci95: List[float]
+    prob_true: Optional[float] = None
+    ci_lo: Optional[float] = None
+    ci_hi: Optional[float] = None
+    label: Optional[str] = None
+    weight_prior: Optional[float] = None
+    weight_web: Optional[float] = None
     resolved: bool = False
     resolved_truth: Optional[bool] = None
     resolved_reason: Optional[str] = None

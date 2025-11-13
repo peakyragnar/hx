@@ -9,11 +9,12 @@ from heretix_wel.weights import (
     strength_score,
     web_weight,
 )
+from heretix.verdicts import finalize_combined_block
 
 
 def fuse_prior_web(claim: str, prior: Dict[str, float], web: Dict[str, float]) -> Tuple[Dict[str, float], Dict[str, float]]:
     if web.get("resolved"):
-        return (
+        combined_resolved = finalize_combined_block(
             {
                 "p": web["p"],
                 "ci95": list(web["ci95"]),
@@ -25,6 +26,10 @@ def fuse_prior_web(claim: str, prior: Dict[str, float], web: Dict[str, float]) -
                 "contradict": web.get("contradict"),
                 "domains": web.get("domains"),
             },
+            weight_web=1.0,
+        )
+        return (
+            combined_resolved,
             {"w_web": 1.0, "recency": 1.0, "strength": 1.0},
         )
 
@@ -46,7 +51,11 @@ def fuse_prior_web(claim: str, prior: Dict[str, float], web: Dict[str, float]) -
         tuple(web["ci95"]),
         weight,
     )
-    return (
+    combined_payload = finalize_combined_block(
         {"p": p_combined, "ci95": list(ci_combined)},
+        weight_web=weight,
+    )
+    return (
+        combined_payload,
         {"w_web": weight, "recency": recency, "strength": strength},
     )

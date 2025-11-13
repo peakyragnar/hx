@@ -32,6 +32,20 @@ max_output_tokens: 1024
 EOF
 ```
 
+- Run the same claim across multiple models by either listing them in the config or overriding via CLI:
+  - Config snippet:
+    ```yaml
+    models:
+      - gpt-5
+      - grok-4
+      - deepseek-r1
+    ```
+  - CLI override (takes precedence and can be repeated):
+    ```
+    uv run heretix run --config runs/rpl_example.yaml --model gpt-5 --model grok-4 --mock
+    ```
+  The CLI executes every `(model, prompt_version)` combination sequentially and writes a single JSON summary with `requested_models` plus one `runs[]` entry per model.
+
 - Run RPL (single or multi-version):
 ```
 export OPENAI_API_KEY=sk-...

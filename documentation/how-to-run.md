@@ -26,6 +26,19 @@ max_prompt_chars: 1200
 max_output_tokens: 1024
 ```
 
+To evaluate the same claim across multiple models in a single command, either list them in the config:
+```
+models:
+  - gpt-5
+  - grok-4
+  - deepseek-r1
+```
+or pass repeated CLI overrides (which take precedence over the config):
+```
+uv run heretix run --config runs/rpl_example.yaml --model gpt-5 --model grok-4 --mock
+```
+Each `(model, prompt_version)` combination is executed sequentially and the JSON artifact records `requested_models` plus one entry per model under `runs[]`.
+
 Notes:
 - `K` = paraphrase slots; `R` = replicates per slot; `T` = templates used (<= size of the bank in `heretix/prompts/rpl_g5_v2.yaml`).
 - `max_prompt_chars` enforces a hard cap on the composed prompt length (system+schema+user); the run fails fast if exceeded.
@@ -55,7 +68,9 @@ To include the Web-Informed Lens, add `--mode web_informed` (requires network ac
 uv run heretix run --config runs/rpl_example.yaml --out runs/rpl_web.json --mode web_informed
 ```
 The resulting JSON now contains `prior`, `web`, `combined`, `weights`, and the full web replicates and
-debug votes the UI uses when explaining web-informed verdicts.
+debug votes the UI uses when explaining web-informed verdicts. The `combined` block now exposes
+`prob_true`, `ci_lo`, `ci_hi`, `label`, `weight_prior`, and `weight_web` so you can read the final
+verdict and its blend ratios without consulting the separate `weights` object.
 
 ## 6) Smoke run (no network)
 For quick iteration without calling the provider:

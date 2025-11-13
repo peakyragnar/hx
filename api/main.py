@@ -13,9 +13,9 @@ from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
 from heretix.config import RunConfig
-from heretix.provider.openai_gpt5 import score_claim as score_claim_live
-from heretix.provider.mock import score_claim_mock
+from heretix.provider.factory import get_rpl_adapter
 from heretix.pipeline import PipelineOptions, perform_run
+from heretix.verdicts import classify_probability
 
 from .auth import complete_magic_link, get_current_user, handle_magic_link, sign_out
 from .config import settings
@@ -437,21 +437,28 @@ def build_explanation(
     tokens = max_output_tokens or cfg.max_output_tokens or settings.rpl_max_output_tokens
 
     reasons: list[str] = []
-    if use_mock:
+    if use_mock or not (system_text and user_template and paraphrase_text):
         reasons = fallback_reasons(prob)
-    elif system_text and user_template and paraphrase_text:
+    else:
         try:
-            out = score_claim_live(
-                claim=claim,
-                system_text=system_text,
-                user_template=user_template,
-                paraphrase_text=paraphrase_text,
-                model=cfg.model,
-                max_output_tokens=tokens,
-            )
-            reasons = extract_reasons(out)
-        except Exception as exc:  # pragma: no cover - best-effort explanation
-            logging.warning("Explanation provider call failed: %s", exc)
+            adapter = get_rpl_adapter(provider_mode="LIVE", model=cfg.model)
+        except Exception as exc:  # pragma: no cover - defensive: registry misconfig
+            logging.warning("Explanation adapter unavailable: %s", exc)
+            adapter = None
+
+        if adapter is not None:
+            try:
+                out = adapter.score_claim(
+                    claim=claim,
+                    system_text=system_text,
+                    user_template=user_template,
+                    paraphrase_text=paraphrase_text,
+                    model=cfg.model,
+                    max_output_tokens=tokens,
+                )
+                reasons = extract_reasons(out)
+            except Exception as exc:  # pragma: no cover - best-effort explanation
+                logging.warning("Explanation adapter call failed: %s", exc)
 
     if not reasons:
         reasons = fallback_reasons(prob)
@@ -595,27 +602,3 @@ def fallback_reasons(prob: float | None) -> list[str]:
         "It depends on definitions or missing context.",
         "Supporting and opposing examples appear in roughly equal measure.",
     ]
-
-
-def classify_probability(prob: float | None) -> tuple[str, str, str, str]:
-    probability = prob if isinstance(prob, (int, float)) else 0.5
-    if probability >= 0.60:
-        return (
-            "Likely true",
-            "LIKELY TRUE",
-            "Why it’s likely true",
-            "GPT‑5 leans toward this claim being true based on its training data.",
-        )
-    if probability <= 0.40:
-        return (
-            "Likely false",
-            "LIKELY FALSE",
-            "Why it’s likely false",
-            "GPT‑5 leans toward this claim being false based on its training data.",
-        )
-    return (
-        "Uncertain",
-        "UNCERTAIN",
-        "Why it’s uncertain",
-        "GPT‑5 did not express a strong prior either way; responses were mixed.",
-    )
