@@ -1,0 +1,11 @@
+openai:
+  defaults:
+    # Default rate limits used when calling the OpenAI Responses API
+    # These values are safe, conservative starting points.
+    rps: 2
+    burst: 2
+  models:
+    # Per-model overrides (optional). If omitted, defaults apply.
+    gpt-5:
+      rps: 2
+      burst: 2
