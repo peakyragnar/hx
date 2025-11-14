@@ -53,6 +53,7 @@ This document captures the current architecture after adding the Postgres schema
 - Production domain: `https://heretix.ai`; preview domain: `https://heretix-ui.vercel.app`.
 - The HTML embeds `<meta name="heretix-api-base" content="https://api.heretix.ai">` and JS fallbacks for local development and preview hosts.
 - Client-side JS handles claim submission, magic-link sign-in, usage meter updates, and redirects to Stripe Checkout.
+- The landing page exposes a multi-select model block (checkboxes named `ui_model`) so users can compare GPT‑5, Grok, Gemini, and DeepSeek simultaneously. `renderMultiResults` renders a card per model using the same neon-styled layout as the single-card results page, keeping the design consistent across desktop/tablet/mobile breakpoints.
 
 ### Networking & DNS
 - `api.heretix.ai` → CNAME to Render (`heretix-api.onrender.com`).
