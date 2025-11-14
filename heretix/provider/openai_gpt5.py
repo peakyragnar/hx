@@ -151,6 +151,6 @@ _OPENAI_RATE_LIMITER = RateLimiter(rate_per_sec=float(_rps), burst=int(_burst))
 from .registry import register_score_fn
 
 register_score_fn(
-    aliases=("gpt-5", "openai-gpt5", "openai:gpt-5", "openai"),
+    aliases=("gpt-5", "openai-gpt5", "openai:gpt-5", "openai", "gpt5-default"),
     fn=score_claim,
 )

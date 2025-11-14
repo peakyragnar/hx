@@ -5,11 +5,13 @@ from pathlib import Path
 from typing import Optional
 
 from pydantic import Field
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Application configuration loaded from environment variables."""
+
+    model_config = SettingsConfigDict(env_file=".env", extra="allow", case_sensitive=False)
 
     app_env: str = Field("local", alias="APP_ENV")
     database_url: str = Field(
@@ -56,10 +58,6 @@ class Settings(BaseSettings):
     database_url_prod: Optional[str] = Field(None, alias="DATABASE_URL_PROD")
     kalshi_api_key: Optional[str] = Field(None, alias="KALSHI_API_KEY")
     kalshi_private_key: Optional[str] = Field(None, alias="KALSHI_PRIVATE_KEY")
-
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
 
     def prompt_file(self) -> Path:
         """Return resolved prompt file path for the configured prompt version."""
