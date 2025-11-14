@@ -42,3 +42,32 @@ def test_call_wel_once_raises_when_schema_invalid(monkeypatch):
 
     with pytest.raises(WELSchemaError):
         scoring.call_wel_once("bundle-text")
+
+
+def test_call_wel_once_uses_provider_specific_prompt(monkeypatch):
+    payload = {
+        "stance_prob_true": 0.5,
+        "stance_label": "mixed",
+        "support_bullets": [],
+        "oppose_bullets": [],
+        "notes": [],
+    }
+    captured = {}
+
+    def fake_adapter(**kwargs):
+        captured["instructions"] = kwargs["instructions"]
+        return {"text": json.dumps(payload), "warnings": []}
+
+    monkeypatch.setattr(scoring, "get_wel_score_fn", lambda model: fake_adapter)
+
+    def fake_builder(provider: str | None) -> str:
+        captured["provider"] = provider
+        return "provider instructions"
+
+    monkeypatch.setattr(scoring, "build_wel_instructions", fake_builder)
+
+    scoring.call_wel_once("bundle", model="grok-4")
+
+    assert captured["provider"] == "xai"
+    assert captured["instructions"].startswith("provider instructions")
+    assert scoring.WEL_SCHEMA.splitlines()[0] in captured["instructions"]

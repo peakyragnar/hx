@@ -9,6 +9,7 @@ __all__ = [
     "PromptParts",
     "PromptTemplateError",
     "build_rpl_prompt",
+    "build_wel_instructions",
     "build_wel_doc_prompt",
     "build_simple_expl_prompt",
 ]
@@ -107,6 +108,12 @@ def build_rpl_prompt(provider: str, *, claim: str, paraphrase: str) -> PromptPar
         "Return JSON that matches the schema described in the system instructions."
     )
     return PromptParts(system=system, user=user)
+
+
+def build_wel_instructions(provider: Optional[str] = None) -> str:
+    """Return the provider-specific WEL document scoring instructions."""
+
+    return _compose_system_text("wel_doc", provider, fallback_variant="openai")
 
 
 def build_wel_doc_prompt(

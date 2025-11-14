@@ -3,8 +3,10 @@ from __future__ import annotations
 import hashlib
 from typing import Dict, List, Tuple
 
+from heretix.prompts.prompt_builder import build_wel_instructions
 from heretix.provider.json_utils import parse_schema_from_text
 from heretix.provider.registry import get_wel_score_fn
+from heretix.provider.utils import infer_provider_from_model
 from heretix.schemas import WELDocV1
 
 
@@ -12,12 +14,6 @@ class WELSchemaError(ValueError):
     def __init__(self, warnings: List[str]):
         super().__init__("WEL response failed schema validation")
         self.warnings = warnings
-
-WEL_SYSTEM = """You are the Web Evidence Lens (WEL).
-Estimate P(true) for the claim using only the provided snippets.
-- Ignore external knowledge.
-- Point out conflicts or missing evidence in notes.
-- Return strict JSON only."""
 
 WEL_SCHEMA = """Return ONLY a JSON object with:
 {
@@ -33,7 +29,9 @@ def call_wel_once(bundle_text: str, model: str = "gpt-5") -> Tuple[Dict[str, obj
     """
     Evaluate a bundle of snippets using the registered WEL adapter.
     """
-    instructions = f"{WEL_SYSTEM}\n\n{WEL_SCHEMA}"
+    provider_id = infer_provider_from_model(model)
+    base_instructions = build_wel_instructions(provider_id)
+    instructions = f"{base_instructions}\n\n{WEL_SCHEMA}".strip()
     prompt_hash = hashlib.sha256((instructions + bundle_text).encode("utf-8")).hexdigest()
 
     adapter = get_wel_score_fn(model)
