@@ -5,13 +5,14 @@ import json
 import logging
 import os
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import requests
 
 from heretix.ratelimit import RateLimiter
 
 from .config import get_rate_limits
+from .json_utils import strip_markdown_json
 from .registry import register_score_fn
 from .schema_text import RPL_SAMPLE_JSON_SCHEMA
 
@@ -57,6 +58,28 @@ def _resolve_api_key() -> str:
     if not api_key:
         raise RuntimeError("Set DEEPSEEK_API_KEY to call DeepSeek.")
     return api_key
+
+
+def _parse_json_text(text: Optional[str]) -> Dict[str, Any]:
+    if not text:
+        return {}
+
+    attempts = [text]
+    try:
+        cleaned = strip_markdown_json(text)
+    except ValueError:
+        cleaned = None
+    if cleaned and cleaned not in attempts:
+        attempts.append(cleaned)
+
+    for candidate in attempts:
+        try:
+            obj = json.loads(candidate)
+        except Exception:
+            continue
+        if isinstance(obj, dict):
+            return obj
+    return {}
 
 
 def score_claim(
@@ -109,12 +132,7 @@ def score_claim(
         if isinstance(content, str) and content.strip():
             text = content
             break
-    try:
-        raw_obj = json.loads(text) if text else {}
-        if not isinstance(raw_obj, dict):
-            raw_obj = {}
-    except Exception:
-        raw_obj = {}
+    raw_obj = _parse_json_text(text)
 
     provider_model_id = data.get("model") or model
     response_id = data.get("id")

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 import pytest
+import responses
 
 from heretix.provider import deepseek_r1
 from heretix.provider.json_utils import extract_and_validate
@@ -18,41 +19,28 @@ class _Limiter:
         self.count += 1
 
 
-class _FakeResponse:
-    def __init__(self):
-        self._payload = {
-            "id": "deepseek-xyz",
-            "model": "deepseek-r1",
-            "choices": [
-                {
-                    "message": {
-                        "content": json.dumps(make_rpl_sample(0.44, label="unlikely")),
-                    }
-                }
-            ],
-        }
-
-    def raise_for_status(self):
-        return None
-
-    def json(self):
-        return self._payload
+def _add_deepseek_response(payload: dict) -> None:
+    responses.add(
+        responses.POST,
+        deepseek_r1._API_URL,
+        json=payload,
+        status=200,
+    )
 
 
-def test_deepseek_invokes_rate_limiter(monkeypatch: pytest.MonkeyPatch):
+@responses.activate
+def test_deepseek_invokes_rate_limiter_and_posts(monkeypatch: pytest.MonkeyPatch):
     limiter = _Limiter()
     monkeypatch.setattr(deepseek_r1, "_DEEPSEEK_RATE_LIMITER", limiter)
     monkeypatch.setenv("DEEPSEEK_API_KEY", "ds-key")
 
-    called = {}
-
-    def fake_post(url, json=None, headers=None, timeout=None):
-        called["url"] = url
-        called["json"] = json
-        called["headers"] = headers
-        return _FakeResponse()
-
-    monkeypatch.setattr(deepseek_r1.requests, "post", fake_post)
+    sample = make_rpl_sample(0.44, label="unlikely")
+    payload = {
+        "id": "deepseek-xyz",
+        "model": "deepseek-r1",
+        "choices": [{"message": {"content": json.dumps(sample)}}],
+    }
+    _add_deepseek_response(payload)
 
     result = deepseek_r1.score_claim(
         claim="Solar panels",
@@ -62,7 +50,45 @@ def test_deepseek_invokes_rate_limiter(monkeypatch: pytest.MonkeyPatch):
     )
 
     assert limiter.count == 1
-    assert called["headers"]["Authorization"] == "Bearer ds-key"
+    assert len(responses.calls) == 1
+    call = responses.calls[0]
+    assert call.request.url == deepseek_r1._API_URL
+    assert call.request.headers["Authorization"] == "Bearer ds-key"
+    body = call.request.body
+    serialized = body if isinstance(body, str) else body.decode("utf-8")
+    req_payload = json.loads(serialized)
+    assert req_payload["model"] == "deepseek-r1"
+    assert req_payload["messages"][0]["role"] == "system"
+
     parsed, warnings = extract_and_validate(json.dumps(result["raw"]), RPLSampleV1)
     assert parsed.belief.prob_true == pytest.approx(0.44)
+    assert warnings == []
+
+
+@responses.activate
+def test_deepseek_parses_markdown_wrapped_payload(monkeypatch: pytest.MonkeyPatch):
+    limiter = _Limiter()
+    monkeypatch.setattr(deepseek_r1, "_DEEPSEEK_RATE_LIMITER", limiter)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "ds-key")
+
+    sample = make_rpl_sample(0.63, label="likely")
+    wrapped = f"Here you go ```json\n{json.dumps(sample)}\n``` thanks"
+    payload = {
+        "id": "deepseek-abc",
+        "model": "deepseek-r1",
+        "choices": [{"message": {"content": wrapped}}],
+    }
+    _add_deepseek_response(payload)
+
+    result = deepseek_r1.score_claim(
+        claim="New policy",
+        system_text="system",
+        user_template="Explain {CLAIM}",
+        paraphrase_text="{CLAIM}?",
+    )
+
+    assert limiter.count == 1
+    assert len(responses.calls) == 1
+    parsed, warnings = extract_and_validate(json.dumps(result["raw"]), RPLSampleV1)
+    assert parsed.belief.prob_true == pytest.approx(0.63)
     assert warnings == []
