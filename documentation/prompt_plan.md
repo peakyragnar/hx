@@ -31,6 +31,7 @@ Modules
 - explain.py: scorecard (gates), deltas vs current, 3–5 concrete next‑step bullets.
 - store.py: session lifecycle, persistence, history, deterministic seed.
 - benches/: claims_bench_train.yaml, claims_bench_holdout.yaml.
+- Prompt templates: use `heretix.prompts.prompt_builder` to compose the shared + provider-specific system text and user payloads for RPL, WEL doc scoring, and SimpleExpl. This keeps the prompt studio aligned with production templates and ensures provider quirks (OpenAI/Grok/Gemini/DeepSeek) are always included.
 
 Data Layout
 

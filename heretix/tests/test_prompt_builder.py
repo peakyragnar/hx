@@ -1,3 +1,5 @@
+import pytest
+
 from heretix.prompts.prompt_builder import (
     PromptParts,
     build_rpl_prompt,
@@ -53,3 +55,52 @@ def test_build_simple_expl_prompt_uses_context_and_style() -> None:
     assert "Narrator style" in parts.system
     assert context in parts.user
     assert "SimpleExplV1" in parts.user
+
+
+@pytest.mark.parametrize(
+    ("provider", "expected"),
+    [
+        ("openai", "Provider notes (OpenAI GPT-5)"),
+        ("grok", "Provider notes (xAI Grok)"),
+        ("google", "Provider notes (Google Gemini)"),
+        ("deepseek", "Provider notes (DeepSeek R1)"),
+    ],
+)
+def test_build_rpl_prompt_includes_provider_specific_text(provider: str, expected: str) -> None:
+    parts = build_rpl_prompt(
+        provider,
+        claim="Tariffs are neutral",
+        paraphrase="Estimate P(true) that {CLAIM}",
+    )
+    assert expected in parts.system
+    assert "Estimate P(true)" in parts.user
+
+
+@pytest.mark.parametrize(
+    ("provider", "expected"),
+    [
+        ("openai", "Provider notes (OpenAI GPT-5)"),
+        ("grok", "Provider notes (xAI Grok)"),
+        ("google", "Provider notes (Google Gemini)"),
+        ("deepseek", "Provider notes (DeepSeek R1)"),
+    ],
+)
+def test_build_wel_doc_prompt_includes_provider_specific_text(provider: str, expected: str) -> None:
+    parts = build_wel_doc_prompt(
+        provider,
+        claim="Claim for WEL doc",
+        document="Document body",
+        source="https://example.com",
+    )
+    assert expected in parts.system
+    assert "Document snippet" in parts.user
+
+
+def test_build_simple_expl_prompt_falls_back_to_narrator() -> None:
+    parts = build_simple_expl_prompt(
+        provider="unknown-provider",
+        claim="Fallback claim",
+        context="Fallback context summary.",
+    )
+    assert "Narrator style" in parts.system
+    assert "Fallback context summary." in parts.user

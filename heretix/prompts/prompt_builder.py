@@ -34,6 +34,7 @@ _PROVIDER_ALIASES = {
     "grok-4": "grok",
     "grok": "grok",
     "xai": "grok",
+    "google": "gemini",
     "gemini": "gemini",
     "gemini-1.5": "gemini",
     "deepseek": "deepseek",
