@@ -48,6 +48,12 @@
     textarea { width:100%; border-radius:12px; border:1px solid rgba(0,255,65,0.35); background:#0b0d0b; color:var(--fg); padding:18px; font-size:17px; line-height:1.5; min-height:150px; resize:none; }
     textarea::placeholder{ color:rgba(191,214,191,0.6); }
     .form-meta { display:flex; gap:12px; flex-wrap:wrap; margin-top:16px; }
+    .model-select { display:flex; flex-direction:column; border:1px solid var(--border); border-radius:12px; padding:12px; min-width:260px; }
+    .model-select legend { font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); margin-bottom:8px; }
+    .model-option { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:6px 0; font-size:14px; color:var(--fg); }
+    .model-option input { accent-color:var(--bright); }
+    .model-name { font-weight:600; }
+    .model-note { font-size:12px; color:var(--muted); }
     select { flex:1; min-width:150px; border-radius:10px; padding:12px; border:1px solid rgba(0,255,65,0.35); background:#0b0d0b; color:var(--fg); font-size:15px; }
     .primary { margin-top:20px; width:100%; padding:16px; font-size:17px; font-weight:600; border-radius:12px; border:0; background:var(--bright); color:#041105; cursor:pointer; box-shadow:0 16px 40px rgba(0,255,65,0.15); transition:transform 0.2s ease, box-shadow 0.2s ease; }
     .primary:hover { transform:translateY(-2px); box-shadow:0 18px 46px rgba(0,255,65,0.25); }
@@ -62,24 +68,29 @@
 
     .usage-meter { margin-top:10px; padding:10px 12px; border-radius:10px; border:1px solid rgba(0,255,65,0.35); background:rgba(0,255,65,0.05); font-size:13px; text-align:center; }
 
-    .result-card { margin-top:40px; padding:32px; border:1px solid rgba(0,255,65,0.35); border-radius:20px; background:radial-gradient(circle at top,#112311 0%, #080c08 65%); box-shadow:0 0 42px rgba(0,255,65,0.24); }
-    .result-hero { display:flex; gap:34px; flex-wrap:wrap; align-items:center; justify-content:space-between; border-bottom:1px solid rgba(0,255,65,0.18); padding-bottom:24px; }
-    .result-pill { display:inline-flex; align-items:center; gap:8px; padding:8px 14px; border-radius:999px; border:1px solid rgba(0,255,65,0.35); background:rgba(0,255,65,0.1); font-size:12px; letter-spacing:1px; text-transform:uppercase; color:var(--bright); margin-bottom:16px; }
-    .result-percent { font-size:clamp(56px, 10vw, 112px); font-weight:700; color:var(--bright); text-shadow:0 0 36px rgba(0,255,65,0.35); line-height:1; }
-    .result-verdict-tag { font-size:16px; text-transform:uppercase; letter-spacing:3px; color:var(--muted); margin-top:8px; }
-    .result-claim-block { max-width:540px; }
-    .result-claim { font-size:22px; line-height:1.6; color:var(--fg); margin-bottom:16px; }
-    .result-interpretation { font-size:18px; color:var(--muted); line-height:1.6; }
-    .result-explainer { margin-top:28px; padding:24px; border-radius:16px; border:1px solid rgba(0,255,65,0.25); background:rgba(0,255,65,0.04); text-align:left; }
-    .result-explainer h3 { margin:0 0 12px; font-size:20px; color:var(--bright); }
-    .result-explainer p { margin:0 0 14px; color:var(--muted); line-height:1.6; }
-    .result-explainer ul { margin:0; padding-left:22px; color:var(--muted); line-height:1.6; list-style:disc; }
-    .result-advanced { margin-top:28px; }
-    .result-advanced .advanced-grid { margin-top:18px; display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:18px; color:var(--muted); }
-    .metric-label { font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); margin-bottom:6px; }
-    .metric-value { font-size:18px; font-weight:500; color:var(--fg); }
-    .metric-note { font-size:12px; color:var(--muted); margin-top:4px; }
-    .result-advanced .note { margin-top:18px; color:var(--muted); font-size:13px; }
+    .results-multi { margin-top:80px; }
+    .results-multi.hidden { display:none !important; }
+    .results-hero { padding:28px; border-radius:20px; border:1px solid var(--border); background:radial-gradient(circle at top, rgba(0,255,65,0.15), rgba(0,0,0,0.75)); box-shadow:0 0 42px rgba(0,255,65,0.18); }
+    .results-hero-label { text-transform:uppercase; font-size:13px; letter-spacing:2px; color:var(--muted); margin:0 0 8px; }
+    .results-hero h2 { margin:0; font-size:clamp(28px,5vw,42px); line-height:1.3; }
+    .results-note { margin:14px 0 0; color:var(--muted); font-size:15px; }
+    .results-card-grid { margin-top:36px; display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:24px; }
+    .result-card { border:1px solid rgba(0,255,65,0.25); border-radius:18px; padding:24px; background:var(--card); box-shadow:0 0 32px rgba(0,0,0,0.35); display:flex; flex-direction:column; gap:16px; }
+    .card-pill { display:inline-flex; align-items:center; padding:6px 12px; border-radius:999px; border:1px solid rgba(0,255,65,0.35); font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--bright); background:rgba(0,255,65,0.08); }
+    .card-percent { font-size:clamp(48px,6vw,72px); font-weight:700; color:var(--bright); text-shadow:0 0 26px rgba(0,255,65,0.35); line-height:1; }
+    .card-verdict { font-size:16px; text-transform:uppercase; letter-spacing:2px; color:var(--muted); }
+    .card-summary { margin:0; font-size:16px; line-height:1.6; color:var(--fg); }
+    .card-lines { margin:0; padding-left:20px; color:var(--muted); line-height:1.5; }
+    .card-lines li { margin-bottom:6px; }
+    .resolved-note { border:1px solid rgba(0,255,65,0.4); border-radius:14px; padding:12px 16px; background:rgba(0,255,65,0.12); font-size:14px; }
+    .resolved-note.false { border-color:#ff6b6b; background:rgba(255,107,107,0.12); }
+    .card-details { border:1px solid rgba(0,255,65,0.2); border-radius:14px; padding:16px 18px; background:rgba(0,0,0,0.35); }
+    .card-details summary { cursor:pointer; font-weight:600; color:var(--fg); }
+    .metric-grid { margin-top:14px; display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; }
+    .metric-label { font-size:12px; text-transform:uppercase; letter-spacing:1px; color:rgba(0,255,65,0.7); }
+    .metric-value { font-size:18px; color:var(--fg); }
+    .card-copy { align-self:flex-start; }
+    .result-actions { margin-top:32px; display:flex; flex-wrap:wrap; gap:16px; }
     .result-actions { margin-top:32px; display:flex; flex-wrap:wrap; gap:16px; }
     .btn { display:inline-flex; align-items:center; justify-content:center; padding:14px 22px; border-radius:14px; font-weight:600; border:0; cursor:pointer; transition:transform 0.2s ease, box-shadow 0.2s ease; }
     .btn-primary { background:var(--bright); color:#041105; box-shadow:0 16px 32px rgba(0,255,65,0.18); }
@@ -222,12 +233,29 @@
           <label for="claim">Check a claim</label>
           <textarea id="claim" name="claim" maxlength="180" placeholder="Type the claim you want to inspect." required></textarea>
           <div class="form-meta">
-            <select name="ui_model" aria-label="Model selection">
-              <option value="gpt-5" selected>GPT‑5</option>
-              <option value="claude-4.1" disabled>Claude 4.1 · coming soon</option>
-              <option value="grok-4" disabled>Grok 4 · coming soon</option>
-              <option value="deepseek-r1" disabled>DeepSeek R1 · coming soon</option>
-            </select>
+            <fieldset class="model-select">
+              <legend>Select models</legend>
+              <label class="model-option">
+                <input type="checkbox" name="ui_model" value="gpt-5" checked>
+                <span class="model-name">GPT‑5</span>
+                <span class="model-note">OpenAI</span>
+              </label>
+              <label class="model-option">
+                <input type="checkbox" name="ui_model" value="grok-4">
+                <span class="model-name">Grok 4</span>
+                <span class="model-note">xAI</span>
+              </label>
+              <label class="model-option">
+                <input type="checkbox" name="ui_model" value="gemini-2.5">
+                <span class="model-name">Gemini 2.5</span>
+                <span class="model-note">Google</span>
+              </label>
+              <label class="model-option">
+                <input type="checkbox" name="ui_model" value="deepseek-r1">
+                <span class="model-name">DeepSeek R1</span>
+                <span class="model-note">DeepSeek</span>
+              </label>
+            </fieldset>
             <select name="ui_mode" aria-label="Mode selection">
               <option value="prior" selected>Internal knowledge only</option>
               <option value="internet-search">Internet search</option>
@@ -241,52 +269,15 @@
       </div>
     </section>
 
-    <section id="result-card" class="result-card hidden" aria-live="polite">
-      <div class="result-hero">
-        <div>
-          <div class="result-pill" id="result-pill">GPT‑5 · Internal knowledge only</div>
-          <div class="result-percent" id="result-percentage">--%</div>
-          <div class="result-verdict-tag" id="result-subtitle">Probability this claim is true</div>
-        </div>
-        <div class="result-claim-block">
-          <div class="result-claim" id="result-claim">“—”</div>
-          <p class="result-interpretation" id="result-interpretation-main"></p>
-        </div>
+    <section id="results-multi" class="results-multi hidden" aria-live="polite">
+      <div class="results-hero">
+        <p class="results-hero-label">Claim evaluated</p>
+        <h2 id="results-claim">“—”</h2>
+        <p class="results-note" id="results-note"></p>
       </div>
-      <div class="result-explainer hidden" id="result-explainer">
-        <h3 id="result-verdict">—</h3>
-        <p id="result-interpretation-detail"></p>
-        <!-- Simple view lines: model prior, web estimate, sources -->
-        <ul id="result-simple-lines" class="simple-lines"></ul>
-        <!-- Keep legacy reasons list hidden for concise simple view; deeper panel will include details -->
-        <ul id="result-reasons" class="hidden"></ul>
-      </div>
-      <details class="result-deeper" id="result-deeper">
-        <summary>Deeper explanation</summary>
-        <div id="result-deeper-body"></div>
-      </details>
-      <details class="result-advanced">
-        <summary>Advanced details</summary>
-        <div class="advanced-grid">
-          <div>
-            <div class="metric-label">Confidence width</div>
-            <div class="metric-value" id="result-ci">--</div>
-          </div>
-          <div>
-            <div class="metric-label">Template stability</div>
-            <div class="metric-value" id="result-stability">--</div>
-            <div class="metric-note" id="result-stability-band"></div>
-          </div>
-          <div>
-            <div class="metric-label">Policy compliance</div>
-            <div class="metric-value" id="result-compliance">--</div>
-          </div>
-        </div>
-        <p class="note">Narrower confidence widths mean the model gave consistent answers. Stability reflects how similar the paraphrased prompts were. Compliance shows how often responses followed the Raw Prior rules.</p>
-      </details>
+      <div class="results-card-grid" id="results-card-grid"></div>
       <div class="result-actions">
-        <button type="button" class="btn btn-primary" id="result-new">Ask another claim</button>
-        <button type="button" class="btn btn-secondary" id="result-copy">Copy summary</button>
+        <button type="button" class="btn btn-primary" id="results-new">Ask another claim</button>
       </div>
     </section>
 
@@ -447,31 +438,16 @@
       var modeSelect = claimForm ? claimForm.querySelector('select[name="ui_mode"]') : null;
       var statusEl = claimForm ? claimForm.querySelector('.footnote') : null;
       var usageEl = document.getElementById('usage-meter');
-      var resultCard = document.getElementById('result-card');
-      var resultProb = document.getElementById('result-prob'); // legacy element (kept for compatibility)
-      var resultPercentage = document.getElementById('result-percentage');
-      var resultSubtitle = document.getElementById('result-subtitle');
-      var resultClaimEl = document.getElementById('result-claim');
-      var resultPill = document.getElementById('result-pill');
-      var resultCi = document.getElementById('result-ci');
-      var resultStability = document.getElementById('result-stability');
-      var resultBand = document.getElementById('result-stability-band');
-      var resultCompliance = document.getElementById('result-compliance');
-      var resultExplainer = document.getElementById('result-explainer');
-      var resultVerdict = document.getElementById('result-verdict');
-      var resultInterpretationMain = document.getElementById('result-interpretation-main');
-      var resultInterpretationDetail = document.getElementById('result-interpretation-detail');
-      var resultReasons = document.getElementById('result-reasons');
-      var resultSimpleLines = document.getElementById('result-simple-lines');
-      var resultDeeper = document.getElementById('result-deeper');
-      var resultDeeperBody = document.getElementById('result-deeper-body');
       var loadingOverlay = document.getElementById('loading-overlay');
       var loadingClaim = document.getElementById('loading-claim');
       var loadingHeadline = document.getElementById('loading-headline');
       var loadingStep2 = document.getElementById('loading-step-2');
       var loadingStep3 = document.getElementById('loading-step-3');
-      var resultNewButton = document.getElementById('result-new');
-      var resultCopyButton = document.getElementById('result-copy');
+      var resultsSection = document.getElementById('results-multi');
+      var resultsClaim = document.getElementById('results-claim');
+      var resultsNote = document.getElementById('results-note');
+      var resultsGrid = document.getElementById('results-card-grid');
+      var resultsNewButton = document.getElementById('results-new');
 
       var signInModal = document.getElementById('signin-modal');
       var signInForm = document.getElementById('signin-form');
@@ -501,6 +477,17 @@
       }
       var currentUserEmail = '';
       var latestPlanName = 'trial';
+      var MODEL_MAP = {
+        "gpt-5": { code: "gpt-5", label: "GPT‑5", provider: "openai", logical_model: "gpt-5" },
+        "grok-4": { code: "grok-4", label: "Grok 4", provider: "xai", logical_model: "grok-4" },
+        "gemini-2.5": { code: "gemini-2.5", label: "Gemini 2.5", provider: "google", logical_model: "gemini25-default" },
+        "deepseek-r1": { code: "deepseek-r1", label: "DeepSeek R1", provider: "deepseek", logical_model: "deepseek-r1" }
+      };
+      var MODE_LABELS = {
+        "prior": "Internal knowledge only",
+        "internet-search": "Internet search",
+        "user-data": "User evidence"
+      };
 
       function normalizePlanName(name) {
         if (!name) return 'starter';
@@ -592,366 +579,6 @@
         fetchMe();
       }
 
-      function formatPercent(value) {
-        if (typeof value !== 'number') return '--';
-        return (value * 100).toFixed(1).replace(/\.0$/, '') + '%';
-      }
-
-      function renderResult(data) {
-        if (!resultCard || !data) {
-          setStatus('Unexpected response. Please try again.', 'error');
-          return;
-        }
-        // Defensive guards so a partial/malformed payload never blanks the page
-        var isWebMode = data.mode === 'web_informed';
-        var combinedProb = data.combined && typeof data.combined.p === 'number' ? data.combined.p : null;
-        var aggregatesSafe = (data && typeof data === 'object' && data.aggregates) ? data.aggregates : {};
-        var priorProb = (typeof aggregatesSafe.prob_true_rpl === 'number')
-          ? aggregatesSafe.prob_true_rpl
-          : null;
-        var probValue = isWebMode && combinedProb !== null ? combinedProb : (priorProb !== null ? priorProb : 0);
-        var percentText = formatPercent(probValue);
-
-        if (resultProb) { resultProb.textContent = percentText; }
-        if (resultPercentage) { resultPercentage.textContent = percentText; }
-        if (resultClaimEl && data.claim) { resultClaimEl.textContent = '“' + data.claim + '”'; }
-
-        if (resultPill) {
-          var pillText = (data.model || 'GPT‑5') + (isWebMode ? ' · Web-informed' : ' · Internal knowledge only');
-          resultPill.textContent = pillText;
-        }
-
-        if (resultCi) {
-          var ciWidth = null;
-          if (isWebMode && data.combined && Array.isArray(data.combined.ci95)) {
-            ciWidth = data.combined.ci95[1] - data.combined.ci95[0];
-          } else if (typeof aggregatesSafe.ci_width === 'number') {
-            ciWidth = aggregatesSafe.ci_width;
-          }
-          resultCi.textContent = typeof ciWidth === 'number' ? ciWidth.toFixed(3) : '--';
-        }
-
-        if (resultStability) {
-          var st = aggregatesSafe.stability_score;
-          resultStability.textContent = (typeof st === 'number') ? st.toFixed(2) : '--';
-        }
-        if (resultBand) {
-          resultBand.textContent = aggregatesSafe.stability_band ? ('Band: ' + aggregatesSafe.stability_band) : '';
-        }
-        if (resultCompliance) {
-          if (typeof aggregatesSafe.rpl_compliance_rate === 'number') {
-            resultCompliance.textContent = Math.round(aggregatesSafe.rpl_compliance_rate * 100) + '%';
-          } else {
-            resultCompliance.textContent = '--';
-          }
-        }
-
-        var verdictInfo = buildVerdict(probValue);
-        var verdictLabel = data.verdict_label || verdictInfo.title;
-        var headline = data.explanation_headline || verdictInfo.headline;
-        var interpretation = data.explanation_text || verdictInfo.text;
-
-        if (resultSubtitle) {
-          var subtitleBase = isWebMode ? 'Probability this claim is true (web-informed)' : 'Probability this claim is true';
-          resultSubtitle.textContent = verdictLabel ? verdictLabel + ' · ' + subtitleBase : subtitleBase;
-        }
-
-        var simpleExpl = data.simple_expl;
-        if (resultInterpretationMain) {
-          if (simpleExpl && Array.isArray(simpleExpl.lines) && simpleExpl.lines.length) {
-            resultInterpretationMain.textContent = '';
-            resultInterpretationMain.classList.add('hidden');
-          } else {
-            resultInterpretationMain.textContent = interpretation;
-            resultInterpretationMain.classList.remove('hidden');
-          }
-        }
-
-        var apiReasons = Array.isArray(data.explanation_reasons) ? data.explanation_reasons.filter(Boolean) : [];
-        var reasonList;
-        var welReplicates = Array.isArray(data.wel_replicates) ? data.wel_replicates : [];
-        var webBlock = data.web && typeof data.web === 'object' ? data.web : null;
-        var weightsBlock = data.weights && typeof data.weights === 'object' ? data.weights : {};
-        var resolvedFlag = Boolean(isWebMode && webBlock && webBlock.resolved);
-        if (resolvedFlag) {
-          reasonList = [];
-        } else if (apiReasons.length) {
-          reasonList = apiReasons;
-        } else {
-          var collected = [];
-          var seenReason = new Set();
-          function appendItems(items) {
-            if (!items) return false;
-            for (var i = 0; i < items.length; i++) {
-              var raw = items[i];
-              if (typeof raw !== 'string') continue;
-              var text = raw.trim();
-              if (!text) continue;
-              if (!/[.!?]$/.test(text)) text += '.';
-              if (!seenReason.has(text)) {
-                seenReason.add(text);
-                collected.push(text);
-              }
-              if (collected.length >= 4) return true;
-            }
-            return false;
-          }
-          if (isWebMode && welReplicates.length) {
-            for (var r = 0; r < welReplicates.length; r++) {
-              var rep = welReplicates[r] || {};
-              if (appendItems(rep.support_bullets)) break;
-            }
-            if (collected.length < 2) {
-              for (var r2 = 0; r2 < welReplicates.length; r2++) {
-                var rep2 = welReplicates[r2] || {};
-                if (appendItems(rep2.oppose_bullets)) break;
-              }
-            }
-            if (collected.length < 2) {
-              for (var r3 = 0; r3 < welReplicates.length; r3++) {
-                var rep3 = welReplicates[r3] || {};
-                if (appendItems(rep3.notes)) break;
-              }
-            }
-          }
-          if (collected.length === 0 && isWebMode && webBlock) {
-            var metrics = webBlock.evidence && typeof webBlock.evidence === 'object' ? webBlock.evidence : {};
-            var nDocs = Number(metrics.n_docs || 0);
-            var nDomains = Number(metrics.n_domains || 0);
-            var priorText = priorProb !== null ? formatPercent(priorProb) : null;
-            var shiftLine = priorText
-              ? 'Web evidence across ' + nDocs + ' document' + (nDocs === 1 ? '' : 's') +
-                ' from ' + nDomains + ' domain' + (nDomains === 1 ? '' : 's') +
-                ' moved GPT‑5’s prior from ' + priorText + ' to ' + percentText + '.'
-              : null;
-            if (shiftLine) collected.push(shiftLine);
-            var medianAge = metrics.median_age_days;
-            if (typeof medianAge === 'number' && medianAge === medianAge) {
-              collected.push('Median publish date was about ' + Math.round(medianAge) +
-                ' day' + (Math.round(medianAge) === 1 ? '' : 's') +
-                ' ago, so fresher coverage could tighten the estimate.'
-              );
-            }
-            var weightVal = typeof weightsBlock.w_web === 'number' ? weightsBlock.w_web : null;
-            if (weightVal !== null) {
-              collected.push('Web weighting was ' + weightVal.toFixed(2) +
-                ', combining web evidence with GPT‑5’s prior to produce the final probability.'
-              );
-            }
-          }
-          reasonList = collected.length ? collected : buildReasons(probValue);
-        }
-
-        // Simple/deeper presentation
-        if (!resolvedFlag && resultExplainer && resultVerdict) {
-          // Mode-aware headline
-          var simpleHeadline = isWebMode ? 'Why the web‑informed verdict looks this way' : 'Why the model‑only verdict looks this way';
-          resultVerdict.textContent = simpleHeadline;
-
-          // Simple "why" sentence: prefer first reason from collected web bullets if available
-          var simpleWhy = '';
-          if (isWebMode && Array.isArray(reasonList) && reasonList.length) {
-            simpleWhy = reasonList[0];
-          } else if (typeof interpretation === 'string' && interpretation) {
-            simpleWhy = interpretation;
-          } else if (verdictInfo && verdictInfo.text) {
-            simpleWhy = verdictInfo.text;
-          }
-          if (resultInterpretationDetail) {
-            if (simpleExpl && Array.isArray(simpleExpl.lines) && simpleExpl.lines.length) {
-              resultInterpretationDetail.textContent = '';
-              resultInterpretationDetail.classList.add('hidden');
-            } else if (simpleWhy) {
-              resultInterpretationDetail.textContent = simpleWhy;
-              resultInterpretationDetail.classList.remove('hidden');
-            } else {
-              resultInterpretationDetail.textContent = '';
-              resultInterpretationDetail.classList.add('hidden');
-            }
-          }
-
-          // Build simple lines: prefer backend-provided simple_expl
-          if (resultSimpleLines) {
-            resultSimpleLines.innerHTML = '';
-            if (simpleExpl && Array.isArray(simpleExpl.lines) && simpleExpl.lines.length) {
-              var lines = simpleExpl.lines.slice(0, 3);
-              if (typeof simpleExpl.summary === 'string' && simpleExpl.summary) {
-                lines.push(simpleExpl.summary);
-              }
-              for (var i = 0; i < lines.length && i < 4; i++) {
-                var li = document.createElement('li');
-                li.textContent = String(lines[i] || '');
-                resultSimpleLines.appendChild(li);
-              }
-            } else {
-            function sanitizeReason(s) {
-              if (typeof s !== 'string') return '';
-              var t = s.trim();
-              t = t.replace(/^\s*(?:[A-Za-z0-9.-]+\.(?:com|org|net|gov|edu|news|io|co|uk|us|ca|au|de|fr))\s*[:—-]\s*/i, '');
-              // strip leading BrandName: (with colon)
-              t = t.replace(/^\s*[A-Z][\w&-]*(?:\s+[A-Z][\w&-]*){0,3}\s*:\s*/i, '');
-              t = t.replace(/\s*\([^)]*\b(?:com|org|net|gov|edu|news|io|co|uk|us|ca|au|de|fr)\b[^)]*\)\s*$/i, '');
-              t = t.replace(/\s*\[[^\]]*\b(?:com|org|net|gov|edu|news|io|co|uk|us|ca|au|de|fr)\b[^\]]*\]\s*$/i, '');
-              // Strip leading brand names before reporting verbs
-              t = t.replace(/^\s*[A-Z][\w&-]*(?:\s+[A-Z][\w&-]*){0,3}\s+(?:states|reports|says|announces|notes|claims|plans|projects)\b[:,]?\s*/i, '');
-              // Soften heavy numerics
-              t = t.replace(/\b(\d{3,}|\d+\.?\d*%|\$\d[\d,]*)\b/g, 'initial capacity');
-              if (!t) return '';
-              return /[.!?]$/.test(t) ? t : (t + '.');
-            }
-            var lines = [];
-            // Compose narrative for web mode
-            if (isWebMode && welReplicates && welReplicates.length) {
-              // Parse basic target (year, percent) from claim
-              var yearMatch = (data.claim || '').match(/(20\d{2})/);
-              var pctMatch = (data.claim || '').match(/(\d{1,3})\s?%/);
-              var yearTxt = yearMatch ? yearMatch[1] : null;
-              var pctTxt = pctMatch ? pctMatch[1] : null;
-              var claimLow = (data.claim || '').toLowerCase();
-              if (claimLow.includes('ban')) {
-                lines.push('A ban would require formal approval by the owners at a rules meeting' + (yearTxt ? (' in ' + yearTxt) : '') + '.');
-              } else if ((claimLow.includes('source') || claimLow.includes('domestic')) && pctTxt) {
-                lines.push((yearTxt ? ('Reaching ' + pctTxt + '% by ' + yearTxt) : ('Meeting a ' + pctTxt + '% threshold')) + ' would need rapid build‑out of extraction, processing and magnet capacity.');
-              } else if (claimLow.includes('market cap') || claimLow.includes('market capitalization') || claimLow.includes('trillion')) {
-                lines.push((yearTxt ? ('Hitting that milestone by ' + yearTxt) : 'Reaching that milestone') + ' depends on earnings and broader market conditions.');
-              } else {
-                // no generic filler sentence
-              }
-
-              // Gather signals from support bullets
-              var timeline = null, capacity = null, dependency = null, policy = null;
-              for (var r = 0; r < welReplicates.length; r++) {
-                var rep = welReplicates[r] || {};
-                var items = Array.isArray(rep.support_bullets) ? rep.support_bullets : [];
-                for (var k = 0; k < items.length; k++) {
-                  var s0 = sanitizeReason(items[k]);
-                  var low = s0.toLowerCase();
-                  if (!timeline && /(early|late|by\s+20\d{2}|next year|this year|startup|begin)/.test(low)) { timeline = s0; continue; }
-                  if (!capacity && /(production|processing|refining|magnet|output|capacity|plant|factory|mill)/.test(low)) { capacity = s0; continue; }
-                  if (!dependency && /(import|depend|reliance|supply chain|bottleneck|intermediate)/.test(low)) { dependency = s0; continue; }
-                  if (!policy && /(funding|policy|act|bill|incentive|approval|permitting)/.test(low)) { policy = s0; continue; }
-                  if (!crossed && /(crossed|surpassed|joined|reached)/.test(low)) { var crossed = s0; continue; }
-                }
-              }
-              if (capacity && timeline) {
-                lines.push('Recent reporting points to projects starting around ' + (yearTxt || 'this period') + ' with ' + capacity.toLowerCase());
-              } else if (capacity) {
-                lines.push(capacity);
-              } else if (timeline) {
-                lines.push(timeline);
-              }
-              if (dependency) {
-                lines.push(dependency);
-              } else if (policy) {
-                lines.push('Policy support exists, but build‑out typically lags approvals.');
-              } else if (crossed) {
-                lines.push('Recent reporting notes the milestone has already been reached at times, showing it is attainable.');
-              }
-            }
-            // Keep at most 3 content lines, then add summary last
-            if (lines.length > 3) lines = lines.slice(0, 3);
-            lines.push('Taken together, these points suggest the claim is ' + verdictLabel.toLowerCase() + '.');
-            // Render up to 4
-            for (var i = 0; i < lines.length && i < 4; i++) {
-              var li = document.createElement('li');
-              li.textContent = lines[i];
-              resultSimpleLines.appendChild(li);
-            }
-            }
-          }
-
-          // Hide legacy reasons in simple view
-          if (resultReasons) {
-            resultReasons.innerHTML = '';
-            resultReasons.classList.add('hidden');
-          }
-
-          // Deeper explanation panel
-          if (resultDeeperBody) {
-            var esc = function(s){ return String(s == null ? '' : s); };
-            var htmlParts = [];
-            // Training-only block
-            htmlParts.push('<h4>Training‑only (model prior)</h4>');
-            htmlParts.push('<p>Prior: ' + (priorProb !== null ? formatPercent(priorProb) : '--') + '</p>');
-            var priorReasons = buildReasons(priorProb);
-            if (Array.isArray(priorReasons) && priorReasons.length) {
-              htmlParts.push('<ul>');
-              priorReasons.slice(0,3).forEach(function(r){ htmlParts.push('<li>' + esc(r) + '</li>'); });
-              htmlParts.push('</ul>');
-            }
-            // Web evidence block (only if web mode)
-            if (isWebMode) {
-              var webProbVal = (webBlock && typeof webBlock.p === 'number') ? webBlock.p : null;
-              htmlParts.push('<h4>Web evidence (recent)</h4>');
-              htmlParts.push('<p>Web estimate: ' + (webProbVal !== null ? formatPercent(webProbVal) : '--') + '</p>');
-              var webBullets = [];
-              if (welReplicates && welReplicates.length) {
-                for (var i = 0; i < welReplicates.length; i++) {
-                  var repx = welReplicates[i] || {};
-                  if (Array.isArray(repx.support_bullets)) {
-                    webBullets = repx.support_bullets.filter(function(x){ return typeof x === 'string' && x.trim(); });
-                    if (webBullets.length) break;
-                  }
-                }
-              }
-              if (webBullets.length) {
-                htmlParts.push('<ul>');
-                webBullets.slice(0,3).forEach(function(b){ htmlParts.push('<li>' + esc(b) + '</li>'); });
-                htmlParts.push('</ul>');
-              }
-              var metrics2 = webBlock && webBlock.evidence ? webBlock.evidence : {};
-              var nDocs2 = Number(metrics2 && metrics2.n_docs || 0);
-              var nDomains2 = Number(metrics2 && metrics2.n_domains || 0);
-              var medAge = metrics2 && typeof metrics2.median_age_days === 'number' ? metrics2.median_age_days : null;
-              var metaBits = [];
-              if (nDocs2 || nDomains2) metaBits.push(nDocs2 + ' docs / ' + nDomains2 + ' domains');
-              if (medAge === medAge && medAge !== null) metaBits.push('median age ~' + Math.round(medAge) + ' days');
-              if (metaBits.length) htmlParts.push('<p class="note">' + esc(metaBits.join(' · ')) + '</p>');
-
-              var w = (weightsBlock && typeof weightsBlock.w_web === 'number') ? weightsBlock.w_web : null;
-              if (w !== null && priorProb !== null && (webProbVal !== null || combinedProb !== null)) {
-                var webShown = webProbVal !== null ? webProbVal : combinedProb;
-                htmlParts.push('<h4>How we combine</h4>');
-                htmlParts.push('<p>Weight ' + w.toFixed(2) + ' → ' + ( (1 - w).toFixed(2) ) + '×' + formatPercent(priorProb) + ' + ' + w.toFixed(2) + '×' + formatPercent(webShown) + '.</p>');
-              }
-            }
-            resultDeeperBody.innerHTML = htmlParts.join('\n');
-          }
-
-          resultExplainer.classList.remove('hidden');
-          if (resultDeeper) { resultDeeper.classList.remove('hidden'); }
-        }
-
-        // If resolved, suppress explainer/simple/deeper blocks entirely
-        if (resolvedFlag) {
-          if (resultExplainer) resultExplainer.classList.add('hidden');
-          if (resultReasons) { resultReasons.innerHTML=''; resultReasons.classList.add('hidden'); }
-          if (resultSimpleLines) { resultSimpleLines.innerHTML=''; }
-          if (resultDeeper) { resultDeeper.classList.add('hidden'); }
-          if (resultDeeperBody) { resultDeeperBody.innerHTML=''; }
-        }
-
-        if (resultCopyButton) {
-          var summaryText = buildSummary({
-            claim: data.claim,
-            verdict: verdictLabel,
-            percent: percentText,
-            reasons: reasonList,
-            modelText: resultPill ? resultPill.textContent : (data.model || 'GPT‑5'),
-          });
-          resultCopyButton.dataset.summary = summaryText;
-          resultCopyButton.textContent = 'Copy summary';
-        }
-
-        try {
-          resultCard.classList.remove('hidden');
-          document.body.classList.add('results-mode');
-        } catch (err) {
-          console.error('renderResult display error', err);
-          setStatus('Unable to display result. Please try again.', 'error');
-        }
-      }
-
       function closeModal(modal) {
         if (!modal) return;
         modal.classList.remove('is-open');
@@ -1026,6 +653,55 @@
         }
       });
 
+      function toggleLoading(show, claimText, modeValue) {
+        if (!loadingOverlay) return;
+        var mode = modeValue || (modeSelect ? modeSelect.value : 'prior');
+        var isWeb = mode === 'internet-search' || mode === 'web_informed';
+        if (loadingHeadline) {
+          loadingHeadline.textContent = isWeb
+            ? "Synthesizing GPT‑5’s web-informed view of this claim…"
+            : "Measuring how GPT‑5’s training data anchors this claim…";
+        }
+        if (loadingStep2) {
+          loadingStep2.textContent = isWeb
+            ? "Gathering and filtering fresh web snippets."
+            : "Asking GPT‑5 with internal knowledge only.";
+        }
+        if (loadingStep3) {
+          loadingStep3.textContent = isWeb
+            ? "Preparing the web-informed verdict."
+            : "Preparing the explanation for the verdict.";
+        }
+        if (show) {
+          loadingOverlay.classList.remove('hidden');
+          if (loadingClaim) {
+            loadingClaim.textContent = claimText ? '“' + claimText + '”' : '';
+          }
+        } else {
+          loadingOverlay.classList.add('hidden');
+          if (loadingClaim) {
+            loadingClaim.textContent = '';
+          }
+        }
+      }
+
+      function resetResultsView() {
+        document.body.classList.remove('results-mode');
+        if (resultsGrid) {
+          resultsGrid.innerHTML = '';
+        }
+        if (resultsSection) {
+          resultsSection.classList.add('hidden');
+        }
+        if (resultsClaim) {
+          resultsClaim.textContent = '“—”';
+        }
+        if (resultsNote) {
+          resultsNote.textContent = '';
+        }
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+
       async function fetchMe() {
         if (!apiBase) return;
         try {
@@ -1068,7 +744,7 @@
           });
           if (res.status === 401) {
             closeModal(planModal);
-                setStatus('Sign up or sign in to choose a plan.', 'warn');
+            setStatus('Sign up or sign in to choose a plan.', 'warn');
             openModal(signInModal);
             return;
           }
@@ -1149,10 +825,11 @@
               method: 'POST',
               credentials: 'include',
               headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ email: email }),
+              body: JSON.stringify({ email: email })
             });
             if (!res.ok) {
-              signInStatus.textContent = 'Unable to send link. Try again later.';
+              var errDetail = await res.json().catch(function(){ return {}; });
+              signInStatus.textContent = errDetail.detail || 'Unable to send link right now.';
               signInStatus.classList.add('modal-status--error');
               return;
             }
@@ -1164,113 +841,8 @@
         });
       }
 
-      if (magicSignedIn && !isLocalHarness) {
-        renderAuth({ authenticated: true });
-        setStatus('Signed in—welcome back!', 'info');
-        if (typeof window.history.replaceState === 'function') {
-          window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
-        }
-      }
-
-      if (claimForm && isLocalHarness) {
-        claimForm.setAttribute('action', '/run');
-        claimForm.setAttribute('method', 'post');
-        if (submitBtn) {
-          submitBtn.disabled = false;
-          submitBtn.textContent = 'Ask the model';
-        }
-        setStatus('', 'info');
-        if (usageEl) {
-          usageEl.classList.add('hidden');
-        }
-      }
-
-      function toggleLoading(show, claimText, modeValue) {
-        if (!loadingOverlay) return;
-        var mode = modeValue || (modeSelect ? modeSelect.value : 'prior');
-        var isWeb = mode === 'internet-search' || mode === 'web_informed';
-        if (loadingHeadline) {
-          loadingHeadline.textContent = isWeb
-            ? "Synthesizing GPT‑5’s web-informed view of this claim…"
-            : "Measuring how GPT‑5’s training data anchors this claim…";
-        }
-        if (loadingStep2) {
-          loadingStep2.textContent = isWeb
-            ? "Gathering and filtering fresh web snippets."
-            : "Asking GPT‑5 with internal knowledge only.";
-        }
-        if (loadingStep3) {
-          loadingStep3.textContent = isWeb
-            ? "Preparing the web-informed verdict."
-            : "Preparing the explanation for the verdict.";
-        }
-        if (show) {
-          loadingOverlay.classList.remove('hidden');
-          if (loadingClaim) {
-            loadingClaim.textContent = claimText ? '“' + claimText + '”' : '';
-          }
-        } else {
-          loadingOverlay.classList.add('hidden');
-          if (loadingClaim) {
-            loadingClaim.textContent = '';
-          }
-        }
-      }
-
-      function resetResultsView() {
-        document.body.classList.remove('results-mode');
-        if (claimInput) {
-          claimInput.value = '';
-        }
-        if (resultCard) {
-          resultCard.classList.add('hidden');
-        }
-        if (resultExplainer) {
-          resultExplainer.classList.add('hidden');
-        }
-        if (resultReasons) {
-          resultReasons.innerHTML = '';
-          resultReasons.classList.add('hidden');
-        }
-        if (resultPercentage) {
-          resultPercentage.textContent = '--%';
-        }
-        if (resultProb) {
-          resultProb.textContent = '--';
-        }
-        if (resultSubtitle) {
-          resultSubtitle.textContent = 'Probability this claim is true';
-        }
-        if (resultClaimEl) {
-          resultClaimEl.textContent = '“—”';
-        }
-        if (resultInterpretationMain) {
-          resultInterpretationMain.textContent = '';
-        }
-        if (resultInterpretationDetail) {
-          resultInterpretationDetail.textContent = '';
-        }
-        if (resultCi) {
-          resultCi.textContent = '--';
-        }
-        if (resultStability) {
-          resultStability.textContent = '--';
-        }
-        if (resultBand) {
-          resultBand.textContent = '';
-        }
-        if (resultCompliance) {
-          resultCompliance.textContent = '--';
-        }
-        if (resultCopyButton) {
-          resultCopyButton.textContent = 'Copy summary';
-          resultCopyButton.dataset.summary = '';
-        }
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      }
-
-      if (resultNewButton) {
-        resultNewButton.addEventListener('click', function(){
+      if (resultsNewButton) {
+        resultsNewButton.addEventListener('click', function(){
           resetResultsView();
           if (claimInput) {
             claimInput.value = '';
@@ -1279,102 +851,615 @@
         });
       }
 
-      if (resultCopyButton) {
-        resultCopyButton.addEventListener('click', function(){
-          var summary = resultCopyButton.dataset.summary || '';
-          if (!summary) return;
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(summary).then(function(){
-              resultCopyButton.textContent = 'Summary copied!';
-              setTimeout(function(){ resultCopyButton.textContent = 'Copy summary'; }, 2000);
-            }).catch(function(){ fallbackCopy(summary); });
-          } else {
-            fallbackCopy(summary);
-          }
+      if (resultsGrid) {
+        resultsGrid.addEventListener('click', function(evt){
+          var btn = evt.target.closest('.card-copy');
+          if (!btn) return;
+          var summary = btn.dataset.summary || '';
+          copySummaryToClipboard(summary, btn);
         });
       }
 
-      if (claimForm && !isLocalHarness) {
-        var originalBtnText = submitBtn ? submitBtn.textContent : '';
+      function formatPercent(value) {
+        if (typeof value !== 'number' || value !== value) return '--%';
+        return (value * 100).toFixed(1).replace(/\.0$/, '') + '%';
+      }
+
+      function formatNumber(value, digits) {
+        if (typeof value !== 'number' || value !== value) return '--';
+        var places = typeof digits === 'number' ? Math.max(0, digits) : 3;
+        var fixed = value.toFixed(places);
+        fixed = fixed.replace(/\.0+$/, '').replace(/(\.\d*[1-9])0+$/, '$1');
+        return fixed;
+      }
+
+      function cleanLine(text) {
+        if (typeof text !== 'string') return '';
+        var condensed = text.replace(/\s+/g, ' ').trim();
+        if (!condensed) return '';
+        if (!/[.!?]$/.test(condensed)) {
+          condensed += '.';
+        }
+        return condensed;
+      }
+
+      function collectSimpleLines(simpleBlock, runData) {
+        var lines = [];
+        var seen = new Set();
+        function append(items) {
+          if (!Array.isArray(items)) return;
+          for (var i = 0; i < items.length; i++) {
+            var cleaned = cleanLine(items[i]);
+            if (cleaned && !seen.has(cleaned)) {
+              seen.add(cleaned);
+              lines.push(cleaned);
+            }
+            if (lines.length >= 3) return;
+          }
+        }
+        append(simpleBlock && simpleBlock.lines);
+        append(simpleBlock && simpleBlock.body_paragraphs);
+        append(runData && runData.explanation_reasons);
+        if (!lines.length) {
+          var fallback = cleanLine((simpleBlock && simpleBlock.summary) || runData.explanation_text);
+          if (fallback) {
+            lines.push(fallback);
+          }
+        }
+        if (!lines.length) {
+          lines.push('No additional context was provided.');
+        }
+        var summaryClean = cleanLine((simpleBlock && simpleBlock.summary) || '');
+        if (summaryClean) {
+          lines = lines.filter(function(item){ return item !== summaryClean; });
+        }
+        return lines.slice(0, 3);
+      }
+
+
+      function buildResultCard(runEntry, meta, modeLabel, isWebMode) {
+        var card = document.createElement('article');
+        card.className = 'result-card';
+        var pill = document.createElement('div');
+        pill.className = 'card-pill';
+        pill.textContent = (meta.label || runEntry.model || 'Model') + ' · ' + modeLabel;
+        card.appendChild(pill);
+
+        var aggregates = (runEntry && typeof runEntry.aggregates === 'object') ? runEntry.aggregates : {};
+        var combined = (runEntry && typeof runEntry.combined === 'object') ? runEntry.combined : {};
+        var simpleBlock = (runEntry && typeof runEntry.simple_expl === 'object') ? runEntry.simple_expl : {};
+        var priorBlock = (runEntry && typeof runEntry.prior === 'object') ? runEntry.prior : {};
+        var webBlock = (runEntry && typeof runEntry.web === 'object') ? runEntry.web : null;
+        var weightsBlock = (runEntry && typeof runEntry.weights === 'object') ? runEntry.weights : {};
+
+        var probability = (typeof combined.p === 'number') ? combined.p : (typeof aggregates.prob_true_rpl === 'number' ? aggregates.prob_true_rpl : null);
+        var percentEl = document.createElement('div');
+        percentEl.className = 'card-percent';
+        percentEl.textContent = formatPercent(probability);
+        card.appendChild(percentEl);
+
+        var verdictInfo = buildVerdict(probability);
+        var verdictText = combined.label || runEntry.verdict_label || verdictInfo.title;
+        var verdictEl = document.createElement('div');
+        verdictEl.className = 'card-verdict';
+        verdictEl.textContent = verdictText || '';
+        card.appendChild(verdictEl);
+
+        var summaryPara = document.createElement('p');
+        summaryPara.className = 'card-summary';
+        var titleText = simpleBlock.title || verdictInfo.headline;
+        var summaryText = simpleBlock.summary || runEntry.explanation_headline || runEntry.explanation_text || verdictInfo.text;
+        if (titleText) {
+          var strong = document.createElement('strong');
+          strong.textContent = titleText;
+          summaryPara.appendChild(strong);
+          summaryPara.appendChild(document.createTextNode(' '));
+        }
+        summaryPara.appendChild(document.createTextNode(summaryText || 'This model did not return an explanation.'));
+        card.appendChild(summaryPara);
+
+        var lines = collectSimpleLines(simpleBlock, runEntry);
+        if (lines.length) {
+          var list = document.createElement('ul');
+          list.className = 'card-lines';
+          lines.forEach(function(line){
+            var li = document.createElement('li');
+            li.textContent = line;
+            list.appendChild(li);
+          });
+          card.appendChild(list);
+        }
+
+        if (isWebMode && webBlock && webBlock.resolved) {
+          var resolvedDiv = document.createElement('div');
+          resolvedDiv.className = 'resolved-note' + (webBlock.resolved_truth === false ? ' false' : '');
+          var truthLabel = 'Resolved';
+          if (webBlock.resolved_truth === true) {
+            truthLabel = 'Resolved true';
+          } else if (webBlock.resolved_truth === false) {
+            truthLabel = 'Resolved false';
+          }
+          var reasonText = cleanLine(webBlock.resolved_reason) || 'Resolver confirmed this verdict from web evidence.';
+          resolvedDiv.textContent = truthLabel + ' · ' + reasonText;
+          card.appendChild(resolvedDiv);
+        }
+
+        var details = document.createElement('details');
+        details.className = 'card-details';
+        var summaryEl = document.createElement('summary');
+        summaryEl.textContent = 'Deeper explanation';
+        details.appendChild(summaryEl);
+
+        var ciSource = Array.isArray(combined.ci95) ? combined.ci95 : aggregates.ci95;
+        var ciLo = Array.isArray(ciSource) ? ciSource[0] : null;
+        var ciHi = Array.isArray(ciSource) ? ciSource[1] : null;
+        var metricGrid = document.createElement('div');
+        metricGrid.className = 'metric-grid';
+        function addMetric(label, value) {
+          var wrap = document.createElement('div');
+          var lbl = document.createElement('div');
+          lbl.className = 'metric-label';
+          lbl.textContent = label;
+          var val = document.createElement('div');
+          val.className = 'metric-value';
+          val.textContent = value;
+          wrap.appendChild(lbl);
+          wrap.appendChild(val);
+          metricGrid.appendChild(wrap);
+        }
+        addMetric('CI 95% range', formatPercent(ciLo) + ' – ' + formatPercent(ciHi));
+        addMetric('CI width', formatNumber(aggregates.ci_width));
+        var stabilityText = formatNumber(aggregates.stability_score, 2);
+        if (aggregates.stability_band) {
+          stabilityText += ' (' + aggregates.stability_band + ')';
+        }
+        addMetric('Template stability', stabilityText);
+        addMetric('Policy compliance', formatPercent(aggregates.rpl_compliance_rate));
+        addMetric('Cache hit rate', formatPercent(aggregates.cache_hit_rate));
+        details.appendChild(metricGrid);
+
+        var priorHeading = document.createElement('h4');
+        priorHeading.textContent = 'Training-only (model prior)';
+        details.appendChild(priorHeading);
+        var priorPara = document.createElement('p');
+        var priorCi = Array.isArray(priorBlock.ci95) ? priorBlock.ci95 : [null, null];
+        var priorCiText = formatPercent(priorCi[0]) + ' – ' + formatPercent(priorCi[1]);
+        priorPara.textContent = 'Baseline probability ' + formatPercent(priorBlock.p) +
+          ' with 95% CI ' + priorCiText + '. Template stability score ' + formatNumber(priorBlock.stability, 2) + '.';
+        details.appendChild(priorPara);
+
+        if (isWebMode) {
+          var webHeading = document.createElement('h4');
+          webHeading.textContent = 'Web evidence (recent)';
+          details.appendChild(webHeading);
+          var webPara = document.createElement('p');
+          if (webBlock) {
+            var evidence = (webBlock.evidence && typeof webBlock.evidence === 'object') ? webBlock.evidence : {};
+            var docs = Number(evidence.n_docs || 0);
+            var domains = Number(evidence.n_domains || 0);
+            var medianAge = evidence.median_age_days;
+            var recencyText = (typeof medianAge === 'number' && medianAge === medianAge)
+              ? 'median age ≈ ' + Math.round(medianAge) + ' days'
+              : 'fresh sources';
+            webPara.textContent = docs + ' doc' + (docs === 1 ? '' : 's') + ' across ' + domains + ' domain' + (domains === 1 ? '' : 's') +
+              ', ' + recencyText + '. The web resolver funnels only policy-compliant evidence into this verdict.';
+          } else {
+            webPara.textContent = 'Waiting for web results. This run retained the model prior.';
+          }
+          details.appendChild(webPara);
+        }
+
+        if (weightsBlock && typeof weightsBlock.w_web !== 'undefined') {
+          var weightHeading = document.createElement('h4');
+          weightHeading.textContent = 'How we combine';
+          details.appendChild(weightHeading);
+          var weightPara = document.createElement('p');
+          var webWeight = Number(weightsBlock.w_web || 0);
+          if (!(webWeight === webWeight)) {
+            webWeight = 0;
+          }
+          webWeight = Math.min(1, Math.max(0, webWeight));
+          var priorWeight = Math.min(1, Math.max(0, 1 - webWeight));
+          weightPara.textContent = 'Current weighting: ' + formatPercent(webWeight) + ' web · ' + formatPercent(priorWeight) +
+            ' prior. We default to the prior when web evidence is limited.';
+          details.appendChild(weightPara);
+        }
+
+        card.appendChild(details);
+
+        var summaryPayload = [titleText, summaryText].concat(lines).filter(Boolean).join('
+');
+        var copyBtn = document.createElement('button');
+        copyBtn.type = 'button';
+        copyBtn.className = 'btn btn-secondary card-copy';
+        copyBtn.dataset.summary = summaryPayload;
+        copyBtn.textContent = 'Copy summary';
+        card.appendChild(copyBtn);
+
+        return card;
+      }
+
+      function buildErrorCard(meta, errorInfo, modeLabel) {
+        var card = document.createElement('article');
+        card.className = 'result-card';
+        var pill = document.createElement('div');
+        pill.className = 'card-pill';
+        pill.textContent = (meta.label || 'Model') + ' · ' + modeLabel;
+        card.appendChild(pill);
+        var verdictEl = document.createElement('div');
+        verdictEl.className = 'card-verdict';
+        verdictEl.textContent = 'Unable to complete';
+        card.appendChild(verdictEl);
+        var summary = document.createElement('p');
+        summary.className = 'card-summary';
+        summary.textContent = describeError(errorInfo);
+        card.appendChild(summary);
+        return card;
+      }
+
+      function renderMultiResults(claimText, modeLabel, entries, successMap, failureMap, isWebMode) {
+        if (!resultsSection || !resultsGrid) return;
+        resultsGrid.innerHTML = '';
+        var rendered = 0;
+        entries.forEach(function(entry){
+          var key = entry.code;
+          if (successMap.has(key)) {
+            var payload = successMap.get(key);
+            resultsGrid.appendChild(buildResultCard(payload.data, entry, modeLabel, isWebMode));
+            rendered += 1;
+          } else if (failureMap.has(key)) {
+            resultsGrid.appendChild(buildErrorCard(entry, failureMap.get(key), modeLabel));
+            rendered += 1;
+          }
+        });
+        if (!rendered) {
+          var empty = document.createElement('p');
+          empty.className = 'card-summary';
+          empty.textContent = 'No runs completed.';
+          resultsGrid.appendChild(empty);
+        }
+        if (resultsClaim) {
+          resultsClaim.textContent = claimText ? '“' + claimText + '”' : '“—”';
+        }
+        if (resultsNote) {
+          var modelsPhrase = entries.length + ' model' + (entries.length === 1 ? '' : 's') + ' evaluated';
+          resultsNote.textContent = modelsPhrase + ' · ' + modeLabel;
+        }
+        resultsSection.classList.remove('hidden');
+        document.body.classList.add('results-mode');
+        window.scrollTo({ top: resultsSection.offsetTop - 40, behavior: 'smooth' });
+      }
+
+      function renderServerCards(payload) {
+        if (!resultsSection || !resultsGrid) return;
+        var block = payload && typeof payload.cards_block === 'string'
+          ? payload.cards_block
+          : '';
+        if (!block && payload && Array.isArray(payload.cards)) {
+          block = payload.cards.join('');
+        }
+        if (block) {
+          resultsGrid.innerHTML = block;
+        } else {
+          resultsGrid.innerHTML = '';
+          var fallback = document.createElement('p');
+          fallback.className = 'card-summary';
+          fallback.textContent = 'No runs completed.';
+          resultsGrid.appendChild(fallback);
+        }
+        if (resultsClaim) {
+          var claimText = payload && payload.claim ? String(payload.claim) : '';
+          resultsClaim.textContent = claimText ? '“' + claimText + '”' : '“—”';
+        }
+        if (resultsNote) {
+          resultsNote.textContent = (payload && payload.model_note) || '';
+        }
+        resultsSection.classList.remove('hidden');
+        document.body.classList.add('results-mode');
+        window.scrollTo({ top: resultsSection.offsetTop - 40, behavior: 'smooth' });
+      }
+
+      function describeError(errorInfo) {
+        if (!errorInfo) return 'Request failed. Please try again.';
+        var detail = errorInfo.detail || {};
+        var baseDetail = typeof detail === 'string' ? detail : detail.detail;
+        if (errorInfo.status === 402) {
+          var reason = detail.reason || (detail.detail && detail.detail.reason) || detail.detail || '';
+          if (reason === 'require_signin') {
+            return 'Sign in to keep using this model.';
+          }
+          if (reason === 'require_subscription' || reason === 'limit_reached') {
+            return 'Plan limit reached. Upgrade to continue.';
+          }
+          return 'Usage limit reached. Try again later.';
+        }
+        if (errorInfo.status === 422) {
+          return 'Invalid request. Check your claim and try again.';
+        }
+        if (errorInfo.status === 429) {
+          return 'Temporarily rate-limited. Please wait and retry.';
+        }
+        if (baseDetail) {
+          return typeof baseDetail === 'string' ? baseDetail : JSON.stringify(baseDetail);
+        }
+        if (errorInfo.message) {
+          return errorInfo.message;
+        }
+        return 'Request failed (' + (errorInfo.status || 'network') + ').';
+      }
+
+      function copySummaryToClipboard(text, trigger) {
+        if (!text) return;
+        function markCopied() {
+          if (!trigger) return;
+          trigger.textContent = 'Summary copied!';
+          setTimeout(function(){ trigger.textContent = 'Copy summary'; }, 2000);
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(markCopied).catch(function(){
+            fallbackCopyInternal(text, trigger);
+          });
+          return;
+        }
+        fallbackCopyInternal(text, trigger);
+      }
+
+      function fallbackCopyInternal(text, trigger) {
+        var textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'absolute';
+        textarea.style.left = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.select();
+        try {
+          document.execCommand('copy');
+        } catch (err) {}
+        document.body.removeChild(textarea);
+        if (trigger) {
+          trigger.textContent = 'Summary copied!';
+          setTimeout(function(){ trigger.textContent = 'Copy summary'; }, 2000);
+        }
+      }
+
+      function collectSelectedEntries() {
+        if (!claimForm) return [];
+        var inputs = claimForm.querySelectorAll('input[name="ui_model"]:checked');
+        var entries = [];
+        inputs.forEach(function(input){
+          var code = (input.value || '').trim().toLowerCase();
+          var meta = MODEL_MAP[code];
+          if (meta && !entries.some(function(item){ return item.code === meta.code; })) {
+            entries.push(meta);
+          }
+        });
+        return entries;
+      }
+
+      async function runModelRequest(meta, claimValue, modeNormalized, useMock) {
+        var payload = {
+          claim: claimValue,
+          mode: modeNormalized,
+          logical_model: meta.logical_model,
+          provider: meta.provider,
+          model: meta.logical_model,
+        };
+        if (useMock) {
+          payload.mock = true;
+        }
+        var response;
+        var body;
+        try {
+          response = await fetch(apiBase + '/api/checks/run', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          body = await response.json().catch(function(){ return {}; });
+        } catch (err) {
+          err.meta = meta;
+          throw err;
+        }
+        if (!response.ok) {
+          var error = new Error('Request failed');
+          error.status = response.status;
+          error.detail = body;
+          error.meta = meta;
+          throw error;
+        }
+        return body;
+      }
+
+      function serializeFormParams(form) {
+        var params = new URLSearchParams();
+        if (!form) return params;
+        var formData = new FormData(form);
+        formData.forEach(function(value, key){
+          if (value === undefined || value === null) {
+            return;
+          }
+          params.append(key, value);
+        });
+        return params;
+      }
+
+      async function startLocalHarnessJob() {
+        var params = serializeFormParams(claimForm);
+        var response = await fetch('/run?format=json', {
+          method: 'POST',
+          headers: {
+            'accept': 'application/json',
+            'content-type': 'application/x-www-form-urlencoded; charset=UTF-8'
+          },
+          body: params.toString(),
+        });
+        var payload = await response.json().catch(function(){ return null; });
+        if (!response.ok) {
+          var detail = payload && (payload.error || payload.message);
+          var error = new Error(detail || 'Unable to start the local harness.');
+          error.status = response.status;
+          throw error;
+        }
+        return payload || {};
+      }
+
+      function resolveLocalPollUrl(jobPayload) {
+        if (!jobPayload) return '';
+        if (jobPayload.poll_url) return jobPayload.poll_url;
+        var base = jobPayload.wait_url || '';
+        if (!base) return '';
+        if (base.indexOf('format=') !== -1) {
+          return base;
+        }
+        return base + (base.indexOf('?') === -1 ? '?format=json' : '&format=json');
+      }
+
+      async function fetchLocalHarnessResult(pollUrl) {
+        var response = await fetch(pollUrl, {
+          headers: { 'accept': 'application/json' },
+        });
+        var payload = await response.json().catch(function(){ return null; });
+        if (!response.ok) {
+          var detail = payload && (payload.error || payload.message);
+          var error = new Error(detail || 'The local harness run failed.');
+          error.status = response.status;
+          throw error;
+        }
+        return payload || {};
+      }
+
+      function handleUsageErrors(errors) {
+        if (!errors || !errors.length) return false;
+        for (var i = 0; i < errors.length; i++) {
+          var err = errors[i];
+          if (!err || err.status !== 402) {
+            continue;
+          }
+          var detail = err.detail || {};
+          var reason = detail.reason || (detail.detail && detail.detail.reason) || detail.detail || '';
+          if (reason === 'require_signin') {
+            setStatus('Sign up or sign in to keep reading new claims.', 'warn');
+            if (signInStatus) {
+              signInStatus.textContent = '';
+            }
+            openModal(signInModal);
+          } else if (reason === 'require_subscription' || reason === 'limit_reached') {
+            setStatus('You’ve used your free checks—choose a plan to continue.', 'warn');
+            openPlanModal(detail.plan || detail.usage_plan || 'starter');
+          } else {
+            setStatus('Usage limit reached. Try again later.', 'warn');
+          }
+          fetchMe();
+          return true;
+        }
+        return false;
+      }
+
+      if (claimForm) {
         claimForm.addEventListener('submit', async function(evt){
           evt.preventDefault();
-          if (!claimInput) return;
-          var value = claimInput.value.trim();
+          if (!isLocalHarness && !apiBase) {
+            setStatus('API unavailable in this environment.', 'error');
+            return;
+          }
+          var value = (claimInput ? claimInput.value : '').trim();
           if (!value) {
             setStatus('Enter a claim to evaluate.', 'warn');
+            if (claimInput) {
+              claimInput.focus();
+            }
             return;
           }
-          // Pre-check usage limits before showing the loader.
-          // If the user is out of checks, open the Plans modal immediately.
-          try {
-            if (!meState) { await fetchMe(); }
-          } catch (e) { /* ignore precheck errors; server will enforce */ }
-          var allowed = (meState && (meState.checks_allowed !== undefined && meState.checks_allowed !== null)) ? meState.checks_allowed : null;
-          var remaining = (meState && typeof meState.remaining === 'number') ? meState.remaining
-                           : (meState && typeof meState.checks_remaining === 'number') ? meState.checks_remaining
-                           : undefined;
-          if (allowed !== null && typeof remaining === 'number' && remaining <= 0) {
-            setStatus('You’ve used your free checks—choose a plan to continue.', 'warn');
-            openPlanModal(normalizePlanName((meState && (meState.plan || meState.usage_plan)) || 'starter'));
+          if (value.length > 180) {
+            setStatus('Claims are limited to 180 characters.', 'warn');
             return;
           }
-
-          setStatus('Running evaluation…', 'info');
+          var selectedEntries = collectSelectedEntries();
+          if (!selectedEntries.length) {
+            setStatus('Choose at least one model to compare.', 'warn');
+            return;
+          }
           var modeValue = modeSelect ? modeSelect.value : 'prior';
-          toggleLoading(true, value, modeValue);
+          var modeNormalized = modeValue === 'internet-search' ? 'web_informed' : 'baseline';
+          var modeLabel = MODE_LABELS[modeValue] || 'Internal knowledge only';
+          var isWebMode = modeValue === 'internet-search';
+          var originalBtnText = submitBtn ? submitBtn.textContent : '';
           if (submitBtn) {
             submitBtn.disabled = true;
-            submitBtn.textContent = 'Checking…';
+            submitBtn.textContent = 'Running…';
           }
-          var response = null;
+          setStatus('Comparing ' + selectedEntries.length + ' model' + (selectedEntries.length === 1 ? '' : 's') + '…', 'info');
+          toggleLoading(true, value, modeValue);
           try {
-            var payload = { claim: value };
-            payload.mode = modeValue === 'internet-search' ? 'web_informed' : 'baseline';
-            if (params.get('mock') === '1') {
-              payload.mock = true;
-            }
-            response = await fetch(apiBase + '/api/checks/run', {
-              method: 'POST',
-              credentials: 'include',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify(payload),
-            });
-            if (response.ok) {
-              var data = await response.json();
-              renderResult(data);
-              renderUsage(data);
-              setStatus('All set! Scroll down to see the result.', 'info');
-            } else if (response.status === 402) {
-              var detail = await response.json().catch(function(){ return {}; });
-              var reason = detail.reason || (detail.detail && detail.detail.reason) || detail.detail || '';
-              if (reason === 'require_signin') {
-                setStatus('Sign up or sign in to keep reading new claims.', 'warn');
-                signInStatus.textContent = '';
-                openModal(signInModal);
-              } else if (reason === 'require_subscription' || reason === 'limit_reached') {
-                setStatus('You’ve used your free checks—choose a plan to continue.', 'warn');
-                openPlanModal(detail.plan || detail.usage_plan || 'starter');
-              } else {
-                setStatus('Usage limit reached. Try again later.', 'warn');
+            if (isLocalHarness) {
+              var jobPayload = await startLocalHarnessJob();
+              var pollUrl = resolveLocalPollUrl(jobPayload);
+              if (!pollUrl) {
+                throw new Error('Local harness did not return a wait URL.');
               }
-              fetchMe();
+              setStatus('Local harness is running…', 'info');
+              var localResult = await fetchLocalHarnessResult(pollUrl);
+              renderServerCards(localResult);
+              setStatus('All set! Scroll down to compare the models.', 'info');
             } else {
-              var errPayload = await response.json().catch(function(){ return {}; });
-              var message = errPayload.detail || ('Request failed (' + response.status + ')');
-              setStatus(message, 'error');
+              var useMock = params.get('mock') === '1';
+              var runPromises = selectedEntries.map(function(entry){
+                return runModelRequest(entry, value, modeNormalized, useMock).then(function(data){
+                  return { meta: entry, data: data };
+                });
+              });
+              var settled = await Promise.allSettled(runPromises);
+              var successMap = new Map();
+              var failureMap = new Map();
+              var errorList = [];
+              settled.forEach(function(result, idx){
+                var entry = selectedEntries[idx];
+                if (result.status === 'fulfilled') {
+                  successMap.set(entry.code, result.value);
+                } else {
+                  var errObj = result.reason || {};
+                  if (!errObj.meta) {
+                    errObj.meta = entry;
+                  }
+                  failureMap.set(entry.code, errObj);
+                  errorList.push(errObj);
+                }
+              });
+              var handledUsage = handleUsageErrors(errorList);
+              if (!successMap.size) {
+                if (!handledUsage && errorList.length) {
+                  setStatus(describeError(errorList[0]), 'error');
+                }
+                resetResultsView();
+                return;
+              }
+              var firstSuccess = successMap.values().next().value;
+              if (firstSuccess && firstSuccess.data) {
+                renderUsage(firstSuccess.data);
+              }
+              renderMultiResults(value, modeLabel, selectedEntries, successMap, failureMap, isWebMode);
+              if (failureMap.size) {
+                setStatus('Finished with some issues—check the cards for details.', 'warn');
+              } else {
+                setStatus('All set! Scroll down to compare the models.', 'info');
+              }
             }
           } catch (err) {
             console.error(err);
-            setStatus('Unable to reach the API. Check your connection and try again.', 'error');
-        } finally {
-          if (submitBtn) {
-            submitBtn.disabled = false;
-            submitBtn.textContent = originalBtnText;
-          }
-          toggleLoading(false, null, modeValue);
-            if (response && !response.ok) {
-              resetResultsView();
+            if (isLocalHarness) {
+              var localMessage = err && err.message ? err.message : 'Unable to finish this local run.';
+              setStatus(localMessage, 'error');
+            } else {
+              setStatus('Unable to reach the API. Check your connection and try again.', 'error');
             }
+            resetResultsView();
+          } finally {
+            if (submitBtn) {
+              submitBtn.disabled = false;
+              submitBtn.textContent = originalBtnText;
+            }
+            toggleLoading(false, null, modeValue);
           }
         });
       }
@@ -1406,82 +1491,23 @@
         return {
           title: 'Likely true',
           headline: 'Why it’s likely true',
-          text: 'GPT‑5 leans toward this claim being true based on its training data.'
+          text: 'This model leans toward the claim being true based on its prior.'
         };
       }
       if (value <= 0.4) {
         return {
           title: 'Likely false',
           headline: 'Why it’s likely false',
-          text: 'GPT‑5 leans toward this claim being false based on its training data.'
+          text: 'This model leans toward the claim being false based on its prior.'
         };
       }
       return {
         title: 'Uncertain',
         headline: 'Why it’s uncertain',
-        text: 'GPT‑5 did not express a strong prior either way; responses were mixed.'
+        text: 'This model did not express a strong prior either way; responses were mixed.'
       };
     }
 
-    function buildReasons(probability) {
-      var value = typeof probability === 'number' ? probability : 0.5;
-      if (value >= 0.6) {
-        return [
-          'GPT‑5 has seen many supporting examples in its training data.',
-          'Typical definitions and historical references line up with the claim.',
-          'Counterexamples are rare compared to supporting evidence in its corpus.'
-        ];
-      }
-      if (value <= 0.4) {
-        return [
-          'GPT‑5’s training data contains many instances that contradict the claim.',
-          'Common usage and reference materials point the other way.',
-          'Supporting anecdotes are outweighed by counterexamples it has seen.'
-        ];
-      }
-      return [
-        'GPT‑5 finds mixed signals in its training data.',
-        'It depends on definitions or missing context.',
-        'Supporting and opposing examples appear in roughly equal measure.'
-      ];
-    }
-
-    function buildSummary(data) {
-      var parts = [];
-      if (data.claim) {
-        parts.push('Claim: "' + data.claim + '"');
-      }
-      if (data.verdict && data.percent) {
-        parts.push('Verdict: ' + data.verdict + ' (' + data.percent + ')');
-      }
-      var reasons = Array.isArray(data.reasons) ? data.reasons.filter(Boolean) : [];
-      if (reasons.length) {
-        parts.push('Reasons:');
-        reasons.forEach(function(r){ parts.push('- ' + r); });
-      }
-      if (data.modelText) {
-        parts.push('Model: ' + data.modelText);
-      }
-      return parts.join('\n');
-    }
-
-    function fallbackCopy(text) {
-      var textarea = document.createElement('textarea');
-      textarea.value = text;
-      textarea.setAttribute('readonly', '');
-      textarea.style.position = 'absolute';
-      textarea.style.left = '-9999px';
-      document.body.appendChild(textarea);
-      textarea.select();
-      try {
-        document.execCommand('copy');
-      } catch (err) {}
-      document.body.removeChild(textarea);
-      if (resultCopyButton) {
-        resultCopyButton.textContent = 'Summary copied!';
-        setTimeout(function(){ resultCopyButton.textContent = 'Copy summary'; }, 2000);
-      }
-    }
   </script>
 </body>
 </html>

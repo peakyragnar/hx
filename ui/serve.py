@@ -9,15 +9,12 @@ import subprocess
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 import yaml
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 import logging
 import re
 import html
 
-# Provider adapters (reuse existing harness adapters)
-from heretix.provider.openai_gpt5 import score_claim as _score_claim_live
-from heretix.provider.mock import score_claim_mock as _score_claim_mock
-from openai import OpenAI
+from heretix.verdicts import verdict_label
 
 
 
@@ -33,6 +30,72 @@ PORT_DEFAULT = 7799
 
 logging.basicConfig(level=logging.INFO)
 
+MODEL_CHOICES: Dict[str, Dict[str, str]] = {
+    "gpt-5": {"label": "GPT‑5", "cli_model": "gpt-5"},
+    "grok-4": {"label": "Grok 4", "cli_model": "grok-4"},
+    "gemini-2.5": {"label": "Gemini 2.5", "cli_model": "gemini25-default"},
+    "deepseek-r1": {"label": "DeepSeek R1", "cli_model": "deepseek-r1"},
+}
+DEFAULT_MODEL_CODES = ["gpt-5"]
+
+
+def _format_percent(value: Optional[float]) -> str:
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        return "--%"
+    if num != num:
+        return "--%"
+    pct = num * 100.0
+    text = f"{pct:.1f}".rstrip("0").rstrip(".")
+    return f"{text}%"
+
+
+def _format_number(value: Optional[float], *, digits: int = 3) -> str:
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        return "--"
+    if num != num:
+        return "--"
+    return f"{num:.{digits}f}".rstrip("0").rstrip(".") or "0"
+
+
+def _clean_line(text: Optional[str]) -> str:
+    if not text:
+        return ""
+    line = " ".join(str(text).split()).strip()
+    if not line:
+        return ""
+    if line[-1] not in ".!?":
+        line += "."
+    return line
+
+
+def _collect_lines(simple_block: dict, run: dict) -> List[str]:
+    lines: List[str] = []
+    for source in (
+        simple_block.get("lines"),
+        simple_block.get("body_paragraphs"),
+        run.get("explanation_reasons"),
+    ):
+        if not source:
+            continue
+        for item in source:
+            cleaned = _clean_line(item)
+            if cleaned and cleaned not in lines:
+                lines.append(cleaned)
+            if len(lines) >= 3:
+                return lines
+    if not lines:
+        fallback = simple_block.get("summary") or run.get("explanation_text")
+        cleaned = _clean_line(fallback)
+        if cleaned:
+            lines.append(cleaned)
+    if not lines:
+        lines.append("No additional context was provided.")
+    return lines[:3]
+
 
 
 def _render(path: Path, mapping: dict[str, str]) -> bytes:
@@ -47,23 +110,28 @@ class Handler(BaseHTTPRequestHandler):
         print("[ui]", fmt % args)
 
     def do_POST(self):  # noqa: N802
-        if self.path != "/run":
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path != "/run":
             self._not_found(); return
+        query = urllib.parse.parse_qs(parsed.query)
+        response_format = (query.get("format") or ["html"])[0].lower()
+        wants_json = response_format == "json"
         length = int(self.headers.get("Content-Length") or 0)
         data = self.rfile.read(length).decode("utf-8")
-        form = {k: v[0] for k, v in urllib.parse.parse_qs(data).items()}
+        form_multi = urllib.parse.parse_qs(data)
+        form = {k: v[-1] for k, v in form_multi.items() if v}
 
         claim = (form.get("claim") or "").strip()
         if not claim:
-            self._bad("Missing claim"); return
+            self._bad("Missing claim", as_json=wants_json); return
         if len(claim) > MAX_CLAIM_CHARS:
-            self._bad(f"Claim too long (max {MAX_CLAIM_CHARS} characters)"); return
+            self._bad(f"Claim too long (max {MAX_CLAIM_CHARS} characters)", as_json=wants_json); return
 
         # Gather settings (from config file; front-end does not set knobs)
         try:
             cfg_base = yaml.safe_load(CFG_PATH_DEFAULT.read_text(encoding="utf-8")) if CFG_PATH_DEFAULT.exists() else {}
         except Exception as e:
-            self._err(f"Failed to read {CFG_PATH_DEFAULT}: {e}"); return
+            self._err(f"Failed to read {CFG_PATH_DEFAULT}: {e}", as_json=wants_json); return
 
         model = str(cfg_base.get("model") or "gpt-5")
         prompt_version = str(cfg_base.get("prompt_version") or PROMPT_VERSION_DEFAULT)
@@ -82,7 +150,39 @@ class Handler(BaseHTTPRequestHandler):
         max_out = get_int("max_output_tokens", 1024)
 
         # UI selections (front-end only; for display on results page)
-        ui_model_val = (form.get("ui_model") or "gpt-5").strip()
+        raw_models = form_multi.get("ui_model") or []
+        if not raw_models and form.get("ui_model"):
+            raw_models = [form.get("ui_model")]  # legacy single-select
+        model_entries: List[Dict[str, str]] = []
+        seen_cli = set()
+        for code in raw_models:
+            code = (code or "").strip().lower()
+            if not code:
+                continue
+            entry = MODEL_CHOICES.get(code)
+            if not entry:
+                continue
+            cli_model = entry["cli_model"]
+            if cli_model in seen_cli:
+                continue
+            seen_cli.add(cli_model)
+            model_entries.append({
+                "code": code,
+                "label": entry["label"],
+                "cli_model": cli_model,
+            })
+            if len(model_entries) >= 4:
+                break
+        if not model_entries:
+            for fallback_code in DEFAULT_MODEL_CODES:
+                entry = MODEL_CHOICES[fallback_code]
+                model_entries.append({
+                    "code": fallback_code,
+                    "label": entry["label"],
+                    "cli_model": entry["cli_model"],
+                })
+                break
+        ui_model_val = model_entries[0]["code"]
         ui_mode_val = (form.get("ui_mode") or "prior").strip()
         model_labels = {
             "gpt-5": "GPT‑5",
@@ -95,7 +195,7 @@ class Handler(BaseHTTPRequestHandler):
             "internet-search": "Internet Search",
             "user-data": "User Data",
         }
-        ui_model_label = model_labels.get(ui_model_val, ui_model_val)
+        ui_model_label = ", ".join(m["label"] for m in model_entries)
         ui_mode_label = mode_labels.get(ui_mode_val, ui_mode_val)
 
         # Prepare temp files & job record
@@ -105,9 +205,11 @@ class Handler(BaseHTTPRequestHandler):
         out_path = TMP_DIR / f"out_{ts}.json"
 
         cfg = dict(cfg_base or {})
+        cli_models = [m["cli_model"] for m in model_entries]
         cfg.update({
             "claim": claim,
-            "model": model,
+            "model": cli_models[0],
+            "models": cli_models,
             "prompt_version": prompt_version,
             "K": K,
             "R": R,
@@ -129,13 +231,26 @@ class Handler(BaseHTTPRequestHandler):
             "cfg_path": str(cfg_path),
             "out_path": str(out_path),
             "claim": claim,
-            "model": model,
+            "model": cli_models[0],
             "prompt_version": prompt_version,
+            "models": model_entries,
             "ui_model": ui_model_label,
             "ui_mode": ui_mode_label,
             "ui_mode_value": ui_mode_val,
         }
         (TMP_DIR / f"job_{job_id}.json").write_text(json.dumps(job), encoding="utf-8")
+
+        if wants_json:
+            self._json({
+                "job": job_id,
+                "wait_url": f"/wait?job={job_id}",
+                "poll_url": f"/wait?job={job_id}&format=json",
+                "claim": claim,
+                "mode": ui_mode_val,
+                "mode_label": ui_mode_label,
+                "models": model_entries,
+            })
+            return
 
         # Return a running page with meta refresh to /wait
         is_web_mode = ui_mode_val == "internet-search"
@@ -273,988 +388,131 @@ class Handler(BaseHTTPRequestHandler):
         self._ok(running_html, "text/html")
         return
 
-    def do_WAIT_AND_RENDER(self, job: dict, job_file: Optional[Path] = None) -> None:
-        # Execute CLI and render results
-        cfg_path = Path(job["cfg_path"]) ; out_path = Path(job["out_path"]) 
+    def do_WAIT_AND_RENDER(
+        self,
+        job: dict,
+        job_file: Optional[Path] = None,
+        *,
+        response_format: str = "html",
+    ) -> None:
+        cfg_path = Path(job["cfg_path"])
+        out_path = Path(job["out_path"])
         claim = str(job.get("claim") or "")
-        model = str(job.get("model") or "gpt-5")
-        prompt_version = str(job.get("prompt_version") or "rpl_g5_v4")
-        ui_model_label = str(job.get("ui_model") or "GPT‑5")
+        prompt_version = str(job.get("prompt_version") or PROMPT_VERSION_DEFAULT)
         ui_mode_label = str(job.get("ui_mode") or "Internal Knowledge Only (no retrieval)")
         ui_mode_value = str(job.get("ui_mode_value") or "prior")
+        wants_json = response_format.lower() == "json"
 
-        # Re-validate that the job still points to files under runs/ui_tmp before invoking CLI.
+        model_entries = job.get("models")
+        if not isinstance(model_entries, list) or not model_entries:
+            model_entries = [{
+                "label": job.get("ui_model") or "GPT‑5",
+                "cli_model": job.get("model", "gpt-5"),
+                "code": job.get("model", "gpt-5"),
+            }]
+
         try:
             tmp_root = TMP_DIR.resolve(strict=True)
             cfg_real = cfg_path.resolve(strict=False)
             out_real = out_path.resolve(strict=False)
             if not cfg_real.is_relative_to(tmp_root) or not out_real.is_relative_to(tmp_root):
-                logging.error("UI job has unsafe file paths: cfg=%s out=%s", cfg_path, out_path)
-                self._err("Invalid job data. Please start a new check."); return
+                self._err("Invalid job data. Please start a new check.", as_json=wants_json)
+                return
         except Exception as exc:
             logging.error("UI job path validation failed: %s", exc)
-            self._err("Invalid job data. Please start a new check."); return
+            self._err("Invalid job data. Please start a new check.", as_json=wants_json)
+            return
 
         if not cfg_path.exists():
             logging.error("UI job config missing: %s", cfg_path)
-            self._err("This run expired. Please try again."); return
+            self._err("This run expired. Please try again.", as_json=wants_json)
+            return
 
         env = os.environ.copy()
         env.setdefault("DATABASE_URL", f"sqlite:///{Path('runs/heretix_ui.sqlite').resolve()}")
         env.setdefault("HERETIX_RPL_SEED", "42")
 
         mode_flag = "web_informed" if ui_mode_value == "internet-search" else "baseline"
-        cmd = ["uv", "run", "heretix", "run", "--config", str(cfg_path), "--out", str(out_path), "--mode", mode_flag]
+        cmd = [
+            "uv",
+            "run",
+            "heretix",
+            "run",
+            "--config",
+            str(cfg_path),
+            "--out",
+            str(out_path),
+            "--mode",
+            mode_flag,
+        ]
         timeout = min(RUN_TIMEOUT_SEC, 600)
         try:
             start = time.time()
             cp = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=timeout, check=True)
-            logging.info("UI run ok in %.1fs", time.time()-start)
+            logging.info("UI run ok in %.1fs", time.time() - start)
             if cp.stderr:
                 logging.info("UI stderr: %s", cp.stderr[:500])
         except subprocess.CalledProcessError as e:
             msg = (e.stderr or e.stdout or str(e))[:2000]
             logging.error("UI run failed: %s", msg)
-            self._err("The run failed. Please try again.", headline="The run failed"); return
+            self._err("The run failed. Please try again.", headline="The run failed", as_json=wants_json)
+            return
         except subprocess.TimeoutExpired:
             logging.error("UI run timed out after %ss", timeout)
-            self._err("The run exceeded our time limit.", headline="This took too long"); return
+            self._err("The run exceeded our time limit.", headline="This took too long", as_json=wants_json)
+            return
 
         try:
-            # Sanity limit to prevent huge/malformed file issues
             if out_path.stat().st_size > 2_000_000:
-                self._err("The output was larger than expected."); return
+                self._err("The output was larger than expected.", as_json=wants_json)
+                return
             doc = json.loads(out_path.read_text(encoding="utf-8"))
             runs_section = doc.get("runs")
             if not isinstance(runs_section, list) or not runs_section:
                 raise ValueError("missing runs section")
-            run = runs_section[0] or {}
-            aggregates = run.get("aggregates")
-            if not isinstance(aggregates, dict):
-                raise ValueError("missing aggregates")
-            p = float(aggregates.get("prob_true_rpl"))
-            width = float(aggregates.get("ci_width") or 0.0)
-            stability = float(aggregates.get("stability_score") or 0.0)
-            compliance = float(aggregates.get("rpl_compliance_rate") or 0.0)
         except Exception as e:
             logging.error("UI parse error: %s", e)
-            self._err("We couldn’t read the run output."); return
+            self._err("We couldn’t read the run output.", as_json=wants_json)
+            return
 
-        prior_block = run.get("prior") or {}
-        combined_block_data = run.get("combined") or {}
-        web_block = run.get("web")
-        weights_block = run.get("weights") or {}
-        wel_replicates = run.get("wel_replicates") or []
-        wel_debug_votes = run.get("wel_debug_votes") or []
-
-        prior_p = float(prior_block.get("p", p))
-        prior_ci = prior_block.get("ci95") or aggregates.get("ci95") or [None, None]
-
-        def _safe_float(val: object) -> float:
-            try:
-                return float(val)
-            except (TypeError, ValueError):
-                return float("nan")
-
-        prior_ci_lo = _safe_float(prior_ci[0] if isinstance(prior_ci, (list, tuple)) else None)
-        prior_ci_hi = _safe_float(prior_ci[1] if isinstance(prior_ci, (list, tuple)) else None)
-        if prior_ci_lo != prior_ci_lo or prior_ci_hi != prior_ci_hi:
-            prior_ci_lo = max(0.0, prior_p - 0.05)
-            prior_ci_hi = min(1.0, prior_p + 0.05)
-        prior_width = prior_ci_hi - prior_ci_lo
-        if prior_width != prior_width:
-            prior_width = width
-
-        combined_p = float(combined_block_data.get("p", prior_p))
-        combined_ci_values = combined_block_data.get("ci95") or [prior_ci_lo, prior_ci_hi]
-        combined_ci = (_safe_float(combined_ci_values[0]), _safe_float(combined_ci_values[1]))
-        combined_width = combined_ci[1] - combined_ci[0]
-
-        web_summary: dict[str, object] | None = None
-        web_error: str | None = None
-
-        if web_block:
-            evidence = web_block.get("evidence", {})
-            web_ci_values = web_block.get("ci95") or combined_ci
-            web_summary = {
-                "p": float(web_block.get("p", combined_p)),
-                "ci": (_safe_float(web_ci_values[0]), _safe_float(web_ci_values[1])),
-                "metrics": evidence,
-                "weight": weights_block.get("w_web"),
-                "recency": weights_block.get("recency"),
-                "strength": weights_block.get("strength"),
-                "replicates": wel_replicates,
-                "debug_votes": wel_debug_votes,
-                "resolved": bool(web_block.get("resolved")),
-                "resolved_truth": web_block.get("resolved_truth"),
-                "resolved_reason": web_block.get("resolved_reason"),
-                "resolved_citations": web_block.get("resolved_citations") or [],
-                "resolved_support": web_block.get("support"),
-                "resolved_contradict": web_block.get("contradict"),
-                "resolved_domains": web_block.get("domains"),
+        is_web_mode = ui_mode_value == "internet-search"
+        card_blocks: List[str] = []
+        for idx, run in enumerate(runs_section):
+            if not isinstance(run, dict):
+                continue
+            meta = model_entries[idx] if idx < len(model_entries) else {
+                "label": run.get("model", f"Model {idx+1}"),
+                "cli_model": run.get("model", ""),
+                "code": run.get("model", ""),
             }
-        elif ui_mode_value == "internet-search":
-            web_error = "web block unavailable"
+            card_blocks.append(self._build_card_html(run, meta, ui_mode_label, is_web_mode))
 
-        p = combined_p
-        width = combined_width if combined_width == combined_width else width
-        percent = f"{p*100:.1f}%" if p == p else "?"
-        prior_percent = f"{prior_p*100:.1f}%"
-        web_percent = f"{web_summary['p']*100:.1f}%" if web_summary else None
-        resolved_flag = bool(web_summary and web_summary.get("resolved"))
-        resolved_block_html = ""
-        resolved_truth = bool(web_summary.get("resolved_truth")) if resolved_flag else None
-        resolved_reason = web_summary.get("resolved_reason") if resolved_flag else None
-        resolved_citations = web_summary.get("resolved_citations") if resolved_flag else []
+        if not card_blocks:
+            self._err("We couldn’t read the run output.", as_json=wants_json)
+            return
 
-        if resolved_flag:
-            verdict = "RESOLVED TRUE" if resolved_truth else "RESOLVED FALSE"
-            interpretation = (
-                "Resolved by web consensus: multiple independent sources provided matching quotes."  # noqa: E501
+        models_phrase = f"{len(card_blocks)} model{'s' if len(card_blocks) != 1 else ''} evaluated"
+        if wants_json:
+            self._json({
+                "claim": claim,
+                "model_note": f"{models_phrase} · {ui_mode_label}",
+                "mode_label": ui_mode_label,
+                "cards_block": "\n".join(card_blocks),
+                "cards": card_blocks,
+                "runs": runs_section,
+                "models": model_entries,
+            })
+        else:
+            body = _render(
+                ROOT / "results.html",
+                {
+                    "CLAIM": html.escape(claim, quote=True),
+                    "MODEL_NOTE": html.escape(f"{models_phrase} · {ui_mode_label}", quote=True),
+                    "CARDS_BLOCK": "\n".join(card_blocks),
+                },
             )
-            if resolved_reason:
-                interpretation = (
-                    f"Resolved ({resolved_reason}): web consensus confirms this claim."  # noqa: E501
-                )
-        else:
-            if p == p:
-                if p >= 0.60:
-                    verdict = "LIKELY TRUE"
-                elif p <= 0.40:
-                    verdict = "LIKELY FALSE"
-                else:
-                    verdict = "UNCERTAIN"
-            else:
-                verdict = "UNAVAILABLE"
+            self._ok(body, "text/html")
 
-            if p == p:
-                if web_summary:
-                    if p >= 0.60:
-                        interpretation = (
-                            f"Combining GPT‑5’s prior ({prior_percent}) with the web snippets "
-                            f"({web_percent}) makes this likely true ({percent})."
-                        )
-                    elif p <= 0.40:
-                        interpretation = (
-                            f"The web snippets ({web_percent}) reinforce GPT‑5’s prior ({prior_percent}), "
-                            f"leaving only {percent} chance the claim is true."
-                        )
-                    else:
-                        interpretation = (
-                            f"GPT‑5’s prior ({prior_percent}) and the web snippets ({web_percent}) disagree; "
-                            f"together they settle near {percent}."
-                        )
-                else:
-                    pct = percent
-                    if p >= 0.60:
-                        interpretation = f"{ui_model_label} leans true and gives this claim about {pct} chance of being correct."
-                    elif p <= 0.40:
-                        interpretation = f"{ui_model_label} leans false and estimates just {pct} probability that the claim is true."
-                    else:
-                        interpretation = f"{ui_model_label} is unsure—it assigns roughly {pct} chance the claim is true."
-            else:
-                if web_error and ui_mode_value == "internet-search":
-                    interpretation = "Web-Informed mode failed; showing the baseline prior instead."
-                else:
-                    interpretation = "We couldn’t calculate the model’s prior for this claim."
-
-        adv_width = f"{width:.3f}" if width == width else "—"
-        adv_stability = f"{stability:.2f}" if stability == stability else "—"
-        adv_compliance = f"{compliance*100:.0f}%" if compliance == compliance else "—"
-
-        info_title = "How to read this"
-        info_note_a = "This is GPT‑5’s belief using the Raw Prior Lens—no web search, no outside evidence."
-        info_note_b = "Use it to understand where the model already leans before you add new facts or arguments."
-        adv_note = "Narrower confidence widths mean the model gave consistent answers. Stability reflects paraphrase agreement; compliance shows adherence to Raw Prior rules."
-        adv_extra_html = ""
-        if resolved_flag:
-            info_title = "How to read this consensus"
-            info_note_a = "Web evidence conclusively resolves this claim."
-            info_note_b = "Raw Prior is shown for bias awareness but did not influence the verdict."
-            adv_note = "Resolved facts bypass the bootstrap estimator; the verdict comes from quote-backed sources."
-            citations_items = []
-            for cite in resolved_citations[:3]:
-                url = cite.get("url") or ""
-                domain = cite.get("domain") or url
-                quote = cite.get("quote") or ""
-                citations_items.append(
-                    f"<li><strong>{html.escape(domain, quote=True)}</strong>: {html.escape(quote[:180], quote=True)}</li>"
-                )
-            resolved_block_html = (
-                "<div class=\"resolved-card\"><div class=\"pill resolved\">Resolved Fact</div>"
-                + (f"<p>{html.escape(info_note_a, quote=True)}</p>" if info_note_a else "")
-                + ("<ul>" + "".join(citations_items) + "</ul>" if citations_items else "")
-                + "</div>"
-            )
-
-        summary_lines = [
-            f'Claim: "{claim}"',
-            f'Verdict: {verdict} ({percent})',
-        ]
-
-        if web_summary:
-            metrics = web_summary["metrics"]
-            if resolved_flag:
-                support_score = web_summary.get("resolved_support")
-                contradict_score = web_summary.get("resolved_contradict")
-                domains_count = web_summary.get("resolved_domains")
-                summary_lines.append(f"Prior (no web): {prior_percent}")
-                entries = [
-                    ("Prior width", f"{prior_width:.3f}" if prior_width == prior_width else "—"),
-                    ("Web docs", f"{metrics.get('n_docs', 0)} docs / {metrics.get('n_domains', 0)} domains"),
-                    ("Consensus support", f"{support_score:.2f}" if support_score else "—"),
-                    ("Contradict weight", f"{contradict_score:.2f}" if contradict_score else "—"),
-                    ("Domains cited", str(domains_count) if domains_count is not None else "—"),
-                ]
-                adv_extra_html = "".join(
-                    f'<div><div class="metric-label">{html.escape(title, quote=True)}</div>'
-                    f'<div class="metric-value">{html.escape(value, quote=True)}</div></div>'
-                    for title, value in entries
-                )
-                summary_lines.append(f"Web consensus: {'true' if resolved_truth else 'false'}")
-                if support_score is not None:
-                    summary_lines.append(f"Support weight: {support_score:.2f}")
-                if contradict_score is not None:
-                    summary_lines.append(f"Contradict weight: {contradict_score:.2f}")
-            else:
-                weight_val = web_summary.get("weight")
-                weight = float(weight_val) if weight_val is not None else 0.0
-                n_docs = int(metrics.get("n_docs", 0))
-                n_domains = int(metrics.get("n_domains", 0))
-                median_age = float(metrics.get("median_age_days", 0.0))
-
-                entries = [
-                    ("Prior width", f"{prior_width:.3f}" if prior_width == prior_width else "—"),
-                    ("Web docs", f"{n_docs} docs / {n_domains} domains"),
-                    ("Web recency", f"{median_age:.1f} days"),
-                    ("Web weight", f"{weight:.2f}"),
-                ]
-                adv_extra_html = "".join(
-                    f'<div><div class="metric-label">{html.escape(title, quote=True)}</div>'
-                    f'<div class="metric-value">{html.escape(value, quote=True)}</div></div>'
-                    for title, value in entries
-                )
-
-                info_title = "How to read this blend"
-                info_note_a = "Combined probability blends GPT‑5’s Raw Prior with fresh web snippets."
-                info_note_b = f"Prior (no web) was {prior_percent}. Web snippets alone gave {web_percent}. Weight={weight:.2f} determines how much the web shifts the prior."
-                adv_note = "Confidence width reflects the combined estimate; template stability and compliance still come from the Raw Prior Lens."
-
-                summary_lines.append(f"Prior (no web): {prior_percent}")
-                summary_lines.append(f"Web evidence: {web_percent} (docs={n_docs}, domains={n_domains})")
-                summary_lines.append(f"Combined (weight {weight:.2f}): {percent}")
-        elif web_error and ui_mode_value == "internet-search":
-            safe_err = web_error.splitlines()[0][:120] if web_error else "unknown error"
-            info_note_a = "Web search was requested but failed, so only the Raw Prior result is shown."
-            info_note_b = f"Error: {safe_err}"
-            adv_note = "Confidence, stability, and compliance all reflect the Raw Prior run because web search was unavailable."
-            summary_lines.append("Web search failed; showing baseline prior only.")
-
-        summary_lines.append(f'Model: {ui_model_label} · {ui_mode_label}')
-
-        # Generate a brief model explanation via one provider call (same prompt version)
-        def _load_prompt(prompts_file: Optional[str], version: str) -> tuple[str, str, List[str]]:
-            try:
-                if prompts_file:
-                    path = Path(prompts_file)
-                else:
-                    path = Path(__file__).resolve().parents[1] / "heretix" / "prompts" / f"{version}.yaml"
-                docp = yaml.safe_load(path.read_text(encoding="utf-8"))
-                system_text = str(docp.get("system") or "")
-                user_template = str(docp.get("user_template") or "")
-                paraphrases = [str(x) for x in (docp.get("paraphrases") or [])]
-                return system_text, user_template, paraphrases
-            except Exception:
-                return "", "Claim: \"{CLAIM}\"\n\nReturn the JSON only.", ["Without retrieval, estimate P(true) for: {CLAIM}"]
-
-        def _explain_live_with_json(claim_text: str, verdict_label: str, tok_cap: int) -> list[str]:
-            try:
-                client = OpenAI()
-                instructions = (
-                    "Explain the truth assessment of a short claim for a general audience.\n"
-                    "Rules:\n"
-                    "- Do not mention models, prompts, probabilities, or process.\n"
-                    "- No links or citations.\n"
-                    "- Write 2–4 short sentences (≤25 words each) focusing on: definitions of key terms, typical context/scope, and notable exceptions.\n"
-                    "Output strict JSON: {\n  \"reasons\": [string, ...]\n}"
-                )
-                user_text = (
-                    f"Claim: \"{claim_text}\"\n"
-                    f"Verdict: {verdict_label}\n"
-                    "Return only the JSON."
-                )
-                resp = client.responses.create(
-                    model=model,
-                    instructions=instructions,
-                    input=[{"role": "user", "content": [{"type": "input_text", "text": user_text}]}],
-                    max_output_tokens=min(max(tok_cap, 120), 512),
-                    reasoning={"effort": "minimal"},
-                )
-                text = getattr(resp, "output_text", None)
-                if not text:
-                    # Fallback: walk structured output
-                    text = None
-                    for o in getattr(resp, "output", []) or []:
-                        if getattr(o, "type", None) == "message":
-                            for part in getattr(o, "content", []) or []:
-                                if getattr(part, "type", None) == "output_text":
-                                    text = getattr(part, "text", None)
-                                    break
-                        if text:
-                            break
-                if not text:
-                    return []
-                try:
-                    obj = json.loads(text)
-                    reasons = obj.get("reasons") or []
-                    if not isinstance(reasons, list):
-                        reasons = []
-                except Exception:
-                    # Heuristic extraction: bullets or sentences
-                    reasons = []
-                    # bullet-style
-                    for line in text.splitlines():
-                        ls = line.strip().lstrip("-*•0123456789. ").strip()
-                        if len(ls.split()) >= 3:
-                            reasons.append(ls)
-                    if not reasons:
-                        # sentence split
-                        parts = re.split(r"(?<=[\.!?])\s+", text)
-                        for s in parts:
-                            ss = s.strip()
-                            if 8 <= len(ss.split()) <= 28:
-                                reasons.append(ss)
-                # Sanitize and cap
-                out: list[str] = []
-                for s in reasons:
-                    if isinstance(s, str):
-                        ss = s.strip()
-                        if ss:
-                            out.append(ss if ss.endswith(".") else ss + ".")
-                    if len(out) >= 4:
-                        break
-                print(f"[ui] live-explainer ok · reasons={len(out)}")
-                return out[:4]
-            except Exception as e:
-                print(f"[ui] live-explainer error: {e}")
-                return []
-
-        def _generate_explanation() -> list[str]:
-            # Prefer config prompts_file if set
-            try:
-                cfg_obj = json.loads(cfg_path.read_text(encoding="utf-8"))
-            except Exception:
-                cfg_obj = {}
-            prompts_file = cfg_obj.get("prompts_file")
-            max_out = int(cfg_obj.get("max_output_tokens") or 512)
-
-            sys_text, user_tmpl, phrs = _load_prompt(prompts_file, prompt_version)
-            paraphrase = phrs[0] if phrs else "Without retrieval, estimate P(true) for: {CLAIM}"
-
-            use_mock = bool(os.getenv("HERETIX_MOCK")) or (os.getenv("OPENAI_API_KEY") is None)
-            try:
-                # First attempt: dedicated live explainer (JSON reasons), only in live mode
-                reasons: list[str] = []
-                if not use_mock:
-                    verdict_label = (
-                        "likely true" if p >= 0.60 else ("likely false" if p <= 0.40 else "uncertain")
-                    )
-                    reasons = _explain_live_with_json(claim, verdict_label, max_out)
-                if reasons:
-                    print("[ui] explanation mode: live-explainer")
-                    return reasons
-                if use_mock:
-                    reasons = []  # avoid mock placeholder text
-                else:
-                    out = _score_claim_live(
-                        claim=claim,
-                        system_text=sys_text,
-                        user_template=user_tmpl,
-                        paraphrase_text=paraphrase,
-                        model=model,
-                        max_output_tokens=max_out,
-                    )
-                    raw = out.get("raw") or {}
-                    bullets = raw.get("reasoning_bullets") or []
-                    if not isinstance(bullets, list) or not bullets:
-                        bullets = raw.get("contrary_considerations") or []
-                    # Choose 2–3 short reasons, remove processing/meta terms
-                    ban = ("mock", "retrieval", "citation", "link", "json", "schema", "format", "paraphrase", "prior")
-                    reasons = []
-                    for x in bullets:
-                        if not isinstance(x, str):
-                            continue
-                        r = x.strip().rstrip(".;")
-                        r_low = r.lower()
-                        if any(b in r_low for b in ban):
-                            continue
-                        reasons.append(r)
-                        if len(reasons) >= 3:
-                            break
-            except Exception as e:
-                print(f"[ui] explanation bullets path error: {e}")
-                reasons = []
-
-            # If no reasons from live call, try assumptions/ambiguity_flags
-            if not reasons and not use_mock and raw:
-                alt: list[str] = []
-                for x in (raw.get("assumptions") or []):
-                    if isinstance(x, str) and x.strip():
-                        alt.append(x.strip().rstrip(".;"))
-                        if len(alt) >= 3:
-                            break
-                for x in (raw.get("ambiguity_flags") or []):
-                    if len(alt) >= 3:
-                        break
-                    if isinstance(x, str) and x.strip():
-                        alt.append(x.strip().rstrip(".;"))
-                reasons = alt[:3]
-                if reasons:
-                    print("[ui] explanation mode: run-fields")
-
-            # Final fallback: simple, claim-facing lines
-            if not reasons:
-                if p >= 0.60:
-                    reasons = ["The claim aligns with common definitions and typical examples."]
-                elif p <= 0.40:
-                    reasons = ["The claim conflicts with common definitions and typical examples."]
-                else:
-                    reasons = ["It depends on definitions or missing context."]
-                print("[ui] explanation final-fallback used")
-            return reasons
-
-        reasons: List[str] = []
-        if resolved_flag:
-            for cite in resolved_citations[:3]:
-                quote = cite.get("quote")
-                domain = cite.get("domain")
-                if quote:
-                    text = quote.strip()
-                    if domain:
-                        text = f"{quote.strip()} ({domain})"
-                    if text[-1] not in ".!?":
-                        text += "."
-                    reasons.append(text)
-            if not reasons:
-                reasons.append("Consensus sources agree on this claim.")
-        elif web_summary:
-            seen: set[str] = set()
-
-            def _add_items(items: List[str]) -> bool:
-                for item in items or []:
-                    if not isinstance(item, str):
-                        continue
-                    text = item.strip()
-                    if not text:
-                        continue
-                    if text[-1] not in ".!?":
-                        text = text + "."
-                    if text not in seen:
-                        seen.add(text)
-                        reasons.append(text)
-                    if len(reasons) >= 4:
-                        return True
-                return False
-
-            for rep in web_summary["replicates"]:
-                if isinstance(rep, dict):
-                    items = rep.get("support_bullets", [])
-                else:
-                    items = getattr(rep, "support_bullets", [])
-                if _add_items(items):
-                    break
-            if len(reasons) < 2:
-                for rep in web_summary["replicates"]:
-                    if isinstance(rep, dict):
-                        items = rep.get("oppose_bullets", [])
-                    else:
-                        items = getattr(rep, "oppose_bullets", [])
-                    if _add_items(items):
-                        break
-            if len(reasons) < 2:
-                for rep in web_summary["replicates"]:
-                    if isinstance(rep, dict):
-                        items = rep.get("notes", [])
-                    else:
-                        items = getattr(rep, "notes", [])
-                    if _add_items(items):
-                        break
-
-        # Avoid technical fallbacks (doc counts, numeric shifts) in user-facing reasons
-        # Also collect a separate prior-only explainer set
-        explainer_reasons = _generate_explanation()
-        if not reasons:
-            reasons = list(explainer_reasons)
-        web_reasons = list(reasons)
-        # Build prior-only reasons by filtering explainer output for any domain/URL mentions
-        import re as _re_prior
-        def _filter_no_domains(lines: list[str]) -> list[str]:
-            out: list[str] = []
-            for s in lines or []:
-                if not isinstance(s, str):
-                    continue
-                ss = s.strip()
-                if not ss:
-                    continue
-                if _re_prior.search(r"https?://|www\.|\b\w+\.(com|org|net|gov|edu|news|io|co|uk|us|ca|au|de|fr)\b", ss):
-                    continue
-                out.append(ss)
-                if len(out) >= 4:
-                    break
-            return out
-        prior_reasons = _filter_no_domains(explainer_reasons)
-        # Build display pieces
-        # Simple/deeper presentation for results.html
-        is_web_mode = (ui_mode_value == "internet-search") and bool(web_summary)
-        if is_web_mode:
-            why_head = "Why the web‑informed verdict looks this way"
-        else:
-            why_head = "Why the model‑only verdict looks this way"
-        why_kind = (
-            "true" if p >= 0.60 else ("false" if p <= 0.40 else "uncertain")
-        )
-
-        # Build simple lines
-        simple_items: list[str] = []
-        # Strip any trailing parenthetical source lists from the first reason
-        import re as _re_simple
-        def _strip_parens(text: str) -> str:
-            try:
-                return _re_simple.sub(r"\s*\([^\)]*\)\s*$", "", text or "").strip()
-            except Exception:
-                return (text or "").strip()
-        # Prefer a substantive web bullet for the first sentence, else fallback
-        def _choose_web_reason() -> str:
-            if not (is_web_mode and web_summary):
-                return ''
-            try:
-                keywords = ("show", "shows", "report", "reports", "document", "documents", "analysis", "study", "studies", "evidence", "found", "court", "data", "law", "rights", "policy")
-                for rep in (web_summary.get('replicates') or []):
-                    items = rep.get('support_bullets', []) if isinstance(rep, dict) else getattr(rep, 'support_bullets', [])
-                    for it in (items or []):
-                        s = _strip_parens(str(it))
-                        low = s.lower()
-                        if any(k in low for k in keywords) and 8 <= len(s.split()) <= 28:
-                            return s
-            except Exception:
-                return ''
-            return ''
-
-        candidate = _choose_web_reason()
-
-        # Normative-claim helpers (e.g., "X is evil")
-        def _normative_label(text: str) -> str:
-            t = (text or '').lower()
-            labels = ['evil','nazi','good','bad','corrupt','racist','sexist','liar','genius','idiot','coward','traitor']
-            for lab in labels:
-                if f" {lab}" in t or t.endswith(lab) or f"is {lab}" in t:
-                    return lab
-            return ''
-
-        def _normative_simple_lines(label: str, verdict_phrase: str) -> list[str]:
-            if not label:
-                return []
-            if label == 'evil':
-                return [
-                    '“Evil” is a moral label, not a verifiable fact; definitions vary widely.',
-                    'Most coverage is opinion or rhetoric, not evidence of deliberate severe harm that would meet a clear “evil” standard.',
-                ]
-            if label == 'nazi':
-                return [
-                    '“Nazi” is a specific historical/political designation, not a general insult.',
-                    'It typically means membership in the Nazi Party or explicit neo‑Nazi affiliation/ideology; credible records do not establish that here.',
-                ]
-            # Generic normative fallback
-            return [
-                f'“{label.capitalize()}” is a value judgment; definitions differ across sources.',
-                'Most coverage frames views and opinions rather than verifiable criteria for that label.',
-            ]
-
-        label = _normative_label(claim)
-        simple_norm = _normative_simple_lines(label, (verdict or '').lower()) if label else []
-
-        simple_why = candidate or (_strip_parens(web_reasons[0]) if web_reasons else interpretation)
-        # Sanitize reasons to avoid domains/brands and heavy numerics
-        import re as _re_s
-        def _sanitize_reason(s: str) -> str:
-            if not isinstance(s, str):
-                return ''
-            t = s.strip()
-            # strip leading domain like "example.com:" or "example.com —"
-            t = _re_s.sub(r'^\s*(?:[A-Za-z0-9.-]+\.(?:com|org|net|gov|edu|news|io|co|uk|us|ca|au|de|fr))\s*[:—-]\s*', '', t)
-            # strip leading BrandName: (with colon)
-            t = _re_s.sub(r'^\s*[A-Z][\w&-]*(?:\s+[A-Z][\w&-]*){0,3}\s*:\s*', '', t)
-            # strip leading brand name followed by reporting verb
-            t = _re_s.sub(r'^\s*[A-Z][\w&-]*(?:\s+[A-Z][\w&-]*){0,3}\s+(?:states|reports|says|announces|notes|claims|plans|projects|indicates)\b[:,]?\s*', '', t)
-            # remove bracketed/parenthetical source hints
-            t = _re_s.sub(r'\s*\([^)]*\b(?:com|org|net|gov|edu|news|io|co|uk|us|ca|au|de|fr)\b[^)]*\)\s*$', '', t)
-            t = _re_s.sub(r'\s*\[[^\]]*\b(?:com|org|net|gov|edu|news|io|co|uk|us|ca|au|de|fr)\b[^\]]*\]\s*$', '', t)
-            # soften heavy numerics (e.g., 3T, $4T, 1200 tpa)
-            t = _re_s.sub(r'\$\d[\d,]*(?:\.\d+)?', 'a high value', t)
-            t = _re_s.sub(r'\b\d+(?:\.\d+)?\s?(?:T|B|M|K)\b', 'a large figure', t, flags=_re_s.IGNORECASE)
-            # keep sentence end
-            return t if t.endswith('.') or not t else (t + '.')
-
-        # Pattern-aware composer (web mode)
-        def _compose_simple_web(claim_text: str) -> list[str]:
-            lines: list[str] = []
-            claim_low = (claim_text or '').lower()
-            year_m = _re_s.search(r'(20\d{2})', claim_text or '')
-            pct_m = _re_s.search(r'(\d{1,3})\s?%[^\d]*', claim_text or '')
-            year_txt = year_m.group(1) if year_m else None
-            pct_txt = pct_m.group(1) if pct_m else None
-            def grab(regex: str) -> str | None:
-                pat = _re_s.compile(regex, _re_s.IGNORECASE)
-                for rep in (web_summary.get('replicates') or []):
-                    items = rep.get('support_bullets', []) if isinstance(rep, dict) else getattr(rep, 'support_bullets', [])
-                    for it in (items or []):
-                        s = _sanitize_reason(str(it))
-                        if pat.search(s):
-                            return s
-                return None
-            # ban pattern
-            if ('ban' in claim_low or 'banned' in claim_low):
-                lines.append(
-                    f"A ban would require formal approval by the owners at a rules meeting{(' in ' + year_txt) if year_txt else ''}."
-                )
-                lines.append('Recent reporting points to debate and expectations of a vote, not a finalized decision.')
-                hist = grab(r'delayed|tabled|no decision|not approved|postponed')
-                if hist:
-                    lines.append('Earlier proposals were discussed or tabled; there is no announced rule change yet.')
-                return lines
-            # datacenter electricity cost/inflation pattern
-            if ('data center' in claim_low or 'datacenter' in claim_low) and (
-                'electric' in claim_low or 'power' in claim_low or 'rate' in claim_low or 'bill' in claim_low or 'inflation' in claim_low
-            ):
-                lines.append('Large data center build‑outs raise peak demand and capacity needs in some regions.')
-                cap_price = grab(r'capacity price|auction|monitor|PJM|MISO|ISO|market monitor')
-                if cap_price:
-                    lines.append('Recent market reports attribute a sizable share of capacity price increases to data center demand, costs typically recovered from customers.')
-                conn = grab(r'connection|interconnection|upgrade|transmission|rate case|bill impact|cost shift')
-                if conn:
-                    lines.append('Reports describe higher connection and upgrade costs tied to data center hookups, often passed through to ratepayers under current rules.')
-                nuance = grab(r'region|state|var(y|ies)|uneven|mitigate|offset|supply')
-                if nuance:
-                    lines.append('Effects vary by region and timing; mitigation depends on rate design and new supply.')
-                return lines
-            # domestic sourcing percentage
-            if (('source' in claim_low or 'sourc' in claim_low or 'domestic' in claim_low) and pct_txt):
-                if year_txt:
-                    lines.append(f"Reaching {pct_txt}% by {year_txt} would need rapid build‑out of extraction, processing and magnet capacity.")
-                else:
-                    lines.append(f"Meeting a {pct_txt}% threshold would require substantial new domestic capacity.")
-                cap = grab(r'production|processing|refining|magnet|capacity|output|plant|factory')
-                if cap:
-                    lines.append(cap)
-                dep = grab(r'import|depend|reliance|supply chain|bottleneck|intermediate')
-                if dep:
-                    lines.append(dep)
-                return lines
-            # market cap / valuation milestone
-            if ('market cap' in claim_low) or ('market capitalization' in claim_low) or ('trillion' in claim_low):
-                if year_txt:
-                    lines.append(f"Hitting that milestone by {year_txt} depends on earnings and broader market conditions.")
-                else:
-                    lines.append("Reaching that milestone depends on results and market conditions.")
-                crossed = grab(r'crossed|surpassed|joined|reached')
-                if crossed:
-                    lines.append('Recent reporting notes the milestone has already been reached at times, showing it is attainable.')
-                sustain = grab(r'sustain|maintain|trajectory|growth|margin')
-                if sustain:
-                    lines.append('Sustaining it will depend on the company’s trajectory over the next periods.')
-                return lines
-            # generic
-            any_line = grab(r'.')
-            if any_line:
-                lines.append(any_line)
-            return lines
-
-        if simple_norm:
-            for line in simple_norm:
-                line2 = _sanitize_reason(line)
-                if line2:
-                    simple_items.append(line2)
-        elif is_web_mode and web_summary:
-            for l in _compose_simple_web(claim):
-                if len(simple_items) >= 3:
-                    break
-                if l:
-                    simple_items.append(l)
-        elif simple_why:
-            line2 = _sanitize_reason(simple_why)
-            if line2:
-                simple_items.append(line2)
-        # Add a plain, non-technical stance summary
-        def _stance(prob: float) -> str:
-            try:
-                v = float(prob)
-            except Exception:
-                v = 0.5
-            if v >= 0.6:
-                return 'leans true'
-            if v <= 0.4:
-                return 'leans false'
-            return 'is mixed'
-
-        prior_stance = _stance(prior_p)
-        web_stance = _stance(float(web_summary.get('p')) if (is_web_mode and isinstance(web_summary, dict) and web_summary.get('p') is not None) else prior_p)
-        # verdict already computed above; convert to lowercase friendly label
-        verdict_phrase = (verdict or '').lower()
-        agreement = 'agree' if ((prior_stance == 'leans true' and web_stance == 'leans true') or (prior_stance == 'leans false' and web_stance == 'leans false')) else ('disagree' if ((prior_stance == 'leans true' and web_stance == 'leans false') or (prior_stance == 'leans false' and web_stance == 'leans true')) else 'are mixed')
-        # Final summary (no model/source stance line; concise verdict tie-in)
-        simple_items.append(f"Taken together, these points suggest the claim is {verdict_phrase}.")
-
-        # Ensure summary appears last and cap to 4 lines
-        if len(simple_items) > 3:
-            simple_items = simple_items[:3]
-        simple_items.append(f"Taken together, these points suggest the claim is {verdict_phrase}.")
-
-        # Prepare summary lines for copy button
-        if simple_items:
-            summary_lines.append('Reasons:')
-            summary_lines.extend(f'- {i}' for i in simple_items[:4])
-        else:
-            summary_lines.append('Reasons: (none)')
-        summary_attr = html.escape("\n".join(summary_lines), quote=True)
-
-        # Escape for HTML for the simple view list (guard: empty when resolved)
-        why_items_html = "" if resolved_flag else "\n".join(
-            f"<li>{html.escape(item, quote=True)}</li>" for item in simple_items
-        )
-
-        # Prefer backend-provided simple explanation when available
-        backend_simple = run.get("simple_expl") or {}
-        lines_from_backend = []
-        if backend_simple and isinstance(backend_simple.get("lines"), list):
-            try:
-                lines_from_backend = [str(x) for x in backend_simple.get("lines") if isinstance(x, (str, int, float))]
-                summary_line = backend_simple.get("summary")
-                if isinstance(summary_line, str) and summary_line:
-                    lines_from_backend.append(summary_line)
-            except Exception:
-                lines_from_backend = []
-
-        # Build the stack block (omit entirely when resolved)
-        if resolved_flag:
-            stack_block_html = ""
-        else:
-            if lines_from_backend:
-                simple_title = backend_simple.get("title") or why_head
-                list_html = "".join(f"<li>{html.escape(str(x), quote=True)}</li>" for x in lines_from_backend)
-                stack_block_html = (
-                    '<div class="stack">'
-                    '<div class="card">'
-                    f"<h2>{html.escape(str(simple_title), quote=True)}</h2>"
-                    '<ul>' + list_html + '</ul>'
-                    '</div>'
-                    '</div>'
-                )
-                interpretation = ""
-            else:
-                stack_block_html = (
-                    '<div class="stack">'
-                    '<div class="card">'
-                    f"<h2>{html.escape(why_head, quote=True)}</h2>"
-                    '<ul>' + why_items_html + '</ul>'
-                    '</div>'
-                    '</div>'
-                )
-
-        # Build deeper explanation block (skip entirely when resolved)
-        deeper_parts: list[str] = []
-        if not resolved_flag:
-            deeper_parts.append("<details><summary>Deeper explanation</summary>")
-            deeper_parts.append("<div>")
-            deeper_parts.append("<h4>Training‑only (model prior)</h4>")
-            deeper_parts.append(f"<p>Model (training‑only): {prior_percent}</p>")
-        # Up to four concise prior sentences
-        prior_lines: list[str] = []
-        if label == 'evil':
-            prior_lines = [
-                '“Evil” is a moral label rather than a factual category.',
-                'The model sees mixed rhetoric and lacks a clear rule for labeling a person “evil.”',
-                'Without explicit criteria (e.g., intent to cause severe harm), it doesn’t infer that label from disagreements or controversy.',
-                'As a factual statement, the claim is not established under common definitions.',
-            ]
-        elif label == 'nazi':
-            prior_lines = [
-                '“Nazi” is a specific historical/political designation.',
-                'The model treats it as requiring evidence of party membership or explicit neo‑Nazi self‑identification.',
-                'Rhetoric, comparisons, or associations do not meet that threshold.',
-                'On that basis, it does not infer the label from controversies alone.',
-            ]
-        else:
-            # Use neutral explainer reasons (prior-only), padded to four if short
-            base = [ _strip_parens(r) for r in (prior_reasons[:4] if prior_reasons else []) ]
-            prior_lines = [s for s in base if s][:4]
-            if not prior_lines:
-                prior_lines = [
-                    'This view uses only the model’s internal knowledge; no web sources.',
-                    'It reflects typical usage and references the model has seen rather than a formal definition.',
-                ]
-        deeper_parts.append('<ul>')
-        for s in prior_lines[:4]:
-            deeper_parts.append(f"<li>{html.escape(s, quote=True)}</li>")
-        deeper_parts.append('</ul>')
-        if not resolved_flag and is_web_mode:
-            deeper_parts.append("<h4>Web evidence (recent)</h4>")
-            deeper_parts.append(f"<p>Web evidence: {web_percent}</p>")
-            # Distill up to four web bullets (favor substantive statements), or normative set
-            web_lines: list[str] = []
-            if label == 'evil':
-                web_lines = [
-                    'Recent pieces mostly offer opinions or rhetoric rather than verifiable criteria for “evil.”',
-                    'Coverage cites controversies and harsh language but doesn’t show deliberate severe harm that meets a clear standard.',
-                    'Credible outlets do not converge on a shared definition or threshold for this label.',
-                    'Taken together, web sources support treating the statement as a value judgment, not a verified fact.',
-                ]
-            elif label == 'nazi':
-                web_lines = [
-                    'Reporting highlights Nazi‑related rhetoric or comparisons but no credible evidence of party membership or neo‑Nazi affiliation.',
-                    'Major outlets do not document self‑identification or organizational ties that would satisfy the label.',
-                    'References are largely opinion or metaphor rather than documentation of affiliation.',
-                    'Together, sources support treating the statement as factually false rather than a proven designation.',
-                ]
-            else:
-                distilled: list[str] = []
-                try:
-                    for rep in (web_summary.get('replicates') or []):
-                        items = rep.get('support_bullets', []) if isinstance(rep, dict) else getattr(rep, 'support_bullets', [])
-                        for it in (items or []):
-                            s = _strip_parens(it)
-                            if s and s not in distilled:
-                                distilled.append(s)
-                            if len(distilled) >= 4:
-                                break
-                        if len(distilled) >= 4:
-                            break
-                except Exception:
-                    pass
-                web_lines = distilled[:4]
-            if web_lines:
-                deeper_parts.append('<ul>')
-                for s in web_lines[:4]:
-                    deeper_parts.append(f"<li>{html.escape(s, quote=True)}</li>")
-                # Add one-line sources summary using friendly names
-                try:
-                    src_names: list[str] = []
-                    if resolved_flag and resolved_citations:
-                        for cite in resolved_citations:
-                            dom = (cite.get('domain') or '').strip()
-                            if dom and dom not in src_names:
-                                src_names.append(dom)
-                            if len(src_names) >= 6:
-                                break
-                    if not src_names and web_summary and web_summary.get('replicates'):
-                        seen = set()
-                        for rep in web_summary['replicates']:
-                            docs = rep.get('docs') if isinstance(rep, dict) else getattr(rep, 'docs', [])
-                            for d in (docs or []):
-                                # Prefer explicit domain; fall back to URL hostname
-                                if isinstance(d, dict):
-                                    dom = (d.get('domain') or '').strip()
-                                    if not dom:
-                                        u = (d.get('url') or '').strip()
-                                        try:
-                                            host = urllib.parse.urlparse(u).hostname or ''
-                                            dom = host.replace('www.', '').strip('. ')
-                                        except Exception:
-                                            dom = ''
-                                else:
-                                    dom = (getattr(d, 'domain', '') or '').strip()
-                                    if not dom:
-                                        u = (getattr(d, 'url', '') or '').strip()
-                                        try:
-                                            host = urllib.parse.urlparse(u).hostname or ''
-                                            dom = host.replace('www.', '').strip('. ')
-                                        except Exception:
-                                            dom = ''
-                                if dom and dom not in seen:
-                                    seen.add(dom)
-                                    src_names.append(dom)
-                                if len(src_names) >= 12:
-                                    break
-                            if len(src_names) >= 12:
-                                break
-                    # Fallback: extract domains mentioned in reason text (e.g., "(bbc.com; reuters.com)")
-                    if not src_names and reasons:
-                        import re as _re_dom
-                        seen2 = set()
-                        for rtxt in reasons:
-                            for m in _re_dom.findall(r"\b([A-Za-z0-9.-]+\.(?:com|org|net|gov|edu|news|io|co|uk|us|ca|au|de|fr))\b", rtxt):
-                                dom = m.lower().strip('.').strip()
-                                if dom and dom not in seen2:
-                                    seen2.add(dom)
-                                    src_names.append(dom)
-                                if len(src_names) >= 12:
-                                    break
-                            if len(src_names) >= 12:
-                                break
-                    if src_names:
-                        # Local friendly mapping and preference filter
-                        def _friendly_name2(domain: str) -> str:
-                            d = (domain or '').lower().strip()
-                            mapping = {
-                                'virginia.edu': 'University of Virginia', 'harvard.edu': 'Harvard University', 'law.harvard.edu': 'Harvard Law',
-                                'mit.edu': 'MIT', 'stanford.edu': 'Stanford University', 'yale.edu': 'Yale University', 'ox.ac.uk': 'University of Oxford',
-                                'cam.ac.uk': 'University of Cambridge', 'wm.edu': 'William & Mary', 'brennancenter.org': 'Brennan Center for Justice',
-                                'aclu.org': 'ACLU', 'cato.org': 'Cato Institute', 'heritage.org': 'Heritage Foundation', 'brookings.edu': 'Brookings Institution',
-                                'nih.gov': 'NIH', 'cdc.gov': 'CDC', 'who.int': 'WHO', 'supremecourt.gov': 'Supreme Court', 'congress.gov': 'US Congress',
-                                'whitehouse.gov': 'White House', 'gao.gov': 'GAO', 'oecd.org': 'OECD', 'imf.org': 'IMF', 'worldbank.org': 'World Bank',
-                                'bbc.com': 'BBC', 'cnn.com': 'CNN', 'reuters.com': 'Reuters', 'apnews.com': 'AP News', 'bloomberg.com': 'Bloomberg',
-                                'politico.com': 'Politico', 'foxnews.com': 'Fox News', 'nbcnews.com': 'NBC News', 'abcnews.go.com': 'ABC News',
-                                'cbsnews.com': 'CBS News', 'latimes.com': 'LA Times', 'nytimes.com': 'New York Times', 'washingtonpost.com': 'Washington Post',
-                                'wsj.com': 'Wall Street Journal', 'ft.com': 'Financial Times', 'economist.com': 'The Economist', 'theguardian.com': 'The Guardian',
-                                'guardian.com': 'The Guardian', 'guardian.co.uk': 'The Guardian', 'techcrunch.com': 'TechCrunch', 'nature.com': 'Nature',
-                                'sciencemag.org': 'Science', 'npr.org': 'NPR', 'aljazeera.com': 'Al Jazeera', 'axios.com': 'Axios', 'usatoday.com': 'USA Today', 'msn.com': 'MSN (syndicated)'
-                            }
-                            return mapping.get(d, domain)
-                        def _is_preferred_domain2(domain: str) -> bool:
-                            d = (domain or '').lower().strip()
-                            if d.endswith('.edu') or d.endswith('.gov'): return True
-                            preferred = {'bbc.com','cnn.com','reuters.com','apnews.com','nytimes.com','washingtonpost.com','wsj.com','ft.com','economist.com','nature.com','sciencemag.org','npr.org','bloomberg.com','politico.com','foxnews.com','nbcnews.com','abcnews.go.com','cbsnews.com','latimes.com','theguardian.com','guardian.com','guardian.co.uk','techcrunch.com','brennancenter.org','aclu.org','cato.org','heritage.org','brookings.edu','who.int'}
-                            return d in preferred
-                        preferred = [s for s in src_names if _is_preferred_domain2(s)]
-                        names_to_show = preferred[:3] if preferred else src_names[:3]
-                        friendly = [_friendly_name2(s) for s in names_to_show]
-                        more_total = int(web_summary.get('metrics', {}).get('n_domains') or len(src_names)) if isinstance(web_summary, dict) else len(src_names)
-                        more = ' (+ more)' if more_total > len(names_to_show) else ''
-                        deeper_parts.append('<li>Sources: ' + ', '.join([html.escape(x, quote=True) for x in friendly]) + more + '</li>')
-                except Exception:
-                    pass
-                deeper_parts.append('</ul>')
-            # Plain-language combination rule
-            deeper_parts.append("<h4>How we combine</h4>")
-            deeper_parts.append("<p>We blend the model’s training view with recent, consistent sources. When sources agree and are current, the web view gets slightly more say; otherwise the training view dominates.</p>")
-            deeper_parts.append("</div></details>")
-        deeper_block_html = "".join(deeper_parts) if deeper_parts else ""
-        body = _render(
-            ROOT / "results.html",
-            {
-                "CLAIM": html.escape(claim, quote=True),
-                "PERCENT": percent,
-                "VERDICT": html.escape(verdict, quote=True),
-                "INTERPRETATION": html.escape(interpretation, quote=True),
-                "UI_MODEL": html.escape(ui_model_label, quote=True),
-                "UI_MODE": html.escape(ui_mode_label, quote=True),
-                "STACK_BLOCK": stack_block_html,
-                "WHY_KIND": why_kind,
-                "INFO_TITLE": html.escape(info_title, quote=True),
-                "INFO_NOTE_A": html.escape(info_note_a, quote=True),
-                "INFO_NOTE_B": html.escape(info_note_b, quote=True),
-                "ADV_NOTE": html.escape(adv_note, quote=True),
-                "ADV_EXTRA": adv_extra_html,
-                "RESOLVED_BLOCK": resolved_block_html,
-                "DEEPER_BLOCK": deeper_block_html,
-                "ADV_WIDTH": adv_width,
-                "ADV_STABILITY": adv_stability,
-                "ADV_COMPLIANCE": adv_compliance,
-                "SUMMARY_ATTR": summary_attr,
-            },
-        )
-        self._ok(body, "text/html")
-
-        # Best-effort cleanup of temp files
         try:
             cfg_path.unlink(missing_ok=True)
             out_path.unlink(missing_ok=True)
@@ -1317,22 +575,24 @@ class Handler(BaseHTTPRequestHandler):
             # parse ?job=
             q = urllib.parse.parse_qs(parsed.query)
             job_id = (q.get("job") or [""])[0]
+            response_format = (q.get("format") or ["html"])[0].lower()
+            wants_json = response_format == "json"
             job_file = TMP_DIR / f"job_{job_id}.json"
             # Strictly validate job id and resolved path
             if not job_id or not job_id.isdigit() or not (10 <= len(job_id) <= 20):
-                self._bad("Invalid or missing job id"); return
+                self._bad("Invalid or missing job id", as_json=wants_json); return
             try:
                 if not job_file.resolve().is_relative_to(TMP_DIR.resolve()):
-                    self._bad("Invalid or missing job id"); return
+                    self._bad("Invalid or missing job id", as_json=wants_json); return
             except Exception:
-                self._bad("Invalid or missing job id"); return
+                self._bad("Invalid or missing job id", as_json=wants_json); return
             if not job_file.exists():
-                self._bad("Invalid or missing job id"); return
+                self._bad("Invalid or missing job id", as_json=wants_json); return
             try:
                 job = json.loads(job_file.read_text(encoding="utf-8"))
             except Exception as e:
-                self._err(f"Bad job file: {e}"); return
-            return self.do_WAIT_AND_RENDER(job, job_file)
+                self._err(f"Bad job file: {e}", as_json=wants_json); return
+            return self.do_WAIT_AND_RENDER(job, job_file, response_format=response_format)
         self._not_found()
 
     # helpers
@@ -1343,7 +603,18 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _bad(self, msg: str) -> None:
+    def _json(self, payload: dict[str, Any], status: int = 200) -> None:
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _bad(self, msg: str, *, as_json: bool = False) -> None:
+        if as_json:
+            self._json({"error": msg}, status=400)
+            return
         body = f"<pre style='color:#eee;background:#222;padding:16px'>400 Bad Request\n\n{msg}</pre>".encode("utf-8")
         self.send_response(400)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -1351,7 +622,10 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _err(self, msg: str, headline: str = "We hit a snag") -> None:
+    def _err(self, msg: str, headline: str = "We hit a snag", *, as_json: bool = False) -> None:
+        if as_json:
+            self._json({"error": msg, "headline": headline}, status=500)
+            return
         try:
             template = (ROOT / "error.html").read_text(encoding="utf-8")
             body = template.replace("{HEADLINE}", html.escape(headline, quote=True)) \
@@ -1370,6 +644,171 @@ class Handler(BaseHTTPRequestHandler):
     def _not_found(self) -> None:
         self.send_response(404)
         self.end_headers()
+
+    def _build_card_html(
+        self,
+        run: Dict[str, Any],
+        meta: Dict[str, str],
+        ui_mode_label: str,
+        is_web_mode: bool,
+    ) -> str:
+        combined = run.get("combined") if isinstance(run.get("combined"), dict) else {}
+        aggregates = run.get("aggregates") if isinstance(run.get("aggregates"), dict) else {}
+        simple_block = run.get("simple_expl") if isinstance(run.get("simple_expl"), dict) else {}
+        prior_block = run.get("prior") if isinstance(run.get("prior"), dict) else {}
+        web_block = run.get("web") if isinstance(run.get("web"), dict) else None
+        weights_block = run.get("weights") if isinstance(run.get("weights"), dict) else {}
+
+        probability = combined.get("p")
+        if probability is None:
+            probability = aggregates.get("prob_true_rpl")
+        percent_text = _format_percent(probability)
+        verdict_text = combined.get("label") or verdict_label(probability)
+
+        ci_vals = combined.get("ci95")
+        if not (isinstance(ci_vals, (list, tuple)) and len(ci_vals) >= 2):
+            ci_vals = aggregates.get("ci95")
+        ci_lo = ci_vals[0] if isinstance(ci_vals, (list, tuple)) and len(ci_vals) >= 1 else None
+        ci_hi = ci_vals[1] if isinstance(ci_vals, (list, tuple)) and len(ci_vals) >= 2 else None
+        ci_range = f"{_format_percent(ci_lo)} – {_format_percent(ci_hi)}"
+        ci_width = _format_number(aggregates.get("ci_width"))
+        stability = _format_number(aggregates.get("stability_score"), digits=2)
+        stability_band = aggregates.get("stability_band")
+        compliance = _format_percent(aggregates.get("rpl_compliance_rate"))
+        cache_hits = _format_percent(aggregates.get("cache_hit_rate"))
+
+        model_label = meta.get("label") or run.get("model") or "Model"
+        pill_text = f"{model_label} · {ui_mode_label}".strip()
+
+        title_text = simple_block.get("title") or verdict_text or ""
+        summary_text = (
+            simple_block.get("summary")
+            or run.get("explanation_headline")
+            or run.get("explanation_text")
+            or "This model did not return an explanation."
+        )
+        summary_bits = []
+        if title_text:
+            summary_bits.append(f"<strong>{html.escape(title_text)}</strong>")
+        if summary_text:
+            summary_bits.append(html.escape(summary_text))
+        summary_clause = " ".join(summary_bits)
+
+        lines = _collect_lines(simple_block, run)
+        summary_clean = _clean_line(summary_text)
+        if summary_clean:
+            lines = [line for line in lines if line != summary_clean]
+        lines_html = "".join(f"<li>{html.escape(line)}</li>" for line in lines)
+
+        resolved_html = ""
+        if is_web_mode and web_block and web_block.get("resolved"):
+            truth_raw = web_block.get("resolved_truth")
+            truth_label = "Resolved"
+            classes = ["resolved-note"]
+            if truth_raw is False:
+                truth_label = "Resolved false"
+                classes.append("false")
+            elif truth_raw is True:
+                truth_label = "Resolved true"
+            reason = _clean_line(web_block.get("resolved_reason")) or "Resolver confirmed this verdict from web evidence."
+            resolved_html = (
+                f"<div class=\"{' '.join(classes)}\">"
+                f"{html.escape(truth_label)} · {html.escape(reason)}"
+                "</div>"
+            )
+
+        metric_items = [
+            ("CI 95% range", ci_range),
+            ("CI width", ci_width),
+            ("Template stability", f"{stability}" + (f" ({stability_band})" if stability_band else "")),
+            ("Policy compliance", compliance),
+            ("Cache hit rate", cache_hits),
+        ]
+        metric_block = "".join(
+            f"<div><div class=\"metric-label\">{html.escape(label)}</div>"
+            f"<div class=\"metric-value\">{html.escape(value or '--')}</div></div>"
+            for label, value in metric_items
+        )
+
+        prior_ci = prior_block.get("ci95") if isinstance(prior_block.get("ci95"), (list, tuple)) else None
+        prior_ci_text = (
+            f"{_format_percent(prior_ci[0])} – {_format_percent(prior_ci[1])}"
+            if prior_ci and len(prior_ci) >= 2
+            else "--% – --%"
+        )
+        prior_section = (
+            f"<h4>Training-only (model prior)</h4>"
+            f"<p>Baseline probability {html.escape(_format_percent(prior_block.get('p')))} "
+            f"with 95% CI {html.escape(prior_ci_text)}. "
+            f"Template stability score {html.escape(_format_number(prior_block.get('stability'), digits=2))}.</p>"
+        )
+
+        web_section = ""
+        if is_web_mode:
+            if web_block:
+                evidence = web_block.get("evidence") if isinstance(web_block.get("evidence"), dict) else {}
+                docs = int(evidence.get("n_docs") or 0)
+                domains = int(evidence.get("n_domains") or 0)
+                median_age = evidence.get("median_age_days")
+                recency_text = (
+                    f"median age ≈ {int(median_age)} days" if isinstance(median_age, (int, float)) else "fresh sources"
+                )
+                web_section = (
+                    "<h4>Web evidence (recent)</h4>"
+                    f"<p>{docs} docs across {domains} domains, {html.escape(recency_text)}. "
+                    "The web resolver funnels only policy-compliant evidence into this verdict.</p>"
+                )
+            else:
+                web_section = (
+                    "<h4>Web evidence (recent)</h4>"
+                    "<p>Waiting for web results. This run retained the model prior.</p>"
+                )
+
+        weight_section = ""
+        if weights_block:
+            try:
+                web_weight_val = float(weights_block.get("w_web") or 0.0)
+            except (TypeError, ValueError):
+                web_weight_val = 0.0
+            web_weight_val = max(0.0, min(1.0, web_weight_val))
+            prior_weight_val = max(0.0, min(1.0, 1.0 - web_weight_val))
+            w_web = _format_percent(web_weight_val)
+            w_prior = _format_percent(prior_weight_val)
+            weight_section = (
+                "<h4>How we combine</h4>"
+                f"<p>Current weighting: {html.escape(w_web)} web · "
+                f"{html.escape(w_prior)} prior."
+                " We default to the prior when web evidence is limited.</p>"
+            )
+
+        summary_for_copy = "\n".join([line for line in [title_text, summary_text, *lines] if line])
+        summary_attr = html.escape(summary_for_copy, quote=True)
+
+        card_parts = [
+            "<article class=\"result-card\">",
+            f"<div class=\"card-pill\">{html.escape(pill_text)}</div>",
+            f"<div class=\"card-percent\">{html.escape(percent_text)}</div>",
+            f"<div class=\"card-verdict\">{html.escape(verdict_text)}</div>",
+            f"<p class=\"card-summary\">{summary_clause}</p>",
+        ]
+        if lines_html:
+            card_parts.append(f"<ul class=\"card-lines\">{lines_html}</ul>")
+        if resolved_html:
+            card_parts.append(resolved_html)
+        card_parts.append(
+            "<details class=\"card-details\">"
+            "<summary>Deeper explanation</summary>"
+            f"<div class=\"metric-grid\">{metric_block}</div>"
+            f"{prior_section}"
+            f"{web_section}"
+            f"{weight_section}"
+            "</details>"
+        )
+        card_parts.append(
+            f"<button type=\"button\" class=\"btn btn-secondary card-copy\" data-summary=\"{summary_attr}\">Copy summary</button>"
+        )
+        card_parts.append("</article>")
+        return "".join(card_parts)
 
 
 def main() -> None:
