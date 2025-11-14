@@ -30,6 +30,7 @@ class WELReplicate:
     oppose_bullets: List[str]
     notes: List[str]
     json_valid: bool
+    stance_label: Optional[str] = None
 
 
 @dataclass

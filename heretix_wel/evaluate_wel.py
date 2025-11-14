@@ -13,7 +13,7 @@ from .date_extract import enrich_docs_with_publish_dates
 from .retriever import make_retriever
 from .timeliness import heuristic_is_timely
 from .resolved_engine import try_resolve_fact
-from .scoring import call_wel_once
+from .scoring import WELSchemaError, call_wel_once
 from .snippets import (
     cap_per_domain,
     dedupe_by_url,
@@ -54,6 +54,16 @@ def _chunk_docs(docs: List[Doc], replicates: int) -> List[List[Doc]]:
     return chunks
 
 
+def _merge_warning_counts(*sources: Optional[Dict[str, int]]) -> Dict[str, int]:
+    merged: Dict[str, int] = {}
+    for src in sources:
+        if not src:
+            continue
+        for key, value in src.items():
+            merged[key] = merged.get(key, 0) + int(value)
+    return merged
+
+
 def evaluate_wel(
     claim: str,
     provider: str = "tavily",
@@ -84,6 +94,14 @@ def evaluate_wel(
         seed_val: int,
         outcome_hint: bool,
     ) -> Dict[str, object]:
+        warning_counts_local: Dict[str, int] = {}
+
+        def _record(labels):
+            if not labels:
+                return
+            for label in labels:
+                warning_counts_local[label] = warning_counts_local.get(label, 0) + 1
+
         retriever = make_retriever(provider=provider)
         query = _build_query(claim, outcome_hint)
         _TAVILY_RATE_LIMITER.acquire()
@@ -143,6 +161,7 @@ def evaluate_wel(
                 "replicate_ps": [],
                 "docs": docs,
                 "metrics": metrics,
+                "warning_counts": warning_counts_local,
             }
 
         replicates_out: List[WELReplicate] = []
@@ -152,14 +171,18 @@ def evaluate_wel(
 
         for idx, chunk in enumerate(doc_chunks):
             bundle = pack_snippets_for_llm(claim, chunk, max_chars=max_chars)
+            stance_label: Optional[str] = None
             try:
-                payload, prompt_hash = call_wel_once(bundle, model=model)
-                p = float(payload.get("p_true"))
+                payload, warnings, prompt_hash = call_wel_once(bundle, model=model)
+                _record(warnings)
+                p = float(payload.get("stance_prob_true"))
+                stance_label = str(payload.get("stance_label") or "").strip() or None
                 support = [str(x) for x in (payload.get("support_bullets") or [])][:4]
                 oppose = [str(x) for x in (payload.get("oppose_bullets") or [])][:4]
                 notes = [str(x) for x in (payload.get("notes") or [])][:3]
                 valid = True
             except Exception as exc:
+                _record(getattr(exc, "warnings", []))
                 p = 0.5
                 support = []
                 oppose = []
@@ -178,6 +201,7 @@ def evaluate_wel(
                     oppose_bullets=oppose,
                     notes=notes,
                     json_valid=valid,
+                    stance_label=stance_label,
                 )
             )
 
@@ -207,6 +231,7 @@ def evaluate_wel(
             "replicate_ps": replicate_ps,
             "docs": docs,
             "metrics": metrics,
+            "warning_counts": warning_counts_local,
         }
 
     # Decide first-pass recency (adaptive default)
@@ -231,6 +256,7 @@ def evaluate_wel(
             "ci95": pass1.get("ci95", (0.5, 0.5)),
             "replicates": pass1.get("replicates", []),
             "metrics": pass1.get("metrics", {}),
+            "warning_counts": dict(pass1.get("warning_counts") or {}),
             "provenance": {
                 "provider": provider,
                 "model": model,
@@ -255,6 +281,7 @@ def evaluate_wel(
             "ci95": pass2.get("ci95", (0.5, 0.5)),
             "replicates": pass2.get("replicates", []),
             "metrics": pass2.get("metrics", {}),
+            "warning_counts": dict(pass2.get("warning_counts") or {}),
             "provenance": {
                 "provider": provider,
                 "model": model,
@@ -322,11 +349,14 @@ def evaluate_wel(
         "resolved_debug_votes": None,
     }
 
+    warning_counts_all = _merge_warning_counts(pass1.get("warning_counts"), pass2.get("warning_counts"))
+
     return {
         "p": p_hat,
         "ci95": ci95,
         "replicates": reps_all,
         "metrics": metrics,
+        "warning_counts": warning_counts_all,
         "provenance": {
             "provider": provider,
             "model": model,

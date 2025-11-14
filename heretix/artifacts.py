@@ -170,6 +170,7 @@ def _serialize_replicates(replicates: Iterable[Any]) -> Tuple[list[Dict[str, Any
                 "oppose_bullets": list(raw.oppose_bullets),
                 "notes": list(raw.notes),
                 "json_valid": raw.json_valid,
+                "stance_label": raw.stance_label,
                 "docs": doc_refs,
             }
         )

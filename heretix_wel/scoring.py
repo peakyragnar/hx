@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
 from openai import OpenAI
 
-from .json_utils import load_json_obj
+from heretix.provider.json_utils import parse_schema_from_text
+from heretix.schemas import WELDocV1
+
+
+class WELSchemaError(ValueError):
+    def __init__(self, warnings: List[str]):
+        super().__init__("WEL response failed schema validation")
+        self.warnings = warnings
 
 WEL_SYSTEM = """You are the Web Evidence Lens (WEL).
 Estimate P(true) for the claim using only the provided snippets.
@@ -15,14 +22,15 @@ Estimate P(true) for the claim using only the provided snippets.
 
 WEL_SCHEMA = """Return ONLY a JSON object with:
 {
-  "p_true": number between 0 and 1,
+  "stance_prob_true": number between 0 and 1,
+  "stance_label": "supports" | "contradicts" | "mixed" | "irrelevant",
   "support_bullets": array of 1-4 short strings,
   "oppose_bullets": array of 1-4 short strings,
   "notes": array of 0-3 short strings
 }"""
 
 
-def call_wel_once(bundle_text: str, model: str = "gpt-5") -> Tuple[Dict[str, object], str]:
+def call_wel_once(bundle_text: str, model: str = "gpt-5") -> Tuple[Dict[str, object], List[str], str]:
     """
     Evaluate a bundle of snippets with GPT-5 and return the parsed JSON plus prompt hash.
     """
@@ -55,8 +63,7 @@ def call_wel_once(bundle_text: str, model: str = "gpt-5") -> Tuple[Dict[str, obj
     if payload is None:
         raise RuntimeError("No response payload received from GPT-5")
 
-    try:
-        parsed = load_json_obj(payload)
-    except ValueError as exc:
-        raise ValueError(f"Invalid JSON from WEL model: {exc}") from exc
-    return parsed, prompt_hash
+    raw_obj, canonical, warnings = parse_schema_from_text(payload, WELDocV1)
+    if canonical is None:
+        raise WELSchemaError(warnings)
+    return canonical, warnings, prompt_hash

@@ -6,7 +6,7 @@ import os
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, Optional
+from typing import Any, Dict, Iterable, List, Tuple, Optional
 
 import numpy as np
 import yaml
@@ -213,6 +213,14 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
     total_tokens_in = 0
     total_tokens_out = 0
     metrics_lock = threading.Lock()
+    warning_counts: Dict[str, int] = {}
+
+    def _record_warnings(labels: Iterable[str]) -> None:
+        if not labels:
+            return
+        with metrics_lock:
+            for label in labels:
+                warning_counts[label] = warning_counts.get(label, 0) + 1
 
     # Precompute deterministic work list (one entry per attempt)
     class _Work:
@@ -312,6 +320,8 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             },
         ):
             out = _once()
+        adapter_warnings = list(out.get("warnings") or [])
+        _record_warnings(adapter_warnings)
         raw = out.get("raw", {})
         sample_payload = out.get("sample")
         canonical_payload = sample_payload or raw
@@ -338,6 +348,8 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             except Exception:
                 time.sleep(0.05)
             out = _once()
+            adapter_warnings = list(out.get("warnings") or [])
+            _record_warnings(adapter_warnings)
             raw = out.get("raw", {})
             sample_payload = out.get("sample")
             canonical_payload = sample_payload or raw
@@ -524,6 +536,17 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
         )
     except Exception:
         pass
+    warning_total = sum(warning_counts.values())
+    warning_counts_export = dict(warning_counts)
+    sampler_meta = {
+        "T_bank": T_bank,
+        "T": T_stage,
+        "seq": seq,
+        "tpl_indices": tpl_indices,
+        "warning_counts": warning_counts_export,
+        "warning_total": warning_total,
+    }
+
     for it in runs:
         it["row"]["run_id"] = run_id
     insert_samples(conn, [it["row"] for it in runs])
@@ -557,7 +580,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             "rpl_compliance_rate": rpl_compliance_rate,
             "cache_hit_rate": cache_hit_rate,
             "config_json": json.dumps(cfg.__dict__),
-            "sampler_json": json.dumps({"T_bank": T_bank, "T": T_stage, "seq": seq, "tpl_indices": tpl_indices}),
+            "sampler_json": json.dumps(sampler_meta),
             "counts_by_template_json": json.dumps(counts),
             "artifact_json_path": None,
             "prompt_char_len_max": prompt_char_len_max,
@@ -598,7 +621,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             "rpl_compliance_rate": rpl_compliance_rate,
             "cache_hit_rate": cache_hit_rate,
             "config_json": json.dumps(cfg.__dict__),
-            "sampler_json": json.dumps({"T_bank": T_bank, "T": T_stage, "seq": seq, "tpl_indices": tpl_indices}),
+            "sampler_json": json.dumps(sampler_meta),
             "counts_by_template_json": json.dumps(counts),
             "artifact_json_path": None,
             "prompt_char_len_max": prompt_char_len_max,
@@ -626,6 +649,14 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
     if runtime.fast_then_final and final_B > fast_B:
         ci_status = {"phase": "fast", "B_used": fast_B, "job_id": execution_id}
 
+    sampling_info: Dict[str, Any] = {
+        "K": cfg.K,
+        "R": cfg.R,
+        "T": T_stage,
+        "warning_counts": warning_counts_export,
+        "warning_total": warning_total,
+    }
+
     run_payload: Dict[str, Any] = {
         "execution_id": execution_id,
         "run_id": run_id,
@@ -634,7 +665,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
         "logical_model": cfg.model,
         "provider": provider_id,
         "prompt_version": prompt_version_full,
-        "sampling": {"K": cfg.K, "R": cfg.R, "T": T_stage},
+        "sampling": sampling_info,
         "aggregation": {
             "method": diag.get("method"),
             "B": fast_B,
@@ -664,6 +695,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
         "tokens_out": total_tokens_out,
         "cost_usd": estimated_cost,
     }
+    run_payload["warning_counts"] = warning_counts_export
 
     if run_cache_key and not cfg.no_cache:
         run_cache_set(

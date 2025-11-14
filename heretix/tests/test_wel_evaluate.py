@@ -4,6 +4,7 @@ import pytest
 
 from heretix_wel import evaluate_wel
 from heretix_wel.evaluate_wel import _chunk_docs
+from heretix_wel.scoring import WELSchemaError
 
 
 class FakeRetriever:
@@ -40,14 +41,16 @@ def _patch_retriever(monkeypatch: pytest.MonkeyPatch):
 @pytest.fixture
 def _patch_call(monkeypatch: pytest.MonkeyPatch):
     payload = {
-        "p_true": 0.6,
+        "stance_prob_true": 0.6,
+        "stance_label": "supports",
         "support_bullets": ["support"],
         "oppose_bullets": ["oppose"],
         "notes": ["note"],
     }
+    warnings = ["json_repaired_simple"]
     monkeypatch.setattr(
         "heretix_wel.evaluate_wel.call_wel_once",
-        lambda bundle, model=None: (payload, "hash"),
+        lambda bundle, model=None: (payload, warnings, "hash"),
     )
     return payload
 
@@ -60,17 +63,20 @@ def test_evaluate_wel_basic(_patch_call):
     rep = result["replicates"][0]
     assert rep.p_web == 0.6
     assert rep.support_bullets == ["support"]
+    assert rep.stance_label == "supports"
+    assert result["warning_counts"]["json_repaired_simple"] == 1
 
 
 def test_evaluate_wel_error(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(
         "heretix_wel.evaluate_wel.call_wel_once",
-        lambda bundle, model=None: (_ for _ in ()).throw(RuntimeError("bad response")),
+        lambda bundle, model=None: (_ for _ in ()).throw(WELSchemaError(["schema_validation_failed"])),
     )
     result = evaluate_wel.evaluate_wel(claim="test claim", k_docs=1, replicates=1, seed=2)
     rep = result["replicates"][0]
     assert rep.p_web == 0.5  # fallback probability on error
     assert rep.json_valid is False
+    assert result["warning_counts"]["schema_validation_failed"] == 1
 
 
 def test_chunk_docs_balances_remainder():

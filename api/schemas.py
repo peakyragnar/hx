@@ -51,6 +51,8 @@ class SamplingInfo(BaseModel):
     K: int
     R: int
     T: Optional[int]
+    warning_counts: Optional[Dict[str, int]] = None
+    warning_total: Optional[int] = None
 
 
 class WeightInfo(BaseModel):

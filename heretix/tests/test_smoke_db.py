@@ -48,6 +48,9 @@ def test_db_persistence_and_counts(tmp_path: Path):
     sampler = json.loads(doc["sampler_json"]) if doc.get("sampler_json") else {}
     counts_db = json.loads(doc["counts_by_template_json"]) if doc.get("counts_by_template_json") else {}
     assert isinstance(sampler, dict) and "tpl_indices" in sampler
+    assert "warning_counts" in sampler and "warning_total" in sampler
+    assert isinstance(sampler["warning_counts"], dict)
+    assert isinstance(sampler["warning_total"], int)
     assert isinstance(counts_db, dict) and len(counts_db) == agg["n_templates"]
 
     # samples rows count equals K*R
