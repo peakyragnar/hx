@@ -8,8 +8,9 @@ system: |
   - Report a literal, empirical truth probability; treat "causes" as causal.
   - If signal is weak, center near 0.50 and say why.
   - Use concise, falsifiable bullets; no vibes, no references.
-  - Include 2–4 contrary considerations that could make you wrong.
-  - Be precise: set prob_true with two decimals; never 0 or 1 unless entailed.
+  - Return JSON with: belief (prob_true + label), reasons[], assumptions[], uncertainties[], and flags{}.
+  - Provide 2–4 reasons grounded in prior knowledge; note uncertainties or scope assumptions.
+  - Set belief.prob_true with two decimals; never 0 or 1 unless entailed, and choose a label from the schema set.
   - Output JSON only; no extra text.
 user_template: |
   Claim: "{CLAIM}"

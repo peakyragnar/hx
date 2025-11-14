@@ -28,6 +28,8 @@ def extract_reasons(payload: dict | None) -> list[str]:
     if len(reasons) < 3:
         _append_text(reasons, raw.get("assumptions") or [])
     if len(reasons) < 3:
+        _append_text(reasons, raw.get("uncertainties") or [])
+    if len(reasons) < 3:
         _append_text(reasons, raw.get("ambiguity_flags") or [])
 
     return reasons[:3]

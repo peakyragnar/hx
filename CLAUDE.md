@@ -160,7 +160,7 @@ Retrieval pushing toward consensus.
 4.2 Prompting & schema
 	•	System rules: concise, falsifiable bullets; numeric precision; no citations; JSON‑only.
 	•	User content: PARAPHRASES (5 templates) + canonical USER_TEMPLATE.
-	•	Schema fields: prob_true, confidence_self, assumptions[], reasoning_bullets[] (3–6), contrary_considerations[] (2–4), ambiguity_flags[].
+	•	Schema fields: belief.{prob_true,label}, reasons[], assumptions[], uncertainties[], flags{refused, off_topic}.
 
 Provenance: We log provider_model_id and prompt_sha256 (hash of exact instructions+user text). Paraphrase “clusters” are keyed by this hash.
 

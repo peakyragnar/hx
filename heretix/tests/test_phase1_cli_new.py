@@ -88,6 +88,7 @@ def test_cli_prompts_file_override(tmp_path: Path):
             "T: 6",
             "B: 5000",
             "max_output_tokens: 128",
+            "max_prompt_chars: 2000",
         ])
     )
     out_path = tmp_path / "out.json"
@@ -186,6 +187,7 @@ def test_cli_run_multi_model_from_config(tmp_path: Path):
                 "T: 4",
                 "B: 100",
                 "max_output_tokens: 256",
+                "max_prompt_chars: 2000",
             ]
         )
     )
@@ -222,6 +224,7 @@ def test_cli_run_multi_model_override_flag(tmp_path: Path):
                 "T: 4",
                 "B: 100",
                 "max_output_tokens: 256",
+                "max_prompt_chars: 2000",
             ]
         )
     )

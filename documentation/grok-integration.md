@@ -38,7 +38,7 @@ Architecture Changes (minimal)
    - Transport: OpenAI SDK with xAI base URL
      - `OpenAI(api_key=os.getenv("XAI_API_KEY") or os.getenv("GROK_API_KEY"), base_url="https://api.x.ai/v1")`
    - Inputs: identical signature to GPT‑5 scorer (`claim, system_text, user_template, paraphrase_text, model='grok-5', max_output_tokens`).
-   - Instructions: identical strict JSON schema (prob_true, confidence_self, assumptions, reasoning_bullets, contrary_considerations, ambiguity_flags). No URLs/citations.
+   - Instructions: identical strict JSON schema (belief.{prob_true,label}, reasons, assumptions, uncertainties, flags). No URLs/citations.
    - API shape:
      - Prefer `client.responses.create(...)` (if supported). If not, fallback to `client.chat.completions.create(...)` with messages.
    - Determinism: set `temperature=0` (if available). Do not send OpenAI reasoning flags unless xAI documents compatibility.
@@ -126,4 +126,3 @@ Future (not in MVP)
 - Add Gemini via the same registry and adapter pattern.
 - Multi‑model compare endpoint (`/api/checks/run_multi`) and mobile tabs for side‑by‑side UX.
 - Native iOS app consuming the stable API payload.
-

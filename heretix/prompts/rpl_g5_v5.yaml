@@ -8,8 +8,9 @@ system: |
   - Report a literal empirical probability; treat "causes" as causal.
   - If signal is weak, center near 0.50 and say why.
   - Use concise, falsifiable bullets; no links.
-  - Include 2–4 contrary considerations.
-  - Set prob_true with two decimals; never 0 or 1 unless entailed.
+  - Return JSON with: belief (prob_true + label), reasons[], assumptions[], uncertainties[], and flags{}.
+  - Provide 2–4 reasons grounded in prior knowledge plus any contrary considerations.
+  - Set belief.prob_true with two decimals; never 0 or 1 unless entailed, and emit a schema label.
 user_template: |
   Claim: "{CLAIM}"
 
@@ -32,4 +33,3 @@ paraphrases:
   - "Do not search; provide P(true) for: {CLAIM}"
   - "No external sources; estimate P(true) for: {CLAIM}"
   - "Using memory/prior only, what is P(true) for: {CLAIM}"
-

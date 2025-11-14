@@ -127,7 +127,7 @@ High stability → different wordings agree; Low stability → the model’s bel
 
 So your intuition is right:
 	•	We want consistency across replicates (little within‑template noise) and consistency across templates (little paraphrase sensitivity).
-	•	If a claim is truly a toss‑up (≈0.5) because the model has no decisive internal signal, you should see p_RPL near 0.5, narrow CI once you use enough templates, and ambiguity flags/assumptions that explain why it sits on the fence. If the CI stays wide or stability low, that’s telling you the claim is underspecified or the template set is pulling it around.
+	•	If a claim is truly a toss‑up (≈0.5) because the model has no decisive internal signal, you should see p_RPL near 0.5, narrow CI once you use enough templates, and uncertainties/flags that explain why it sits on the fence. If the CI stays wide or stability low, that’s telling you the claim is underspecified or the template set is pulling it around.
 
 ⸻
 
@@ -291,7 +291,7 @@ Use this sparingly: simple negation isn’t perfect English logic, but as a sani
 
 You can’t prove a model only used pretraining, but you can enforce it in the interface and audit symptoms:
 	•	Interface enforcement: no tools, no browsing, instructions ban citations; your Responses API calls do exactly that.
-	•	Post‑cutoff sentinels: include a few claims about events plausibly after the model’s knowledge cutoff. RPL should (a) refuse certainty, (b) report assumptions/ambiguity. If you see confident probabilities on truly post‑cutoff facts, that’s a red flag for prompt leakage or overgeneralization.
+	•	Post‑cutoff sentinels: include a few claims about events plausibly after the model’s knowledge cutoff. RPL should (a) refuse certainty, (b) report relevant uncertainties or flags. If you see confident probabilities on truly post‑cutoff facts, that’s a red flag for prompt leakage or overgeneralization.
 	•	Irrelevant‑context invariance: prepend an irrelevant paragraph (e.g., a neutral lorem ipsum or harmless weather sentence) and check p_RPL shift. Large shifts → priming sensitivity; fix templates or tighten SYSTEM text.
 	•	Negation consistency (above): big errors often indicate the model is freewheeling rather than expressing a coherent prior.
 
@@ -302,7 +302,7 @@ Bundle 10–20 such audit claims into a bench/claims_bench.yaml (categories: cle
 Do a pilot sweep on ~10 varied claims:
 	1.	Run T=8, K=8, R=2 → record CI width, stability, PSI (paraphrase sensitivity index), negation error (where applicable).
 	2.	For the same claims, run K=16 (keep R=2) → confirm CI shrinks and stability improves more than if you increased R.
-	3.	If any claim still fails gates, inspect ambiguity flags and maybe tighten the claim scope (that often helps more than extra tokens).
+	3.	If any claim still fails gates, inspect the uncertainties/flags and maybe tighten the claim scope (that often helps more than extra tokens).
 
 Keep a tiny CSV of these runs (claim, K, R, p_RPL, CI width, stability, PSI). You’ll see very quickly that more templates is the efficient lever.
 

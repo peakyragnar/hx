@@ -137,7 +137,7 @@ Use `runs/reports/cohort_<version>.html` and the cohort compare page.
 ## Practical Tips
 - Use the per‑run HTML first — it already shows per‑template stats and integrity; only open the DB if you want to sort/filter rows.
 - Don’t chase single‑claim noise: edit paraphrases only when they underperform across many similar claims.
-- Keep prompts lean and consistent; push uncertainty into the JSON fields (prob_true near 0.50, ambiguity_flags) — not into long instructions.
+- Keep prompts lean and consistent; push uncertainty into the JSON fields (belief.prob_true near 0.50, uncertainties/flags) — not into long instructions.
 - Raise K/T for precision, unify/drop outlier paraphrases for stability, and keep Compliance ≥ 0.98.
 
 This process keeps reviews fast and decisions auditably boring: check precision, check agreement, confirm integrity, and only tune what systematically drifts.
