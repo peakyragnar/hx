@@ -7,6 +7,10 @@ from typing import List, Tuple, Type
 from pydantic import BaseModel, ValidationError
 
 _FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.IGNORECASE | re.DOTALL)
+_REASONING_TAG_RE = re.compile(
+    r"<(?P<tag>think|thinking|thought|reasoning|reflection|scratchpad)>(.*?)</\s*(?P=tag)\s*>",
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 def strip_markdown_json(text: str) -> str:
@@ -17,6 +21,8 @@ def strip_markdown_json(text: str) -> str:
     trimmed = text.strip()
     if not trimmed:
         raise ValueError("Input text must not be empty")
+
+    trimmed = _strip_reasoning_sections(trimmed)
 
     match = _FENCE_RE.search(trimmed)
     if match:
@@ -43,10 +49,12 @@ def extract_and_validate(
         raise ValueError("raw_text must be non-empty")
     warnings: List[str] = []
 
+    sanitized = _strip_reasoning_sections(raw_text)
+
     try:
-        data = json.loads(raw_text)
+        data = json.loads(sanitized)
     except json.JSONDecodeError:
-        cleaned = strip_markdown_json(raw_text)
+        cleaned = strip_markdown_json(sanitized)
         data = json.loads(cleaned)
         warnings.append("json_repaired_simple")
 
@@ -60,6 +68,18 @@ def extract_and_validate(
             raise exc from strict_exc
         warnings.append("validation_coerced")
         return obj, warnings
+
+
+def _strip_reasoning_sections(text: str) -> str:
+    """Remove <think>...</think> style reasoning tags that some models emit."""
+
+    cleaned = text
+    while True:
+        updated = _REASONING_TAG_RE.sub("", cleaned)
+        if updated == cleaned:
+            break
+        cleaned = updated
+    return cleaned
 
 
 __all__ = ["strip_markdown_json", "extract_and_validate"]

@@ -102,6 +102,12 @@ def test_strip_markdown_json_handles_fence():
     assert strip_markdown_json(wrapped) == payload
 
 
+def test_strip_markdown_json_drops_reasoning_tags():
+    payload = json.dumps(_sample_payload())
+    wrapped = f"<think>chain-of-thought</think>\n<reflection>more</reflection>{payload}"
+    assert strip_markdown_json(wrapped) == payload
+
+
 def test_strip_markdown_json_errors_without_json():
     with pytest.raises(ValueError):
         strip_markdown_json("no json here")
@@ -120,6 +126,14 @@ def test_extract_and_validate_repairs_wrapped_text():
     parsed, warnings = extract_and_validate(raw, RPLSampleV1)
     assert parsed.belief.label == "likely"
     assert warnings == ["json_repaired_simple"]
+
+
+def test_extract_and_validate_handles_reasoning_tags():
+    payload = json.dumps(_sample_payload())
+    raw = f"<think>deliberation</think>{payload}"
+    parsed, warnings = extract_and_validate(raw, RPLSampleV1)
+    assert parsed.belief.prob_true == pytest.approx(0.58)
+    assert warnings == []
 
 
 def test_extract_and_validate_marks_validation_coercion():

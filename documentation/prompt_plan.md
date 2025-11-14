@@ -77,6 +77,7 @@ Regex & Lexicons (operationalized checks)
 - JSON‑only (raw text):
     - Reject if code fences present: orjson.
     - Reject if non‑whitespace outside the single JSON object (capture raw text where available).
+    - The shared extractor (`heretix.provider.json_utils`) strips markdown fences and `<think>/<reflection>` reasoning tags before parsing so adapters stay consistent.
 - URL/citation (jailbreak):
     - URL: \b(?:https?://|www\.)\S+
     - DOI: \b(?:doi:)?\s*10\.\d{4,9}/[-._;()/:A-Z0-9]+ (case-insensitive)
