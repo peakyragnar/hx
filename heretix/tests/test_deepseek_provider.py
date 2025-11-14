@@ -5,6 +5,9 @@ import json
 import pytest
 
 from heretix.provider import deepseek_r1
+from heretix.provider.json_utils import extract_and_validate
+from heretix.schemas import RPLSampleV1
+from heretix.tests._samples import make_rpl_sample
 
 
 class _Limiter:
@@ -23,7 +26,7 @@ class _FakeResponse:
             "choices": [
                 {
                     "message": {
-                        "content": json.dumps({"prob_true": 0.44}),
+                        "content": json.dumps(make_rpl_sample(0.44, label="unlikely")),
                     }
                 }
             ],
@@ -60,5 +63,6 @@ def test_deepseek_invokes_rate_limiter(monkeypatch: pytest.MonkeyPatch):
 
     assert limiter.count == 1
     assert called["headers"]["Authorization"] == "Bearer ds-key"
-    assert result["raw"].get("prob_true") == 0.44
-
+    parsed, warnings = extract_and_validate(json.dumps(result["raw"]), RPLSampleV1)
+    assert parsed.belief.prob_true == pytest.approx(0.44)
+    assert warnings == []

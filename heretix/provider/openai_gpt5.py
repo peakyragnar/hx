@@ -15,6 +15,8 @@ except Exception:  # pragma: no cover - defensive import guard
 
 from openai import OpenAI
 
+from .schema_text import RPL_SAMPLE_JSON_SCHEMA
+
 
 def score_claim(
     *,
@@ -32,13 +34,7 @@ def score_claim(
     """
     paraphrased = paraphrase_text.replace("{CLAIM}", claim)
     user_text = f"{paraphrased}\n\n" + user_template.replace("{CLAIM}", claim)
-    schema_instructions = (
-        "Return ONLY JSON matching this schema: "
-        "{ \"prob_true\": 0..1, \"confidence_self\": 0..1, "
-        "\"assumptions\": [string], \"reasoning_bullets\": [3-6 strings], "
-        "\"contrary_considerations\": [2-4 strings], \"ambiguity_flags\": [string] } "
-        "Output the JSON object only."
-    )
+    schema_instructions = RPL_SAMPLE_JSON_SCHEMA
     full_instructions = system_text + "\n\n" + schema_instructions
     prompt_sha256 = hashlib.sha256((full_instructions + "\n\n" + user_text).encode("utf-8")).hexdigest()
 

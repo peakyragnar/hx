@@ -5,11 +5,14 @@ import json
 import pytest
 
 from heretix.provider import openai_gpt5
+from heretix.provider.json_utils import extract_and_validate
+from heretix.schemas import RPLSampleV1
+from heretix.tests._samples import make_rpl_sample
 
 
 class FakeResponse:
     def __init__(self):
-        self.output_text = json.dumps({"prob_true": 0.5})
+        self.output_text = json.dumps(make_rpl_sample(0.5))
         self.model = "gpt-5"
         self.id = "resp-1"
         self.created = 0
@@ -43,4 +46,6 @@ def test_openai_rate_limiter_invoked(monkeypatch: pytest.MonkeyPatch):
         paraphrase_text="{CLAIM}",
     )
     assert called["count"] == 1
-    assert result["raw"]["prob_true"] == 0.5
+    parsed, warnings = extract_and_validate(json.dumps(result["raw"]), RPLSampleV1)
+    assert parsed.belief.prob_true == pytest.approx(0.5)
+    assert warnings == []

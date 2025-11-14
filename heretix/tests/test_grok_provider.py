@@ -5,6 +5,9 @@ import json
 import pytest
 
 from heretix.provider import grok_xai
+from heretix.provider.json_utils import extract_and_validate
+from heretix.schemas import RPLSampleV1
+from heretix.tests._samples import make_rpl_sample
 
 
 class _Limiter:
@@ -16,8 +19,8 @@ class _Limiter:
 
 
 class _FakeResponse:
-    def __init__(self, *, model: str = "grok-4") -> None:
-        self.output_text = json.dumps({"prob_true": 0.42})
+    def __init__(self, *, model: str = "grok-4", prob: float = 0.42) -> None:
+        self.output_text = json.dumps(make_rpl_sample(prob))
         self.model = model
         self.id = "resp-xyz"
         self.created = 0
@@ -54,7 +57,11 @@ class _FakeChatCompletions:
 
         class Choice:
             def __init__(self):
-                self.message = type("Msg", (), {"content": json.dumps({"prob_true": 0.51})})
+                self.message = type(
+                    "Msg",
+                    (),
+                    {"content": json.dumps(make_rpl_sample(0.51, label="very_likely"))},
+                )
 
         class Resp:
             def __init__(self):
@@ -95,7 +102,9 @@ def test_grok_adapter_invokes_rate_limiter(monkeypatch: pytest.MonkeyPatch):
 
     assert counter["count"] == 1
     assert client.requests and client.requests[0]["model"] == "grok-4"
-    assert result["raw"].get("prob_true") == 0.42
+    parsed, warnings = extract_and_validate(json.dumps(result["raw"]), RPLSampleV1)
+    assert parsed.belief.prob_true == pytest.approx(0.42)
+    assert warnings == []
 
 
 def test_grok_adapter_fallbacks_to_chat_completion(monkeypatch: pytest.MonkeyPatch):
@@ -114,5 +123,7 @@ def test_grok_adapter_fallbacks_to_chat_completion(monkeypatch: pytest.MonkeyPat
 
     assert counter["count"] == 1
     assert client.chat_requests, "chat completions should be used as fallback"
-    assert result["raw"].get("prob_true") == 0.51
+    parsed, warnings = extract_and_validate(json.dumps(result["raw"]), RPLSampleV1)
+    assert parsed.belief.prob_true == pytest.approx(0.51)
+    assert warnings == []
     assert "model_warning" in result["meta"]

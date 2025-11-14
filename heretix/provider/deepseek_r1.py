@@ -13,6 +13,7 @@ from heretix.ratelimit import RateLimiter
 
 from .config import get_rate_limits
 from .registry import register_score_fn
+from .schema_text import RPL_SAMPLE_JSON_SCHEMA
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -48,13 +49,7 @@ _DEEPSEEK_RATE_LIMITER = RateLimiter(rate_per_sec=_DEEPSEEK_RPS, burst=_DEEPSEEK
 
 
 def _schema_instructions() -> str:
-    return (
-        "Return ONLY JSON matching this schema: "
-        "{ \"prob_true\": 0..1, \"confidence_self\": 0..1, "
-        "\"assumptions\": [string], \"reasoning_bullets\": [3-6 strings], "
-        "\"contrary_considerations\": [2-4 strings], \"ambiguity_flags\": [string] } "
-        "Output the JSON object only."
-    )
+    return RPL_SAMPLE_JSON_SCHEMA
 
 
 def _resolve_api_key() -> str:
@@ -146,4 +141,3 @@ register_score_fn(
     ),
     fn=score_claim,
 )
-

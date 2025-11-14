@@ -38,6 +38,7 @@ from .storage import (
     update_execution_ci,
 )
 from .provider.factory import get_rpl_adapter
+from .provider.schema_text import RPL_SAMPLE_JSON_SCHEMA
 from .provider.utils import infer_provider_from_model
 from .telemetry import timed, est_tokens, est_cost, log
 from .finalizer import kick_off_final_ci
@@ -66,6 +67,32 @@ def _load_prompts(path: str) -> Dict[str, Any]:
 def _has_citation_or_url(text: str) -> bool:
     t = text.lower()
     return ("http://" in t) or ("https://" in t) or ("www." in t)
+
+
+def _coerce_prob(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        prob = float(value)
+    except (TypeError, ValueError):
+        return None
+    if prob < 0 or prob > 1:
+        return None
+    return prob
+
+
+def _extract_prob_true(raw: Any) -> Optional[float]:
+    if not isinstance(raw, dict):
+        return None
+    direct = _coerce_prob(raw.get("prob_true"))
+    if direct is not None:
+        return direct
+    belief = raw.get("belief")
+    if isinstance(belief, dict):
+        nested = _coerce_prob(belief.get("prob_true"))
+        if nested is not None:
+            return nested
+    return None
 
 
 def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) -> Dict[str, Any]:
@@ -99,13 +126,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
     seq = balanced_indices_with_rotation(T_stage, cfg.K, offset=0)  # already rotated via tpl_indices
 
     # Compose instruction prefix (system + schema) once
-    schema_instructions = (
-        "Return ONLY JSON matching this schema: "
-        "{ \"prob_true\": 0..1, \"confidence_self\": 0..1, "
-        "\"assumptions\": [string], \"reasoning_bullets\": [3-6 strings], "
-        "\"contrary_considerations\": [2-4 strings], \"ambiguity_flags\": [string] } "
-        "Output the JSON object only."
-    )
+    schema_instructions = RPL_SAMPLE_JSON_SCHEMA
     full_instructions = system_text + "\n\n" + schema_instructions
 
     # Compute per-template prompt lengths and enforce cap
@@ -298,9 +319,8 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
         # Minimal retry: if live and no numeric prob_true or URL leakage, try once more
         def _is_valid_raw(obj: Dict[str, Any]) -> bool:
             try:
-                if not isinstance(obj, dict):
-                    return False
-                if not ("prob_true" in obj and isinstance(obj["prob_true"], (int, float))):
+                prob_val = _extract_prob_true(obj)
+                if prob_val is None:
                     return False
                 if _has_citation_or_url(json.dumps(obj)):
                     return False
@@ -320,9 +340,10 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             meta = out.get("meta", {})
             timing = out.get("timing", {})
 
-        prob = float(raw.get("prob_true")) if "prob_true" in raw else float("nan")
+        prob_val = _extract_prob_true(raw)
+        prob = float(prob_val) if prob_val is not None else float("nan")
         lgt = _logit(prob) if prob == prob else float("nan")
-        json_valid = int(1 if ("prob_true" in raw and isinstance(raw["prob_true"], (int, float))) else 0)
+        json_valid = int(1 if prob_val is not None else 0)
         txt_concat = json.dumps(raw)
         compliant = (json_valid == 1) and (not _has_citation_or_url(txt_concat))
         valid = int(1 if compliant else 0)
