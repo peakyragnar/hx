@@ -8,6 +8,7 @@ Quick map of the docs that are kept current for the Phase‑1 RPL harness versus
 - `configuration.md` — Detailed config keys and overrides for `heretix run`.
 - `sqlite.md` — Tips for exploring `runs/heretix.sqlite`.
 - `STATS_SPEC.md` — Frozen estimator and statistics specification.
+- `schemas.md` — Canonical Pydantic models (RPL samples, WEL docs, prior/web/combined blocks, SimpleExpl).
 - `faster-processing.md` — Guidance on concurrency, cache, and performance.
 - `faster.md` — Phase‑1 speed plan, including fast-first CI, telemetry, and caching defaults.
 - `refactor.md` — Technical TODOs and roadmap notes scoped to the new harness.

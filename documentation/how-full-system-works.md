@@ -77,10 +77,10 @@ This document captures the current architecture after adding the Postgres schema
 - Location: `api/` package.
 - Purpose: expose the RPL meter as an HTTP service and persist results in Postgres.
 - Main files:
-  - `api/config.py`: loads env settings (DB URL, RPL defaults, prompt path).
-  - `api/database.py`: SQLAlchemy engine + session management (dependency for FastAPI).
-  - `api/schemas.py`: Pydantic models describing request/response payloads.
-  - `api/main.py`: FastAPI app with endpoints for runs, magic-link sign-in, and session introspection.
+- `api/config.py`: loads env settings (DB URL, RPL defaults, prompt path).
+- `api/database.py`: SQLAlchemy engine + session management (dependency for FastAPI).
+- `api/schemas.py`: Pydantic models describing request/response payloads. These re-export the canonical classes under `heretix/schemas` (RPL samples, WEL docs, prior/web/combined blocks, SimpleExpl) so every consumer shares the same definitions.
+- `api/main.py`: FastAPI app with endpoints for runs, magic-link sign-in, and session introspection.
 
 ### Request Flow (POST /api/checks/run)
 1. Client sends JSON `{ "claim": "...", ...optional overrides... }`.
