@@ -72,12 +72,12 @@ def stub_usage(monkeypatch: pytest.MonkeyPatch):
     yield
 
 
-def _make_payload(mode: str) -> dict:
+def _make_payload(mode: str, *, provider: str = "openai", logical_model: str = "gpt5-default") -> dict:
     base = {
         "claim": f"API mock run bead ({mode})",
         "mode": mode,
-        "provider": "openai",
-        "logical_model": "gpt5-default",
+        "provider": provider,
+        "logical_model": logical_model,
         "prompt_version": "rpl_g5_v2",
         "K": 4,
         "R": 1,
@@ -136,3 +136,21 @@ def test_run_check_mock_web_mode_includes_web_block():
     assert run_model.web is not None
     assert run_model.weights is not None
     assert run_model.prior is not None
+
+
+def test_run_check_respects_custom_provider_and_logical_model():
+    payload = {
+        **_make_payload("baseline", provider="xai", logical_model="grok-4"),
+    }
+    resp = client.post("/api/checks/run", json=payload)
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+
+    assert data["provider"] == "xai"
+    assert data["logical_model"] == "grok-4"
+    assert data["prior"] is not None
+    assert data["combined"] is not None
+
+    run_model = RunResponse.model_validate(data)
+    assert run_model.provider == "xai"
+    assert run_model.logical_model == "grok-4"
