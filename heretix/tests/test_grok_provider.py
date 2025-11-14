@@ -5,8 +5,6 @@ import json
 import pytest
 
 from heretix.provider import grok_xai
-from heretix.provider.json_utils import extract_and_validate
-from heretix.schemas import RPLSampleV1
 from heretix.tests._samples import make_rpl_sample
 
 
@@ -102,9 +100,8 @@ def test_grok_adapter_invokes_rate_limiter(monkeypatch: pytest.MonkeyPatch):
 
     assert counter["count"] == 1
     assert client.requests and client.requests[0]["model"] == "grok-4"
-    parsed, warnings = extract_and_validate(json.dumps(result["raw"]), RPLSampleV1)
-    assert parsed.belief.prob_true == pytest.approx(0.42)
-    assert warnings == []
+    assert result["sample"]["belief"]["prob_true"] == pytest.approx(0.42)
+    assert result["warnings"] == []
     telemetry = result["telemetry"]
     assert telemetry.provider == "xai"
     assert telemetry.logical_model == "grok-4"
@@ -129,9 +126,8 @@ def test_grok_adapter_fallbacks_to_chat_completion(monkeypatch: pytest.MonkeyPat
 
     assert counter["count"] == 1
     assert client.chat_requests, "chat completions should be used as fallback"
-    parsed, warnings = extract_and_validate(json.dumps(result["raw"]), RPLSampleV1)
-    assert parsed.belief.prob_true == pytest.approx(0.51)
-    assert warnings == []
+    assert result["sample"]["belief"]["prob_true"] == pytest.approx(0.51)
+    assert result["warnings"] == []
     assert "model_warning" in result["meta"]
     telemetry = result["telemetry"]
     assert telemetry.provider == "xai"

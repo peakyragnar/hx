@@ -5,7 +5,11 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from heretix.provider.json_utils import extract_and_validate, strip_markdown_json
+from heretix.provider.json_utils import (
+    extract_and_validate,
+    parse_schema_from_text,
+    strip_markdown_json,
+)
 from heretix.schemas import (
     CombinedBlockV1,
     PriorBlockV1,
@@ -186,3 +190,29 @@ def test_extract_and_validate_rejects_invalid_combined_weights():
     )
     with pytest.raises(ValidationError):
         extract_and_validate(bad_payload, CombinedBlockV1)
+
+
+def test_parse_schema_from_text_returns_canonical_dict():
+    payload = json.dumps(_sample_payload())
+    raw, sample, warnings = parse_schema_from_text(payload, RPLSampleV1)
+    assert sample is not None
+    assert sample["belief"]["prob_true"] == pytest.approx(0.58)
+    assert raw.get("belief") == sample["belief"]
+    assert sample["flags"] == {"refused": False, "off_topic": False}
+    assert warnings == []
+
+
+def test_parse_schema_from_text_marks_repairs():
+    payload = json.dumps(_sample_payload(prob=0.71))
+    wrapped = f"```json\n{payload}\n```"
+    raw, sample, warnings = parse_schema_from_text(wrapped, RPLSampleV1)
+    assert sample is not None
+    assert sample["belief"]["prob_true"] == pytest.approx(0.71)
+    assert "json_repaired_simple" in warnings
+
+
+def test_parse_schema_from_text_handles_invalid_payload():
+    raw, sample, warnings = parse_schema_from_text("not json", RPLSampleV1)
+    assert raw == {}
+    assert sample is None
+    assert warnings == ["schema_validation_failed"]

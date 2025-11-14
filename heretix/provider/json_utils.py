@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import List, Tuple, Type
+from typing import Any, Dict, List, Optional, Tuple, Type
 
 from pydantic import BaseModel, ValidationError
 
@@ -82,4 +82,45 @@ def _strip_reasoning_sections(text: str) -> str:
     return cleaned
 
 
-__all__ = ["strip_markdown_json", "extract_and_validate"]
+def _safe_json_dict(text: Optional[str]) -> Dict[str, Any]:
+    """Best-effort parse of provider payloads into a dict, allowing fenced JSON."""
+
+    if not text:
+        return {}
+    attempts = [text]
+    try:
+        cleaned = strip_markdown_json(text)
+    except ValueError:
+        cleaned = None
+    if cleaned and cleaned not in attempts:
+        attempts.append(cleaned)
+    for candidate in attempts:
+        try:
+            obj = json.loads(candidate)
+        except Exception:
+            continue
+        if isinstance(obj, dict):
+            return obj
+    return {}
+
+
+def parse_schema_from_text(
+    raw_text: Optional[str],
+    schema_model: Type[BaseModel],
+) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]], List[str]]:
+    """Return (best-effort raw dict, canonical dict | None, warnings)."""
+
+    fallback = _safe_json_dict(raw_text)
+    if not raw_text:
+        return fallback, None, []
+    try:
+        parsed, warnings = extract_and_validate(raw_text, schema_model)
+    except Exception:
+        return fallback, None, ["schema_validation_failed"]
+    canonical = parsed.model_dump()
+    if not fallback:
+        fallback = canonical
+    return fallback, canonical, warnings
+
+
+__all__ = ["strip_markdown_json", "extract_and_validate", "parse_schema_from_text"]

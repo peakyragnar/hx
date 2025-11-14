@@ -313,6 +313,8 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
         ):
             out = _once()
         raw = out.get("raw", {})
+        sample_payload = out.get("sample")
+        canonical_payload = sample_payload or raw
         meta = out.get("meta", {})
         timing = out.get("timing", {})
 
@@ -328,7 +330,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             except Exception:
                 return False
 
-        if provider_mode != "MOCK" and not _is_valid_raw(raw):
+        if provider_mode != "MOCK" and not _is_valid_raw(canonical_payload):
             # small jitter based on cache key to reduce burst
             try:
                 sleep_ms = (int(w.cache_key[:6], 16) % 50) / 1000.0
@@ -337,10 +339,12 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
                 time.sleep(0.05)
             out = _once()
             raw = out.get("raw", {})
+            sample_payload = out.get("sample")
+            canonical_payload = sample_payload or raw
             meta = out.get("meta", {})
             timing = out.get("timing", {})
 
-        prob_val = _extract_prob_true(raw)
+        prob_val = _extract_prob_true(canonical_payload)
         prob = float(prob_val) if prob_val is not None else float("nan")
         lgt = _logit(prob) if prob == prob else float("nan")
         json_valid = int(1 if prob_val is not None else 0)

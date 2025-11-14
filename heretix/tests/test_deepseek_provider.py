@@ -6,8 +6,6 @@ import pytest
 import responses
 
 from heretix.provider import deepseek_r1
-from heretix.provider.json_utils import extract_and_validate
-from heretix.schemas import RPLSampleV1
 from heretix.tests._samples import make_rpl_sample
 
 
@@ -61,9 +59,8 @@ def test_deepseek_invokes_rate_limiter_and_posts(monkeypatch: pytest.MonkeyPatch
     assert req_payload["model"] == "deepseek-r1"
     assert req_payload["messages"][0]["role"] == "system"
 
-    parsed, warnings = extract_and_validate(json.dumps(result["raw"]), RPLSampleV1)
-    assert parsed.belief.prob_true == pytest.approx(0.44)
-    assert warnings == []
+    assert result["sample"]["belief"]["prob_true"] == pytest.approx(0.44)
+    assert result["warnings"] == []
     telemetry = result["telemetry"]
     assert telemetry.provider == "deepseek"
     assert telemetry.logical_model == "deepseek-r1"
@@ -97,9 +94,8 @@ def test_deepseek_parses_markdown_wrapped_payload(monkeypatch: pytest.MonkeyPatc
 
     assert limiter.count == 1
     assert len(responses.calls) == 1
-    parsed, warnings = extract_and_validate(json.dumps(result["raw"]), RPLSampleV1)
-    assert parsed.belief.prob_true == pytest.approx(0.63)
-    assert warnings == []
+    assert result["sample"]["belief"]["prob_true"] == pytest.approx(0.63)
+    assert "json_repaired_simple" in result["warnings"]
     telemetry = result["telemetry"]
     assert telemetry.provider == "deepseek"
     assert telemetry.logical_model == "deepseek-r1"

@@ -74,6 +74,8 @@ def score_claim_mock(
 
     return {
         "raw": raw,
+        "sample": raw,
+        "warnings": [],
         "meta": {
             "provider_model_id": f"{model}-MOCK",
             "prompt_sha256": prompt_sha256,

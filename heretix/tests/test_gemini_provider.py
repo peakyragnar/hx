@@ -5,8 +5,6 @@ import json
 import pytest
 
 from heretix.provider import gemini_google
-from heretix.provider.json_utils import extract_and_validate
-from heretix.schemas import RPLSampleV1
 from heretix.tests._samples import make_rpl_sample
 
 
@@ -76,9 +74,8 @@ def test_gemini_rate_limiter_and_payload(monkeypatch: pytest.MonkeyPatch):
     assert limiter.count == 1
     assert "gemini-2.5-real" in called["url"]
     assert called["params"]["key"] == "secret-key"
-    parsed, warnings = extract_and_validate(json.dumps(result["raw"]), RPLSampleV1)
-    assert parsed.belief.prob_true == pytest.approx(0.61)
-    assert warnings == []
+    assert result["sample"]["belief"]["prob_true"] == pytest.approx(0.61)
+    assert result["warnings"] == []
     telemetry = result["telemetry"]
     assert telemetry.provider == "google"
     assert telemetry.logical_model == "gemini25-default"

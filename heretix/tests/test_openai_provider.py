@@ -5,8 +5,6 @@ import json
 import pytest
 
 from heretix.provider import openai_gpt5
-from heretix.provider.json_utils import extract_and_validate
-from heretix.schemas import RPLSampleV1
 from heretix.tests._samples import make_rpl_sample
 
 
@@ -62,9 +60,8 @@ def test_openai_rate_limiter_invoked(monkeypatch: pytest.MonkeyPatch):
     )
     assert called["count"] == 1
     assert client.calls and client.calls[0]["model"] == "gpt-5"
-    parsed, warnings = extract_and_validate(json.dumps(result["raw"]), RPLSampleV1)
-    assert parsed.belief.prob_true == pytest.approx(0.5)
-    assert warnings == []
+    assert result["sample"]["belief"]["prob_true"] == pytest.approx(0.5)
+    assert result["warnings"] == []
     telemetry = result["telemetry"]
     assert telemetry.provider == "openai"
     assert telemetry.logical_model == "gpt-5"

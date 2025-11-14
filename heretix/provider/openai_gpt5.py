@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import json
 import time
 import hashlib
-from typing import Dict, Any
+from typing import Any, Dict, Optional
 
 import os
 from heretix.ratelimit import RateLimiter
@@ -15,8 +14,10 @@ except Exception:  # pragma: no cover - defensive import guard
 
 from openai import OpenAI
 
+from .json_utils import parse_schema_from_text
 from .schema_text import RPL_SAMPLE_JSON_SCHEMA
 from .telemetry import LLMTelemetry
+from heretix.schemas import RPLSampleV1
 
 
 def _extract_usage(resp: Any) -> tuple[int, int]:
@@ -31,6 +32,22 @@ def _extract_usage(resp: Any) -> tuple[int, int]:
             getattr(usage, "output_tokens", getattr(usage, "completion_tokens", 0)) or 0
         )
     return tokens_in, tokens_out
+
+
+def _extract_output_text(resp: Any) -> Optional[str]:
+    if hasattr(resp, "output_text") and resp.output_text:
+        return str(resp.output_text)
+    try:
+        for o in getattr(resp, "output", []) or []:
+            if getattr(o, "type", None) != "message":
+                continue
+            parts = getattr(o, "content", []) or []
+            for part in parts:
+                if getattr(part, "type", None) == "output_text" and getattr(part, "text", None):
+                    return str(part.text)
+    except Exception:
+        pass
+    return None
 
 
 def score_claim(
@@ -78,35 +95,8 @@ def score_claim(
     latency_ms = int((time.time() - t0) * 1000)
 
     # Parse JSON from response object
-    if hasattr(resp, "output_text") and resp.output_text:
-        try:
-            obj = json.loads(resp.output_text)
-        except Exception:
-            # Treat non-JSON as invalid output; aggregation will exclude it
-            obj = {}
-    else:
-        # Fallback: walk items to find text
-        text = None
-        try:
-            for o in getattr(resp, "output", []) or []:
-                if getattr(o, "type", None) == "message":
-                    parts = getattr(o, "content", []) or []
-                    for part in parts:
-                        if getattr(part, "type", None) == "output_text":
-                            text = getattr(part, "text", None)
-                            break
-                if text:
-                    break
-        except Exception:
-            pass
-        if not text:
-            # No extractable text; treat as invalid sample
-            obj = {}
-        else:
-            try:
-                obj = json.loads(text)
-            except Exception:
-                obj = {}
+    raw_text = _extract_output_text(resp)
+    raw_obj, sample_payload, warnings = parse_schema_from_text(raw_text, RPLSampleV1)
 
     provider_model_id = getattr(resp, "model", model)
     response_id = getattr(resp, "id", None) or getattr(resp, "response_id", None)
@@ -122,7 +112,9 @@ def score_claim(
     )
 
     return {
-        "raw": obj,
+        "raw": raw_obj,
+        "sample": sample_payload,
+        "warnings": warnings,
         "meta": {
             "provider_model_id": provider_model_id,
             "prompt_sha256": prompt_sha256,

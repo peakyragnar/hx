@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import os
 import time
@@ -10,9 +9,11 @@ from typing import Any, Dict, Iterable, Optional
 from heretix.ratelimit import RateLimiter
 
 from .config import get_rate_limits
+from .json_utils import parse_schema_from_text
 from .registry import register_score_fn
 from .schema_text import RPL_SAMPLE_JSON_SCHEMA
 from .telemetry import LLMTelemetry
+from heretix.schemas import RPLSampleV1
 
 try:  # pragma: no cover - import guard mirrors openai adapter
     from openai import OpenAI
@@ -128,16 +129,6 @@ def _call_chat_completion(
     )
 
 
-def _parse_json_payload(text: Optional[str]) -> dict[str, Any]:
-    if not text:
-        return {}
-    try:
-        obj = json.loads(text)
-    except Exception:
-        return {}
-    return obj if isinstance(obj, dict) else {}
-
-
 def _extract_usage(resp: Any) -> tuple[int, int]:
     tokens_in = 0
     tokens_out = 0
@@ -218,7 +209,7 @@ def score_claim(
     latency_ms = int((time.time() - t0) * 1000)
 
     raw_text = _collect_text_from_output(resp)
-    raw_obj = _parse_json_payload(raw_text)
+    raw_obj, sample_payload, warnings = parse_schema_from_text(raw_text, RPLSampleV1)
 
     provider_model_id = getattr(resp, "model", None) or model
     response_id = getattr(resp, "id", None) or getattr(resp, "response_id", None)
@@ -243,6 +234,8 @@ def score_claim(
 
     return {
         "raw": raw_obj,
+        "sample": sample_payload,
+        "warnings": warnings,
         "meta": meta,
         "timing": {"latency_ms": latency_ms},
         "telemetry": telemetry,

@@ -1,10 +1,6 @@
 from __future__ import annotations
 
-import json
-
 from heretix.provider import mock
-from heretix.provider.json_utils import extract_and_validate
-from heretix.schemas import RPLSampleV1
 
 
 def test_mock_provider_emits_rpl_sample_schema():
@@ -17,10 +13,11 @@ def test_mock_provider_emits_rpl_sample_schema():
 
     raw = result.get("raw")
     assert isinstance(raw, dict)
-    parsed, warnings = extract_and_validate(json.dumps(raw), RPLSampleV1)
-    assert warnings == []
-    assert 0.0 <= parsed.belief.prob_true <= 1.0
-    assert parsed.belief.label in {
+    assert result["warnings"] == []
+    sample = result["sample"]
+    assert isinstance(sample, dict)
+    assert 0.0 <= sample["belief"]["prob_true"] <= 1.0
+    assert sample["belief"]["label"] in {
         "very_unlikely",
         "unlikely",
         "uncertain",
