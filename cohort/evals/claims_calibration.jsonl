@@ -1,0 +1,4 @@
+{"id": "earth-orbits-sun", "claim": "The Earth orbits the Sun.", "label": 1.0, "category": "astronomy"}
+{"id": "moon-made-of-cheese", "claim": "The Moon is primarily made of cheese.", "label": 0.0, "category": "myth"}
+{"id": "fed-rate-cut", "claim": "The Federal Reserve will cut rates at least twice next year.", "label": 0.5, "category": "economics"}
+{"id": "ai-beats-go", "claim": "AI systems have defeated top professional Go players.", "label": 1.0, "category": "technology"}
