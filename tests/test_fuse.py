@@ -16,6 +16,25 @@ def test_fuse_probabilities_limits():
     assert p_high > p_low
 
 
+def test_fuse_probabilities_bounds_and_ci():
+    p, ci = fuse_probabilities(0.0, (0.0, 0.01), 1.0, (0.99, 1.0), 0.5)
+    lo, hi = ci
+    assert 0.0 < p < 1.0
+    assert 0.0 < lo < hi < 1.0
+
+
+def test_fuse_probabilities_tracks_strong_web_signal():
+    prior = 0.2
+    web = 0.9
+    fused, _ = fuse_probabilities(prior, (0.18, 0.22), web, (0.85, 0.95), 0.85)
+    assert abs(fused - web) < abs(fused - prior)
+
+
+def test_fuse_probabilities_equal_inputs_match_probability():
+    fused, _ = fuse_probabilities(0.73, (0.70, 0.76), 0.73, (0.70, 0.76), 0.37)
+    assert fused == pytest.approx(0.73, abs=1e-9)
+
+
 def test_fuse_prior_web_combines_weights():
     prior = {"p": 0.2, "ci95": [0.18, 0.22]}
     web = {
