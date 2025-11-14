@@ -17,6 +17,7 @@ from heretix.config import RunConfig
 from heretix.provider.openai_gpt5 import score_claim as score_claim_live
 from heretix.provider.mock import score_claim_mock
 from heretix.provider.utils import infer_provider_from_model
+from heretix.explanations import extract_reasons
 from heretix.pipeline import PipelineOptions, perform_run
 from heretix.constants import SCHEMA_VERSION
 from heretix.schemas import CombinedBlockV1, PriorBlockV1, SimpleExplV1, WebBlockV1
@@ -646,40 +647,6 @@ def load_prompt_components(prompt_file: str | Path) -> tuple[str, str, list[str]
     user_template = str(doc.get("user_template") or "")
     paraphrases = [str(x) for x in (doc.get("paraphrases") or [])]
     return system_text, user_template, paraphrases
-
-
-def extract_reasons(payload: dict) -> list[str]:
-    raw = (payload or {}).get("raw") or {}
-    reasons: list[str] = []
-
-    def add_items(items):
-        for item in items:
-            if not isinstance(item, str):
-                continue
-            text = item.strip().rstrip(".;")
-            if not text:
-                continue
-            if not text.endswith("."):
-                text += "."
-            reasons.append(text)
-            if len(reasons) >= 3:
-                break
-
-    primary = raw.get("reasoning_bullets") or []
-    add_items(primary)
-    if len(reasons) < 3:
-        secondary = raw.get("contrary_considerations") or []
-        add_items(secondary)
-
-    if not reasons:
-        alt: list[str] = []
-        add_items(raw.get("assumptions") or [])
-        if len(reasons) < 3:
-            add_items(raw.get("ambiguity_flags") or [])
-
-    if not reasons:
-        return []
-    return reasons[:3]
 
 
 def fallback_reasons(prob: float | None) -> list[str]:

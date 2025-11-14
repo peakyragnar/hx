@@ -115,6 +115,7 @@ def test_cli_web_mode_emits_simple_expl(tmp_path: Path):
             "T: 8",
             "B: 5000",
             "max_output_tokens: 512",
+            "max_prompt_chars: 2000",
         ])
     )
     out_path = tmp_path / "web_out.json"
@@ -148,6 +149,7 @@ def test_cli_baseline_emits_simple_expl(tmp_path: Path):
             "T: 8",
             "B: 5000",
             "max_output_tokens: 512",
+            "max_prompt_chars: 2000",
         ])
     )
     out_path = tmp_path / "baseline_out.json"

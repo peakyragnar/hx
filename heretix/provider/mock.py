@@ -8,6 +8,18 @@ from typing import Dict, Any
 import numpy as np
 
 
+def _label_from_prob(prob: float) -> str:
+    if prob >= 0.8:
+        return "very_likely"
+    if prob >= 0.6:
+        return "likely"
+    if prob <= 0.2:
+        return "very_unlikely"
+    if prob <= 0.4:
+        return "unlikely"
+    return "uncertain"
+
+
 def score_claim_mock(
     *,
     claim: str,
@@ -36,25 +48,16 @@ def score_claim_mock(
     jitter = float(rng.normal(0, 0.02))  # small spread
     p = min(max(base + jitter, 0.05), 0.95)
 
+    label = _label_from_prob(p)
     raw = {
-        "prob_true": round(p, 2),
-        "confidence_self": 0.6,
-        "assumptions": [
-            "Assume reasonable scope/definitions",
-            "Assume no retrieval used",
+        "belief": {"prob_true": round(p, 2), "label": label},
+        "reasons": [
+            "Mock prior estimation based on deterministic seed",
+            "Mock paraphrase sensitivity adjustment",
         ],
-        "reasoning_bullets": [
-            "Mock: prior-based estimation only",
-            "Mock: paraphrase sensitivity check",
-            "Mock: no citations permitted",
-        ],
-        "contrary_considerations": [
-            "Mock: potential wording artifacts",
-            "Mock: underspecification risk",
-        ],
-        "ambiguity_flags": [
-            "Mock output",
-        ],
+        "assumptions": ["Assume scoped claim interpretation"],
+        "uncertainties": ["Mock run ignores retrieval"],
+        "flags": {"refused": False, "off_topic": False},
     }
 
     return {
@@ -67,4 +70,3 @@ def score_claim_mock(
         },
         "timing": {"latency_ms": 5},
     }
-

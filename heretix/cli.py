@@ -20,6 +20,7 @@ import yaml
 from heretix.pipeline import PipelineOptions, perform_run
 from heretix.db.models import Check
 from heretix.provider.utils import infer_provider_from_model
+from heretix.provider.schema_text import RPL_SAMPLE_JSON_SCHEMA
 
 
 app = typer.Typer(help="Heretix (new) RPL harness")
@@ -406,11 +407,7 @@ def cmd_describe(
     # Build template hashes for selected templates
     system_text = str(doc.get("system"))
     user_template = str(doc.get("user_template"))
-    schema_instructions = (
-        "Return ONLY valid JSON with exactly these fields:\n"
-        "{\n  \"prob_true\": number between 0 and 1,\n  \"confidence_self\": number between 0 and 1,\n  \"assumptions\": array of strings,\n  \"reasoning_bullets\": array of 3-6 strings,\n  \"contrary_considerations\": array of 2-4 strings,\n  \"ambiguity_flags\": array of strings\n}\n"
-        "Output ONLY the JSON object, no other text."
-    )
+    schema_instructions = RPL_SAMPLE_JSON_SCHEMA
     full_instructions = system_text + "\n\n" + schema_instructions
     tpl_hashes = []
     prompt_len_list = []

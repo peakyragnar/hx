@@ -23,6 +23,8 @@ from typing import Any, Dict, List, Optional
 import hashlib
 import yaml
 
+from heretix.provider.schema_text import RPL_SAMPLE_JSON_SCHEMA
+
 DEFAULT_DB = Path("runs/heretix.sqlite")
 
 
@@ -115,13 +117,7 @@ def gen_report(db_path: Path, out_path: Path, run_id: Optional[str]) -> None:
         except Exception:
             pass
     # Recreate the schema instruction string used in the harness
-    schema_instructions = (
-        "Return ONLY JSON matching this schema: "
-        "{ \"prob_true\": 0..1, \"confidence_self\": 0..1, "
-        "\"assumptions\": [string], \"reasoning_bullets\": [3-6 strings], "
-        "\"contrary_considerations\": [2-4 strings], \"ambiguity_flags\": [string] } "
-        "Output the JSON object only."
-    )
+    schema_instructions = RPL_SAMPLE_JSON_SCHEMA
     full_instructions = (system_text + "\n\n" + schema_instructions).strip()
 
     # Determine templates chosen for this run (indices)
