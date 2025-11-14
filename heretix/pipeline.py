@@ -386,36 +386,56 @@ def perform_run(
 
     # Backend-owned Simple View explanation
     simple_expl: Optional[Dict[str, Any]] = None
-    if mode == "web_informed" and combined_block_payload is not None and (
-        sanitized_web_block is not None or normalized_reps
-    ):
+    if not use_mock and combined_block_payload is not None:
         try:
-            from heretix.simple_expl import compose_simple_expl
+            from heretix.explanations_llm import generate_simple_expl_llm
 
-            simple_expl = compose_simple_expl(
+            llm_result = generate_simple_expl_llm(
                 claim=cfg.claim or "",
-                combined_p=float(combined_block_payload.get("p", prior_p)),
-                web_block=sanitized_web_block,
-                replicates=normalized_reps,
+                mode=mode,
+                prior_block=prior_block_payload,
+                combined_block=combined_block_payload,
+                web_block=sanitized_web_block if mode == "web_informed" else None,
+                warning_counts=(sanitized_web_block or {}).get("warning_counts") if sanitized_web_block else None,
+                sampling=sampling,
+                weights=weights_payload,
             )
+            simple_expl = llm_result["simple_expl"]
         except Exception:  # pragma: no cover
-            logger.exception("Failed to compose Simple View for run %s", run_id)
+            logger.exception("Failed to generate LLM narration for run %s", run_id)
             simple_expl = None
-    elif mode == "baseline":
-        try:
-            from heretix.simple_expl import compose_baseline_simple_expl
 
-            simple_expl = compose_baseline_simple_expl(
-                claim=cfg.claim or "",
-                prior_p=prior_p,
-                prior_ci=(prior_ci[0], prior_ci[1]),
-                stability_score=stability_score,
-                template_count=sampling.get("T") or aggregation.get("n_templates"),
-                imbalance_ratio=aggregation.get("imbalance_ratio"),
-            )
-        except Exception:  # pragma: no cover
-            logger.exception("Failed to compose baseline Simple View for run %s", run_id)
-            simple_expl = None
+    if simple_expl is None:
+        if mode == "web_informed" and combined_block_payload is not None and (
+            sanitized_web_block is not None or normalized_reps
+        ):
+            try:
+                from heretix.simple_expl import compose_simple_expl
+
+                simple_expl = compose_simple_expl(
+                    claim=cfg.claim or "",
+                    combined_p=float(combined_block_payload.get("p", prior_p)),
+                    web_block=sanitized_web_block,
+                    replicates=normalized_reps,
+                )
+            except Exception:  # pragma: no cover
+                logger.exception("Failed to compose Simple View for run %s", run_id)
+                simple_expl = None
+        elif mode == "baseline":
+            try:
+                from heretix.simple_expl import compose_baseline_simple_expl
+
+                simple_expl = compose_baseline_simple_expl(
+                    claim=cfg.claim or "",
+                    prior_p=prior_p,
+                    prior_ci=(prior_ci[0], prior_ci[1]),
+                    stability_score=stability_score,
+                    template_count=sampling.get("T") or aggregation.get("n_templates"),
+                    imbalance_ratio=aggregation.get("imbalance_ratio"),
+                )
+            except Exception:  # pragma: no cover
+                logger.exception("Failed to compose baseline Simple View for run %s", run_id)
+                simple_expl = None
 
     return PipelineArtifacts(
         result=result,

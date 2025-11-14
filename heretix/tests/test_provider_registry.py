@@ -12,6 +12,7 @@ from heretix.provider import (
     wel_grok,
     wel_gemini,
     wel_deepseek,
+    expl_openai,
 )
 
 
@@ -70,3 +71,15 @@ def test_wel_registry_maps_other_providers():
     assert registry.get_wel_score_fn("gemini-2.5") is wel_gemini.score_wel_bundle
     assert registry.get_wel_score_fn("google") is wel_gemini.score_wel_bundle
     assert registry.get_wel_score_fn("deepseek-r1") is wel_deepseek.score_wel_bundle
+
+
+def test_expl_registry_resolves_narrator():
+    expl_fn = registry.get_expl_adapter("gpt-5")
+    assert expl_fn is expl_openai.write_simple_expl
+
+    expl_models = registry.list_registered_expl_models()
+    assert "gpt-5" in expl_models
+    assert "narrator" in expl_models
+
+    with pytest.raises(ValueError):
+        registry.get_expl_adapter("totally-unknown-expl")

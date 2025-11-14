@@ -12,10 +12,14 @@ __all__ = [
     "register_wel_score_fn",
     "get_wel_score_fn",
     "list_registered_wel_models",
+    "register_expl_adapter",
+    "get_expl_adapter",
+    "list_registered_expl_models",
 ]
 
 _SCORE_REGISTRY: Dict[str, Callable] = {}
 _WEL_SCORE_REGISTRY: Dict[str, Callable] = {}
+_EXPL_REGISTRY: Dict[str, Callable] = {}
 
 
 def _normalize(name: str) -> str:
@@ -100,3 +104,40 @@ def list_registered_wel_models() -> list[str]:
 
     ensure_adapters_loaded()
     return sorted(_WEL_SCORE_REGISTRY.keys())
+
+
+def register_expl_adapter(*, aliases: Iterable[str], fn: Callable) -> None:
+    """Register an explanation adapter for one or more model aliases."""
+
+    if not callable(fn):
+        raise TypeError("fn must be callable")
+
+    alias_list = [_normalize(alias) for alias in aliases if _normalize(alias)]
+    if not alias_list:
+        raise ValueError("At least one non-empty alias is required")
+
+    for alias in alias_list:
+        existing = _EXPL_REGISTRY.get(alias)
+        if existing is not None and existing is not fn:
+            raise ValueError(f"Explanation alias '{alias}' already registered to a different adapter")
+        _EXPL_REGISTRY[alias] = fn
+
+
+def get_expl_adapter(model: str) -> Callable:
+    """Return the explanation adapter for a given narrator model string."""
+
+    ensure_adapters_loaded()
+    key = _normalize(model)
+    if not key:
+        raise ValueError("model must be a non-empty string")
+    try:
+        return _EXPL_REGISTRY[key]
+    except KeyError as exc:
+        raise ValueError(f"No explanation adapter registered for model='{model}'") from exc
+
+
+def list_registered_expl_models() -> list[str]:
+    """Return the list of registered explanation model aliases (lowercase)."""
+
+    ensure_adapters_loaded()
+    return sorted(_EXPL_REGISTRY.keys())
