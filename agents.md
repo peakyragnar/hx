@@ -57,7 +57,7 @@ Cloud Dev Environments
 CI (GitHub Actions)
 - Runner uses uv for parity with local:
   - Installs uv via script and runs `uv sync --extra test`
-  - Executes `uv run pytest -q` (defaults to new harness only via pytest.ini). To include legacy, run `uv run pytest heretix/tests legacy/tests -q`.
+  - Executes `uv run pytest -q` (pytest.ini limits default discovery to heretix/tests plus tests/evals, so the eval smoke + harness suites run automatically). To include legacy, run `uv run pytest heretix/tests legacy/tests -q`.
 - Deterministic bootstrap in CI:
   - Set `HERETIX_RPL_SEED=42` for stable CI widths/decisions (does not change model outputs)
 - Coverage:
