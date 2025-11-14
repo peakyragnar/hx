@@ -82,6 +82,7 @@ def main() -> None:
         cfg = RunConfig(
             claim=str(entry.get("claim")),
             model=args.logical_model,
+            logical_model=args.logical_model,
             provider=args.provider,
             prompt_version=args.prompt_version,
             K=args.K,

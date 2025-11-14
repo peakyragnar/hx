@@ -14,6 +14,7 @@ from heretix.provider.utils import infer_provider_from_model
 class RunConfig:
     claim: Optional[str] = None
     model: str = "gpt-5"
+    logical_model: Optional[str] = None
     provider: Optional[str] = None
     models: Optional[List[str]] = None
     prompt_version: str = "rpl_g5_v2"
@@ -52,8 +53,11 @@ def load_run_config(path: str | Path) -> RunConfig:
     cfg.models = _normalize_models(cfg.models)
     if cfg.models:
         cfg.model = cfg.models[0]
+    if cfg.logical_model is None:
+        cfg.logical_model = cfg.model
+    cfg.model = cfg.logical_model
     if not cfg.provider:
-        cfg.provider = infer_provider_from_model(cfg.model)
+        cfg.provider = infer_provider_from_model(cfg.logical_model)
     # Env fallback (config takes precedence)
     if cfg.seed is None and os.getenv("HERETIX_RPL_SEED") is not None:
         try:

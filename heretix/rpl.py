@@ -96,6 +96,9 @@ def _extract_prob_true(raw: Any) -> Optional[float]:
 
 
 def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) -> Dict[str, Any]:
+    logical_model = cfg.logical_model or cfg.model
+    cfg.logical_model = logical_model
+    cfg.model = logical_model
     prompts = _load_prompts(prompt_file)
     prompt_version_full = str(prompts.get("version"))
     system_text = str(prompts.get("system"))

@@ -134,6 +134,7 @@ def run_check(
     cfg = RunConfig(
         claim=claim,
         model=logical_model,
+        logical_model=logical_model,
         provider=provider,
         prompt_version=payload.prompt_version or settings.rpl_prompt_version,
         K=payload.K or settings.rpl_k,

@@ -40,7 +40,8 @@ def _plan_summary(cfg_local: RunConfig, prompt_path: Path) -> dict:
     T_bank = len(paraphrases)
     T_stage = int(cfg_local.T) if cfg_local.T is not None else T_bank
     T_stage = max(1, min(T_stage, T_bank))
-    off = rotation_offset(cfg_local.claim, cfg_local.model, str(doc.get("version")), T_bank)
+    logical_model = cfg_local.logical_model or cfg_local.model
+    off = rotation_offset(cfg_local.claim, logical_model, str(doc.get("version")), T_bank)
     order = list(range(T_bank))
     if T_bank > 1 and off % T_bank != 0:
         rot = off % T_bank
@@ -98,6 +99,7 @@ def cmd_run(
         raise typer.Exit(1)
     cfg.models = models_to_run
     cfg.model = models_to_run[0]
+    cfg.logical_model = cfg.model
     versions = prompt_version if prompt_version else [cfg.prompt_version]
 
     if dry_run:
@@ -106,6 +108,7 @@ def cmd_run(
             for v in versions:
                 local_cfg = RunConfig(**{**cfg.__dict__})
                 local_cfg.model = model
+                local_cfg.logical_model = model
                 local_cfg.provider = local_cfg.provider or infer_provider_from_model(model)
                 local_cfg.prompt_version = v
                 prompt_file = (
