@@ -21,6 +21,7 @@ from heretix.pipeline import PipelineOptions, perform_run
 from heretix.db.models import Check
 from heretix.provider.utils import infer_provider_from_model
 from heretix.provider.schema_text import RPL_SAMPLE_JSON_SCHEMA
+from heretix.constants import SCHEMA_VERSION
 
 
 app = typer.Typer(help="Heretix (new) RPL harness")
@@ -212,6 +213,7 @@ def _build_run_entry(cfg: RunConfig, mode: str, mock: bool, artifacts) -> dict:
         "model": result.get("model", cfg.model),
         "prompt_version": result.get("prompt_version", cfg.prompt_version),
         "mode": mode,
+        "schema_version": result.get("schema_version", SCHEMA_VERSION),
         "sampling": result.get("sampling", {}),
         "aggregation": result.get("aggregation", {}),
         "aggregates": result.get("aggregates", {}),
