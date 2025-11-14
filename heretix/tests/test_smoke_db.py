@@ -22,6 +22,7 @@ def test_db_persistence_and_counts(tmp_path: Path):
         T=3,
         B=5000,
         max_output_tokens=128,
+        max_prompt_chars=2000,
     )
     prompt_file = str(Path(__file__).resolve().parents[1] / "prompts" / "rpl_g5_v2.yaml")
     res = run_single_version(cfg, prompt_file=prompt_file, mock=True)

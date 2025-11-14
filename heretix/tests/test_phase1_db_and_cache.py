@@ -22,6 +22,7 @@ def test_db_row_count_matches_k_times_r(tmp_path: Path):
         T=8,
         B=5000,
         max_output_tokens=256,
+        max_prompt_chars=2000,
     )
     prompt_file = str(Path(__file__).resolve().parents[1] / "prompts" / "rpl_g5_v2.yaml")
     res = run_single_version(cfg, prompt_file=prompt_file, mock=True)
@@ -44,6 +45,7 @@ def test_cache_hit_behavior(tmp_path: Path):
         T=8,
         B=5000,
         max_output_tokens=319,  # uncommon cap to reduce accidental reuse
+        max_prompt_chars=2000,
     )
     prompt_file = str(Path(__file__).resolve().parents[1] / "prompts" / "rpl_g5_v2.yaml")
 
@@ -80,6 +82,7 @@ def test_run_cache_respects_seed(tmp_path: Path, monkeypatch):
         T=8,
         B=5000,
         max_output_tokens=384,
+        max_prompt_chars=2000,
     )
 
     cfg_seed1 = RunConfig(**base_kwargs, seed=101)
