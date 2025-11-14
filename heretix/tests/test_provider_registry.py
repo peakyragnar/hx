@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from heretix.provider import deepseek_r1, gemini_google, grok_xai, openai_gpt5, registry
+from heretix.provider import deepseek_r1, gemini_google, grok_xai, openai_gpt5, registry, wel_openai
 
 
 def test_registry_maps_gpt5_to_openai_adapter():
@@ -40,3 +40,15 @@ def test_registry_maps_gemini_and_deepseek():
     assert registry.get_score_fn("google") is gemini_google.score_claim
     assert registry.get_score_fn("deepseek-r1") is deepseek_r1.score_claim
     assert registry.get_score_fn("deepseek:r1") is deepseek_r1.score_claim
+
+
+def test_wel_registry_resolves_openai_adapter():
+    wel_fn = registry.get_wel_score_fn("gpt-5")
+    assert wel_fn is wel_openai.score_wel_bundle
+
+    wel_models = registry.list_registered_wel_models()
+    assert "gpt-5" in wel_models
+    assert "openai" in wel_models
+
+    with pytest.raises(ValueError):
+        registry.get_wel_score_fn("totally-unknown-wel-model")

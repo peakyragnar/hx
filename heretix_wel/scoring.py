@@ -3,9 +3,8 @@ from __future__ import annotations
 import hashlib
 from typing import Dict, List, Tuple
 
-from openai import OpenAI
-
 from heretix.provider.json_utils import parse_schema_from_text
+from heretix.provider.registry import get_wel_score_fn
 from heretix.schemas import WELDocV1
 
 
@@ -32,38 +31,27 @@ WEL_SCHEMA = """Return ONLY a JSON object with:
 
 def call_wel_once(bundle_text: str, model: str = "gpt-5") -> Tuple[Dict[str, object], List[str], str]:
     """
-    Evaluate a bundle of snippets with GPT-5 and return the parsed JSON plus prompt hash.
+    Evaluate a bundle of snippets using the registered WEL adapter.
     """
-    client = OpenAI()
     instructions = f"{WEL_SYSTEM}\n\n{WEL_SCHEMA}"
     prompt_hash = hashlib.sha256((instructions + bundle_text).encode("utf-8")).hexdigest()
 
-    response = client.responses.create(
-        model=model,
+    adapter = get_wel_score_fn(model)
+    result = adapter(
         instructions=instructions,
-        input=[{"role": "user", "content": [{"type": "input_text", "text": bundle_text}]}],
+        bundle_text=bundle_text,
+        model=model,
         max_output_tokens=768,
-        reasoning={"effort": "minimal"},
     )
+    if not isinstance(result, dict):
+        raise TypeError("WEL adapter must return a dict payload with 'text'")
+    payload = result.get("text")
+    adapter_warnings = list(result.get("warnings") or [])
+    if not payload:
+        raise RuntimeError("WEL adapter returned an empty payload")
 
-    payload = None
-    if getattr(response, "output_text", None):
-        payload = response.output_text
-    else:
-        for item in response.output:
-            if item.type == "message":
-                for content in item.content:
-                    text = getattr(content, "text", None)
-                    if text:
-                        payload = text
-                        break
-            if payload:
-                break
-
-    if payload is None:
-        raise RuntimeError("No response payload received from GPT-5")
-
-    raw_obj, canonical, warnings = parse_schema_from_text(payload, WELDocV1)
+    _, canonical, schema_warnings = parse_schema_from_text(payload, WELDocV1)
+    warnings = adapter_warnings + schema_warnings
     if canonical is None:
         raise WELSchemaError(warnings)
     return canonical, warnings, prompt_hash

@@ -4,9 +4,18 @@ from typing import Callable, Iterable, Dict
 
 from . import ensure_adapters_loaded
 
-__all__ = ["register_score_fn", "get_score_fn", "get_live_scorer", "list_registered_models"]
+__all__ = [
+    "register_score_fn",
+    "get_score_fn",
+    "get_live_scorer",
+    "list_registered_models",
+    "register_wel_score_fn",
+    "get_wel_score_fn",
+    "list_registered_wel_models",
+]
 
 _SCORE_REGISTRY: Dict[str, Callable] = {}
+_WEL_SCORE_REGISTRY: Dict[str, Callable] = {}
 
 
 def _normalize(name: str) -> str:
@@ -54,3 +63,40 @@ def list_registered_models() -> list[str]:
 
     ensure_adapters_loaded()
     return sorted(_SCORE_REGISTRY.keys())
+
+
+def register_wel_score_fn(*, aliases: Iterable[str], fn: Callable) -> None:
+    """Register a WEL adapter function for one or more model aliases."""
+
+    if not callable(fn):
+        raise TypeError("fn must be callable")
+
+    alias_list = [_normalize(alias) for alias in aliases if _normalize(alias)]
+    if not alias_list:
+        raise ValueError("At least one non-empty alias is required")
+
+    for alias in alias_list:
+        existing = _WEL_SCORE_REGISTRY.get(alias)
+        if existing is not None and existing is not fn:
+            raise ValueError(f"WEL alias '{alias}' already registered to a different adapter")
+        _WEL_SCORE_REGISTRY[alias] = fn
+
+
+def get_wel_score_fn(model: str) -> Callable:
+    """Return the WEL provider function for a given model string."""
+
+    ensure_adapters_loaded()
+    key = _normalize(model)
+    if not key:
+        raise ValueError("model must be a non-empty string")
+    try:
+        return _WEL_SCORE_REGISTRY[key]
+    except KeyError as exc:
+        raise ValueError(f"No WEL provider adapter registered for model='{model}'") from exc
+
+
+def list_registered_wel_models() -> list[str]:
+    """Return the list of registered WEL model aliases (lowercase)."""
+
+    ensure_adapters_loaded()
+    return sorted(_WEL_SCORE_REGISTRY.keys())
