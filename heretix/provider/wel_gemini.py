@@ -7,6 +7,7 @@ import requests
 
 from heretix.ratelimit import RateLimiter
 
+from .telemetry import LLMTelemetry
 from .registry import register_wel_score_fn
 from . import gemini_google as _gemini
 
@@ -60,6 +61,15 @@ def score_wel_bundle(
     provider_model_id = data.get("model") or api_model
     response_id = data.get("responseId")
     created_ts = float(time.time())
+    tokens_in, tokens_out = _gemini._usage_counts(data)
+    telemetry = LLMTelemetry(
+        provider="google",
+        logical_model=str(model),
+        api_model=str(provider_model_id) if provider_model_id else None,
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        latency_ms=latency_ms,
+    )
 
     return {
         "text": text,
@@ -70,6 +80,7 @@ def score_wel_bundle(
             "created": created_ts,
         },
         "timing": {"latency_ms": latency_ms},
+        "telemetry": telemetry,
     }
 
 

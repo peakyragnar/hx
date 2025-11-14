@@ -36,6 +36,7 @@ def evaluate_web_informed(
             evidence[key] = float(value)
     replicates = wel.get("replicates", [])
     warning_counts = dict(wel.get("warning_counts") or {})
+    telemetry_records = list(wel.get("telemetry") or [])
     web_block: Dict[str, Any] = {
         "p": float(wel["p"]),
         "ci95": [float(wel["ci95"][0]), float(wel["ci95"][1])],
@@ -50,6 +51,8 @@ def evaluate_web_informed(
         "replicates": replicates,
         "warning_counts": warning_counts,
     }
+    if telemetry_records:
+        web_block["telemetry"] = telemetry_records
     if metrics.get("resolved_debug_votes") is not None:
         web_block["resolved_debug_votes"] = metrics.get("resolved_debug_votes")
     combined, weights = fuse_prior_web(claim, prior, web_block)
@@ -69,4 +72,6 @@ def evaluate_web_informed(
     provenance = dict(wel.get("provenance") or {})
     if warning_counts:
         provenance["warning_counts"] = warning_counts
+    if telemetry_records and "telemetry" not in provenance:
+        provenance["telemetry"] = telemetry_records
     return web_block, combined, weights, provenance

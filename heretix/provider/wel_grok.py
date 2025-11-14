@@ -5,6 +5,7 @@ from typing import Dict
 
 from heretix.ratelimit import RateLimiter
 
+from .telemetry import LLMTelemetry
 from .registry import register_wel_score_fn
 from . import grok_xai as _grok
 
@@ -62,6 +63,15 @@ def score_wel_bundle(
     provider_model_id = getattr(resp, "model", None) or model
     response_id = getattr(resp, "id", None) or getattr(resp, "response_id", None)
     created_ts = float(getattr(resp, "created", time.time()))
+    tokens_in, tokens_out = _grok._extract_usage(resp)
+    telemetry = LLMTelemetry(
+        provider="xai",
+        logical_model=str(model),
+        api_model=str(provider_model_id) if provider_model_id else None,
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        latency_ms=latency_ms,
+    )
 
     return {
         "text": text,
@@ -72,6 +82,7 @@ def score_wel_bundle(
             "created": created_ts,
         },
         "timing": {"latency_ms": latency_ms},
+        "telemetry": telemetry,
     }
 
 

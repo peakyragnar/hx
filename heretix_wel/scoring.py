@@ -6,6 +6,7 @@ from typing import Dict, List, Tuple
 from heretix.prompts.prompt_builder import build_wel_instructions
 from heretix.provider.json_utils import parse_schema_from_text
 from heretix.provider.registry import get_wel_score_fn
+from heretix.provider.telemetry import LLMTelemetry
 from heretix.provider.utils import infer_provider_from_model
 from heretix.schemas import WELDocV1
 
@@ -25,7 +26,7 @@ WEL_SCHEMA = """Return ONLY a JSON object with:
 }"""
 
 
-def call_wel_once(bundle_text: str, model: str = "gpt-5") -> Tuple[Dict[str, object], List[str], str]:
+def call_wel_once(bundle_text: str, model: str = "gpt-5") -> Tuple[Dict[str, object], List[str], str, LLMTelemetry]:
     """
     Evaluate a bundle of snippets using the registered WEL adapter.
     """
@@ -48,8 +49,21 @@ def call_wel_once(bundle_text: str, model: str = "gpt-5") -> Tuple[Dict[str, obj
     if not payload:
         raise RuntimeError("WEL adapter returned an empty payload")
 
+    telemetry_obj = result.get("telemetry")
+    telemetry: LLMTelemetry
+    if isinstance(telemetry_obj, LLMTelemetry):
+        telemetry = telemetry_obj
+    elif isinstance(telemetry_obj, dict):
+        telemetry = LLMTelemetry.model_validate(telemetry_obj)
+    else:
+        telemetry = LLMTelemetry(
+            provider=provider_id,
+            logical_model=str(model),
+            api_model=None,
+        )
+
     _, canonical, schema_warnings = parse_schema_from_text(payload, WELDocV1)
     warnings = adapter_warnings + schema_warnings
     if canonical is None:
         raise WELSchemaError(warnings)
-    return canonical, warnings, prompt_hash
+    return canonical, warnings, prompt_hash, telemetry

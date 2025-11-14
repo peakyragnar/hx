@@ -14,6 +14,21 @@ except Exception:  # pragma: no cover - optional dependency guard
     get_rate_limits = None  # type: ignore
 
 from .registry import register_wel_score_fn
+from .telemetry import LLMTelemetry
+
+
+def _extract_usage(resp: Any) -> tuple[int, int]:
+    tokens_in = 0
+    tokens_out = 0
+    usage = getattr(resp, "usage", None)
+    if usage:
+        tokens_in = int(
+            getattr(usage, "input_tokens", getattr(usage, "prompt_tokens", 0)) or 0
+        )
+        tokens_out = int(
+            getattr(usage, "output_tokens", getattr(usage, "completion_tokens", 0)) or 0
+        )
+    return tokens_in, tokens_out
 
 
 def _extract_output_text(resp: Any) -> str | None:
@@ -70,6 +85,15 @@ def score_wel_bundle(
     provider_model_id = getattr(resp, "model", model)
     response_id = getattr(resp, "id", None) or getattr(resp, "response_id", None)
     created_ts = float(getattr(resp, "created", time.time()))
+    tokens_in, tokens_out = _extract_usage(resp)
+    telemetry = LLMTelemetry(
+        provider="openai",
+        logical_model=str(model),
+        api_model=str(provider_model_id) if provider_model_id else None,
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        latency_ms=latency_ms,
+    )
 
     return {
         "text": payload,
@@ -80,6 +104,7 @@ def score_wel_bundle(
             "created": created_ts,
         },
         "timing": {"latency_ms": latency_ms},
+        "telemetry": telemetry,
     }
 
 

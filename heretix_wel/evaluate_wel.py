@@ -64,6 +64,15 @@ def _merge_warning_counts(*sources: Optional[Dict[str, int]]) -> Dict[str, int]:
     return merged
 
 
+def _merge_telemetry(*sources: Optional[List[Dict[str, object]]]) -> List[Dict[str, object]]:
+    merged: List[Dict[str, object]] = []
+    for src in sources:
+        if not src:
+            continue
+        merged.extend(dict(item) if isinstance(item, dict) else item for item in src)
+    return merged
+
+
 def evaluate_wel(
     claim: str,
     provider: str = "tavily",
@@ -95,6 +104,7 @@ def evaluate_wel(
         outcome_hint: bool,
     ) -> Dict[str, object]:
         warning_counts_local: Dict[str, int] = {}
+        telemetry_records: List[Dict[str, object]] = []
 
         def _record(labels):
             if not labels:
@@ -162,6 +172,7 @@ def evaluate_wel(
                 "docs": docs,
                 "metrics": metrics,
                 "warning_counts": warning_counts_local,
+                "telemetry": telemetry_records,
             }
 
         replicates_out: List[WELReplicate] = []
@@ -173,8 +184,10 @@ def evaluate_wel(
             bundle = pack_snippets_for_llm(claim, chunk, max_chars=max_chars)
             stance_label: Optional[str] = None
             try:
-                payload, warnings, prompt_hash = call_wel_once(bundle, model=model)
+                payload, warnings, prompt_hash, telemetry = call_wel_once(bundle, model=model)
                 _record(warnings)
+                if telemetry:
+                    telemetry_records.append(telemetry.model_dump())
                 p = float(payload.get("stance_prob_true"))
                 stance_label = str(payload.get("stance_label") or "").strip() or None
                 support = [str(x) for x in (payload.get("support_bullets") or [])][:4]
@@ -232,6 +245,7 @@ def evaluate_wel(
             "docs": docs,
             "metrics": metrics,
             "warning_counts": warning_counts_local,
+            "telemetry": telemetry_records,
         }
 
     # Decide first-pass recency (adaptive default)
@@ -251,22 +265,27 @@ def evaluate_wel(
 
     # If resolved or first pass was wide already, return
     if pass1.get("resolved") or recency_first is None:
+        telemetry_first = list(pass1.get("telemetry") or [])
+        provenance_payload = {
+            "provider": provider,
+            "model": model,
+            "k_docs": k_docs,
+            "replicates": (0 if pass1.get("resolved") else len(pass1.get("replicates", []))),
+            "recency_days": recency_first,
+            "passes": passes_used,
+            "seed": seed_val,
+            "resolved": bool(pass1.get("resolved")),
+        }
+        if telemetry_first:
+            provenance_payload["telemetry"] = telemetry_first
         return {
             "p": pass1.get("p", 0.5),
             "ci95": pass1.get("ci95", (0.5, 0.5)),
             "replicates": pass1.get("replicates", []),
             "metrics": pass1.get("metrics", {}),
             "warning_counts": dict(pass1.get("warning_counts") or {}),
-            "provenance": {
-                "provider": provider,
-                "model": model,
-                "k_docs": k_docs,
-                "replicates": (0 if pass1.get("resolved") else len(pass1.get("replicates", []))),
-                "recency_days": recency_first,
-                "passes": passes_used,
-                "seed": seed_val,
-                "resolved": bool(pass1.get("resolved")),
-            },
+            "telemetry": telemetry_first,
+            "provenance": provenance_payload,
         }
 
     # Second pass with no recency cap (fallback)
@@ -276,22 +295,27 @@ def evaluate_wel(
 
     # If pass2 resolved, return that
     if pass2.get("resolved"):
+        telemetry_second = list(pass2.get("telemetry") or [])
+        provenance_payload = {
+            "provider": provider,
+            "model": model,
+            "k_docs": k_docs,
+            "replicates": 0,
+            "recency_days": recency_second,
+            "passes": passes_used,
+            "seed": seed_val,
+            "resolved": True,
+        }
+        if telemetry_second:
+            provenance_payload["telemetry"] = telemetry_second
         return {
             "p": pass2.get("p", 0.5),
             "ci95": pass2.get("ci95", (0.5, 0.5)),
             "replicates": pass2.get("replicates", []),
             "metrics": pass2.get("metrics", {}),
             "warning_counts": dict(pass2.get("warning_counts") or {}),
-            "provenance": {
-                "provider": provider,
-                "model": model,
-                "k_docs": k_docs,
-                "replicates": 0,
-                "recency_days": recency_second,
-                "passes": passes_used,
-                "seed": seed_val,
-                "resolved": True,
-            },
+            "telemetry": telemetry_second,
+            "provenance": provenance_payload,
         }
 
     # Combine non-resolved passes: concatenate replicates and recompute
@@ -350,6 +374,19 @@ def evaluate_wel(
     }
 
     warning_counts_all = _merge_warning_counts(pass1.get("warning_counts"), pass2.get("warning_counts"))
+    telemetry_all = _merge_telemetry(pass1.get("telemetry"), pass2.get("telemetry"))
+    provenance_payload = {
+        "provider": provider,
+        "model": model,
+        "k_docs": k_docs,
+        "replicates": len(reps_all),
+        "recency_days": recency_second,
+        "passes": passes_used,
+        "seed": seed_val,
+        "resolved": False,
+    }
+    if telemetry_all:
+        provenance_payload["telemetry"] = telemetry_all
 
     return {
         "p": p_hat,
@@ -357,14 +394,6 @@ def evaluate_wel(
         "replicates": reps_all,
         "metrics": metrics,
         "warning_counts": warning_counts_all,
-        "provenance": {
-            "provider": provider,
-            "model": model,
-            "k_docs": k_docs,
-            "replicates": len(reps_all),
-            "recency_days": recency_second,
-            "passes": passes_used,
-            "seed": seed_val,
-            "resolved": False,
-        },
+        "telemetry": telemetry_all,
+        "provenance": provenance_payload,
     }

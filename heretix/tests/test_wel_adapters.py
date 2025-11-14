@@ -41,6 +41,7 @@ def test_wel_grok_adapter_reads_bundle(monkeypatch):
     assert json.loads(result["text"])["stance_label"] == "supports"
     assert result["meta"]["provider_model_id"] == "grok-4"
     assert result["timing"]["latency_ms"] >= 0
+    assert result["telemetry"].provider == "xai"
 
 
 def test_wel_gemini_adapter_reads_text(monkeypatch):
@@ -82,6 +83,7 @@ def test_wel_gemini_adapter_reads_text(monkeypatch):
 
     assert json.loads(result["text"])["support_bullets"] == ["gemini"]
     assert result["meta"]["provider_model_id"].startswith("models")
+    assert result["telemetry"].provider == "google"
 
 
 def test_wel_deepseek_adapter_reads_text(monkeypatch):
@@ -118,3 +120,4 @@ def test_wel_deepseek_adapter_reads_text(monkeypatch):
 
     assert json.loads(result["text"])["stance_label"] == "mixed"
     assert result["meta"]["provider_model_id"] == "deepseek-r1"
+    assert result["telemetry"].provider == "deepseek"
