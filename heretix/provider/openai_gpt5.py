@@ -16,6 +16,21 @@ except Exception:  # pragma: no cover - defensive import guard
 from openai import OpenAI
 
 from .schema_text import RPL_SAMPLE_JSON_SCHEMA
+from .telemetry import LLMTelemetry
+
+
+def _extract_usage(resp: Any) -> tuple[int, int]:
+    tokens_in = 0
+    tokens_out = 0
+    usage = getattr(resp, "usage", None)
+    if usage:
+        tokens_in = int(
+            getattr(usage, "input_tokens", getattr(usage, "prompt_tokens", 0)) or 0
+        )
+        tokens_out = int(
+            getattr(usage, "output_tokens", getattr(usage, "completion_tokens", 0)) or 0
+        )
+    return tokens_in, tokens_out
 
 
 def score_claim(
@@ -96,6 +111,15 @@ def score_claim(
     provider_model_id = getattr(resp, "model", model)
     response_id = getattr(resp, "id", None) or getattr(resp, "response_id", None)
     created_ts = int(getattr(resp, "created", int(time.time())))
+    tokens_in, tokens_out = _extract_usage(resp)
+    telemetry = LLMTelemetry(
+        provider="openai",
+        logical_model=str(model),
+        api_model=str(provider_model_id) if provider_model_id else None,
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        latency_ms=latency_ms,
+    )
 
     return {
         "raw": obj,
@@ -108,6 +132,7 @@ def score_claim(
         "timing": {
             "latency_ms": latency_ms,
         },
+        "telemetry": telemetry,
     }
 _rps: float
 _burst: int

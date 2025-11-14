@@ -12,6 +12,7 @@ from heretix.ratelimit import RateLimiter
 from .config import get_rate_limits
 from .registry import register_score_fn
 from .schema_text import RPL_SAMPLE_JSON_SCHEMA
+from .telemetry import LLMTelemetry
 
 try:  # pragma: no cover - import guard mirrors openai adapter
     from openai import OpenAI
@@ -137,6 +138,20 @@ def _parse_json_payload(text: Optional[str]) -> dict[str, Any]:
     return obj if isinstance(obj, dict) else {}
 
 
+def _extract_usage(resp: Any) -> tuple[int, int]:
+    tokens_in = 0
+    tokens_out = 0
+    usage = getattr(resp, "usage", None)
+    if usage:
+        tokens_in = int(
+            getattr(usage, "input_tokens", getattr(usage, "prompt_tokens", 0)) or 0
+        )
+        tokens_out = int(
+            getattr(usage, "output_tokens", getattr(usage, "completion_tokens", 0)) or 0
+        )
+    return tokens_in, tokens_out
+
+
 def _append_model_warning(meta: Dict[str, Any]) -> None:
     provider_model_id = meta.get("provider_model_id")
     if not provider_model_id:
@@ -216,11 +231,21 @@ def score_claim(
         "created": float(created_ts),
     }
     _append_model_warning(meta)
+    tokens_in, tokens_out = _extract_usage(resp)
+    telemetry = LLMTelemetry(
+        provider="xai",
+        logical_model=str(model),
+        api_model=str(provider_model_id) if provider_model_id else None,
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        latency_ms=latency_ms,
+    )
 
     return {
         "raw": raw_obj,
         "meta": meta,
         "timing": {"latency_ms": latency_ms},
+        "telemetry": telemetry,
     }
 
 

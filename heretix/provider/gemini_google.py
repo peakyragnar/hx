@@ -14,6 +14,7 @@ from heretix.ratelimit import RateLimiter
 from .config import get_rate_limits, load_provider_capabilities
 from .registry import register_score_fn
 from .schema_text import RPL_SAMPLE_JSON_SCHEMA
+from .telemetry import LLMTelemetry
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -104,6 +105,13 @@ def _parse_json_text(text: Optional[str]) -> Dict[str, Any]:
     return obj if isinstance(obj, dict) else {}
 
 
+def _usage_counts(data: Dict[str, Any]) -> tuple[int, int]:
+    usage = data.get("usageMetadata") or {}
+    tokens_in = int(usage.get("promptTokenCount") or 0)
+    tokens_out = int(usage.get("candidatesTokenCount") or usage.get("totalTokenCount") or 0)
+    return tokens_in, tokens_out
+
+
 def score_claim(
     *,
     claim: str,
@@ -162,11 +170,21 @@ def score_claim(
         "response_id": response_id,
         "created": float(time.time()),
     }
+    tokens_in, tokens_out = _usage_counts(data)
+    telemetry = LLMTelemetry(
+        provider="google",
+        logical_model=str(model),
+        api_model=str(provider_model_id) if provider_model_id else None,
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        latency_ms=latency_ms,
+    )
 
     return {
         "raw": raw_obj,
         "meta": meta,
         "timing": {"latency_ms": latency_ms},
+        "telemetry": telemetry,
     }
 
 

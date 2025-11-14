@@ -27,3 +27,9 @@ def test_mock_provider_emits_rpl_sample_schema():
         "likely",
         "very_likely",
     }
+    telemetry = result["telemetry"]
+    assert telemetry.provider == "mock"
+    assert telemetry.logical_model == "gpt-5"
+    assert telemetry.api_model.endswith("-MOCK")
+    assert telemetry.tokens_in > 0
+    assert telemetry.tokens_out > 0

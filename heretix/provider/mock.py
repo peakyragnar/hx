@@ -7,6 +7,8 @@ from typing import Dict, Any
 
 import numpy as np
 
+from .telemetry import LLMTelemetry
+
 
 def _label_from_prob(prob: float) -> str:
     if prob >= 0.8:
@@ -60,6 +62,16 @@ def score_claim_mock(
         "flags": {"refused": False, "off_topic": False},
     }
 
+    telemetry = LLMTelemetry(
+        provider="mock",
+        logical_model=str(model),
+        api_model=f"{model}-MOCK",
+        tokens_in=max(1, len(user_text) // 4),
+        tokens_out=max(1, len(json.dumps(raw)) // 4),
+        latency_ms=5,
+        cache_hit=False,
+    )
+
     return {
         "raw": raw,
         "meta": {
@@ -69,4 +81,5 @@ def score_claim_mock(
             "created": float(int(time.time())),
         },
         "timing": {"latency_ms": 5},
+        "telemetry": telemetry,
     }

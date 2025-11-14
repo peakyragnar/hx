@@ -105,6 +105,12 @@ def test_grok_adapter_invokes_rate_limiter(monkeypatch: pytest.MonkeyPatch):
     parsed, warnings = extract_and_validate(json.dumps(result["raw"]), RPLSampleV1)
     assert parsed.belief.prob_true == pytest.approx(0.42)
     assert warnings == []
+    telemetry = result["telemetry"]
+    assert telemetry.provider == "xai"
+    assert telemetry.logical_model == "grok-4"
+    assert telemetry.api_model == "grok-4"
+    assert telemetry.tokens_in == 0
+    assert telemetry.tokens_out == 0
 
 
 def test_grok_adapter_fallbacks_to_chat_completion(monkeypatch: pytest.MonkeyPatch):
@@ -127,3 +133,7 @@ def test_grok_adapter_fallbacks_to_chat_completion(monkeypatch: pytest.MonkeyPat
     assert parsed.belief.prob_true == pytest.approx(0.51)
     assert warnings == []
     assert "model_warning" in result["meta"]
+    telemetry = result["telemetry"]
+    assert telemetry.provider == "xai"
+    assert telemetry.logical_model == "grok-4"
+    assert telemetry.api_model == "mystery-model"

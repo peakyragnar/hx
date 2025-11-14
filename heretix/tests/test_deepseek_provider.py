@@ -39,6 +39,7 @@ def test_deepseek_invokes_rate_limiter_and_posts(monkeypatch: pytest.MonkeyPatch
         "id": "deepseek-xyz",
         "model": "deepseek-r1",
         "choices": [{"message": {"content": json.dumps(sample)}}],
+        "usage": {"prompt_tokens": 180, "completion_tokens": 70},
     }
     _add_deepseek_response(payload)
 
@@ -63,6 +64,12 @@ def test_deepseek_invokes_rate_limiter_and_posts(monkeypatch: pytest.MonkeyPatch
     parsed, warnings = extract_and_validate(json.dumps(result["raw"]), RPLSampleV1)
     assert parsed.belief.prob_true == pytest.approx(0.44)
     assert warnings == []
+    telemetry = result["telemetry"]
+    assert telemetry.provider == "deepseek"
+    assert telemetry.logical_model == "deepseek-r1"
+    assert telemetry.api_model == "deepseek-r1"
+    assert telemetry.tokens_in == 180
+    assert telemetry.tokens_out == 70
 
 
 @responses.activate
@@ -77,6 +84,7 @@ def test_deepseek_parses_markdown_wrapped_payload(monkeypatch: pytest.MonkeyPatc
         "id": "deepseek-abc",
         "model": "deepseek-r1",
         "choices": [{"message": {"content": wrapped}}],
+        "usage": {"prompt_tokens": 210, "completion_tokens": 90},
     }
     _add_deepseek_response(payload)
 
@@ -92,3 +100,8 @@ def test_deepseek_parses_markdown_wrapped_payload(monkeypatch: pytest.MonkeyPatc
     parsed, warnings = extract_and_validate(json.dumps(result["raw"]), RPLSampleV1)
     assert parsed.belief.prob_true == pytest.approx(0.63)
     assert warnings == []
+    telemetry = result["telemetry"]
+    assert telemetry.provider == "deepseek"
+    assert telemetry.logical_model == "deepseek-r1"
+    assert telemetry.tokens_in == 210
+    assert telemetry.tokens_out == 90

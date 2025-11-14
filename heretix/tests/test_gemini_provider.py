@@ -32,6 +32,11 @@ class _FakeResponse:
                     }
                 }
             ],
+            "usageMetadata": {
+                "promptTokenCount": 200,
+                "candidatesTokenCount": 80,
+                "totalTokenCount": 280,
+            },
         }
 
     def raise_for_status(self):  # pragma: no cover - nothing to raise
@@ -74,3 +79,9 @@ def test_gemini_rate_limiter_and_payload(monkeypatch: pytest.MonkeyPatch):
     parsed, warnings = extract_and_validate(json.dumps(result["raw"]), RPLSampleV1)
     assert parsed.belief.prob_true == pytest.approx(0.61)
     assert warnings == []
+    telemetry = result["telemetry"]
+    assert telemetry.provider == "google"
+    assert telemetry.logical_model == "gemini25-default"
+    assert telemetry.api_model == "gemini-2.5-real"
+    assert telemetry.tokens_in == 200
+    assert telemetry.tokens_out == 80
