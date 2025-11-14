@@ -72,10 +72,10 @@ def stub_usage(monkeypatch: pytest.MonkeyPatch):
     yield
 
 
-def test_run_check_mock_baseline_returns_runresponse():
-    payload = {
-        "claim": "API mock run bead",
-        "mode": "baseline",
+def _make_payload(mode: str) -> dict:
+    base = {
+        "claim": f"API mock run bead ({mode})",
+        "mode": mode,
         "provider": "openai",
         "logical_model": "gpt5-default",
         "prompt_version": "rpl_g5_v2",
@@ -85,6 +85,13 @@ def test_run_check_mock_baseline_returns_runresponse():
         "max_output_tokens": 128,
         "max_prompt_chars": 2000,
         "mock": True,
+    }
+    return base
+
+
+def test_run_check_mock_baseline_returns_runresponse():
+    payload = {
+        **_make_payload("baseline"),
     }
 
     resp = client.post("/api/checks/run", json=payload)
@@ -96,11 +103,36 @@ def test_run_check_mock_baseline_returns_runresponse():
     assert data["mock"] is True
     assert data["schema_version"] == SCHEMA_VERSION
     assert data["web"] is None
+    assert data["tokens_in"] > 0
+    assert data["tokens_out"] > 0
+    assert data["cost_usd"] is not None and data["cost_usd"] > 0
+    assert data["simple_expl"] is not None
     assert pytest.approx(1.0) == data["combined"]["weight_prior"] + data["combined"]["weight_web"]
 
     # Ensure response conforms to RunResponse and includes required sections
     run_model = RunResponse.model_validate(data)
     assert run_model.aggregation.B == payload["B"]
     assert run_model.sampling.K == payload["K"]
-    assert run_model.prior is not None
+    assert run_model.prior is not None and run_model.prior.compliance_rate is not None
     assert run_model.combined is not None
+    assert run_model.simple_expl is not None
+
+
+def test_run_check_mock_web_mode_includes_web_block():
+    payload = {**_make_payload("web_informed")}
+    resp = client.post("/api/checks/run", json=payload)
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+
+    assert data["provider"] == "openai"
+    assert data["logical_model"] == "gpt5-default"
+    assert data["mode"] == "web_informed"
+    assert data["web"] is not None
+    assert data["weights"]["w_web"] == pytest.approx(0.0)
+    assert data["combined"]["weight_web"] == pytest.approx(0.0)
+    assert data["simple_expl"] is not None
+
+    run_model = RunResponse.model_validate(data)
+    assert run_model.web is not None
+    assert run_model.weights is not None
+    assert run_model.prior is not None
