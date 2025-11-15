@@ -204,8 +204,9 @@ def ensure_schema(database_url: str) -> None:
 
                 for index_name, cols in index_defs.items():
                     if all(col in existing_cols for col in cols):
+                        column_list = ", ".join(f'"{col}"' for col in cols)
                         conn.exec_driver_sql(
-                            f"CREATE INDEX IF NOT EXISTS {index_name} ON checks({','.join(f'"{col}"' for col in cols)})"
+                            f"CREATE INDEX IF NOT EXISTS {index_name} ON checks({column_list})"
                         )
             _MIGRATED_URLS.add(database_url)
             return

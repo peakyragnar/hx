@@ -26,6 +26,7 @@ def test_load_run_config_sets_logical_model_default(tmp_path):
     assert cfg.logical_model == "gpt-5"
     assert cfg.model == "gpt-5"
     assert cfg.provider == "openai"
+    assert cfg.provider_locked is False
 
 
 def test_load_run_config_respects_explicit_logical_model(tmp_path):
@@ -42,3 +43,4 @@ def test_load_run_config_respects_explicit_logical_model(tmp_path):
     assert cfg.logical_model == "gpt5-default"
     assert cfg.model == "gpt5-default"
     assert cfg.provider == "openai"
+    assert cfg.provider_locked is True

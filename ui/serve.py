@@ -37,6 +37,12 @@ MODEL_CHOICES: Dict[str, Dict[str, str]] = {
     "deepseek-r1": {"label": "DeepSeek R1", "cli_model": "deepseek-r1"},
 }
 DEFAULT_MODEL_CODES = ["gpt-5"]
+MODEL_ENV_REQUIREMENTS: Dict[str, tuple[str, ...]] = {
+    "gpt-5": ("OPENAI_API_KEY",),
+    "grok-4": ("XAI_API_KEY", "GROK_API_KEY"),
+    "gemini25-default": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+    "deepseek-r1": ("DEEPSEEK_API_KEY",),
+}
 
 
 def _format_percent(value: Optional[float]) -> str:
@@ -97,6 +103,17 @@ def _collect_lines(simple_block: dict, run: dict) -> List[str]:
     return lines[:3]
 
 
+def _missing_env_reason(cli_model: str) -> Optional[str]:
+    required = MODEL_ENV_REQUIREMENTS.get(cli_model)
+    if not required:
+        return None
+    if any(os.getenv(var) for var in required):
+        return None
+    if len(required) == 1:
+        return f"{required[0]} is not set"
+    return "Missing one of " + ", ".join(required)
+
+
 
 def _render(path: Path, mapping: dict[str, str]) -> bytes:
     html_text = path.read_text(encoding="utf-8")
@@ -155,6 +172,7 @@ class Handler(BaseHTTPRequestHandler):
             raw_models = [form.get("ui_model")]  # legacy single-select
         model_entries: List[Dict[str, str]] = []
         seen_cli = set()
+        skipped_models: List[Dict[str, str]] = []
         for code in raw_models:
             code = (code or "").strip().lower()
             if not code:
@@ -163,6 +181,15 @@ class Handler(BaseHTTPRequestHandler):
             if not entry:
                 continue
             cli_model = entry["cli_model"]
+            reason_missing = _missing_env_reason(cli_model)
+            if reason_missing:
+                skipped_models.append({
+                    "code": code,
+                    "label": entry["label"],
+                    "reason": reason_missing,
+                })
+                logging.warning("UI skipping %s: %s", entry["label"], reason_missing)
+                continue
             if cli_model in seen_cli:
                 continue
             seen_cli.add(cli_model)
@@ -175,13 +202,33 @@ class Handler(BaseHTTPRequestHandler):
                 break
         if not model_entries:
             for fallback_code in DEFAULT_MODEL_CODES:
-                entry = MODEL_CHOICES[fallback_code]
+                entry = MODEL_CHOICES.get(fallback_code)
+                if not entry:
+                    continue
+                cli_model = entry["cli_model"]
+                reason_missing = _missing_env_reason(cli_model)
+                if reason_missing:
+                    skipped_models.append({
+                        "code": fallback_code,
+                        "label": entry["label"],
+                        "reason": reason_missing,
+                    })
+                    logging.warning("UI skipping %s: %s", entry["label"], reason_missing)
+                    continue
                 model_entries.append({
                     "code": fallback_code,
                     "label": entry["label"],
-                    "cli_model": entry["cli_model"],
+                    "cli_model": cli_model,
                 })
+                seen_cli.add(cli_model)
                 break
+        if not model_entries:
+            details = "; ".join(f"{item['label']} ({item['reason']})" for item in skipped_models) or "no providers available"
+            self._err(
+                f"No providers are configured for this environment. {details}",
+                as_json=wants_json,
+            )
+            return
         ui_model_val = model_entries[0]["code"]
         ui_mode_val = (form.get("ui_mode") or "prior").strip()
         model_labels = {
@@ -234,6 +281,7 @@ class Handler(BaseHTTPRequestHandler):
             "model": cli_models[0],
             "prompt_version": prompt_version,
             "models": model_entries,
+            "skipped_models": skipped_models,
             "ui_model": ui_model_label,
             "ui_mode": ui_mode_label,
             "ui_mode_value": ui_mode_val,
@@ -249,6 +297,7 @@ class Handler(BaseHTTPRequestHandler):
                 "mode": ui_mode_val,
                 "mode_label": ui_mode_label,
                 "models": model_entries,
+                "skipped_models": skipped_models,
             })
             return
 
@@ -410,6 +459,9 @@ class Handler(BaseHTTPRequestHandler):
                 "cli_model": job.get("model", "gpt-5"),
                 "code": job.get("model", "gpt-5"),
             }]
+        skipped_models = job.get("skipped_models")
+        if not isinstance(skipped_models, list):
+            skipped_models = []
 
         try:
             tmp_root = TMP_DIR.resolve(strict=True)
@@ -492,22 +544,29 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         models_phrase = f"{len(card_blocks)} model{'s' if len(card_blocks) != 1 else ''} evaluated"
+        skip_note = ""
+        if skipped_models:
+            detail = ", ".join(f"{item.get('label')} ({item.get('reason')})" for item in skipped_models if item.get("label") and item.get("reason"))
+            if detail:
+                skip_note = f" · Skipped: {detail}"
+        model_note_text = f"{models_phrase} · {ui_mode_label}{skip_note}"
         if wants_json:
             self._json({
                 "claim": claim,
-                "model_note": f"{models_phrase} · {ui_mode_label}",
+                "model_note": model_note_text,
                 "mode_label": ui_mode_label,
                 "cards_block": "\n".join(card_blocks),
                 "cards": card_blocks,
                 "runs": runs_section,
                 "models": model_entries,
+                "skipped_models": skipped_models,
             })
         else:
             body = _render(
                 ROOT / "results.html",
                 {
                     "CLAIM": html.escape(claim, quote=True),
-                    "MODEL_NOTE": html.escape(f"{models_phrase} · {ui_mode_label}", quote=True),
+                    "MODEL_NOTE": html.escape(model_note_text, quote=True),
                     "CARDS_BLOCK": "\n".join(card_blocks),
                 },
             )

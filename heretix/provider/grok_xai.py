@@ -29,6 +29,7 @@ _MODEL_ALLOWLIST = {
     "grok-5",
     "grok-5-latest",
 }
+_MODEL_PREFIX_ALLOWLIST = ("grok-4", "grok-5")
 
 
 def _resolve_rate_limits() -> tuple[float, int]:
@@ -149,6 +150,8 @@ def _append_model_warning(meta: Dict[str, Any]) -> None:
         return
     normalized = str(provider_model_id).lower()
     if normalized in _MODEL_ALLOWLIST:
+        return
+    if any(normalized.startswith(prefix) for prefix in _MODEL_PREFIX_ALLOWLIST):
         return
     warning = f"Unexpected provider model id '{provider_model_id}' for Grok adapter"
     meta["model_warning"] = warning

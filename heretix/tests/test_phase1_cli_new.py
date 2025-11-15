@@ -209,6 +209,8 @@ def test_cli_run_multi_model_from_config(tmp_path: Path):
     payload = json.loads(out_path.read_text())
     assert payload.get("requested_models") == ["gpt-5", "grok-4"]
     assert [run["model"] for run in payload["runs"]] == ["gpt-5", "grok-4"]
+    run_ids = [run["run_id"] for run in payload["runs"]]
+    assert len(set(run_ids)) == len(run_ids), "Each model run should produce a unique run_id"
 
 
 def test_cli_run_multi_model_override_flag(tmp_path: Path):
@@ -250,3 +252,5 @@ def test_cli_run_multi_model_override_flag(tmp_path: Path):
     payload = json.loads(out_path.read_text())
     assert payload.get("requested_models") == ["grok-4", "deepseek-r1"]
     assert [run["model"] for run in payload["runs"]] == ["grok-4", "deepseek-r1"]
+    run_ids = [run["run_id"] for run in payload["runs"]]
+    assert len(set(run_ids)) == len(run_ids), "Each override run should generate distinct run_ids"

@@ -109,7 +109,8 @@ def cmd_run(
                 local_cfg = RunConfig(**{**cfg.__dict__})
                 local_cfg.model = model
                 local_cfg.logical_model = model
-                local_cfg.provider = local_cfg.provider or infer_provider_from_model(model)
+                if not local_cfg.provider_locked:
+                    local_cfg.provider = infer_provider_from_model(model)
                 local_cfg.prompt_version = v
                 prompt_file = (
                     Path(local_cfg.prompt_file_path)
@@ -164,7 +165,9 @@ def cmd_run(
         for v in versions:
             local_cfg = RunConfig(**{**cfg.__dict__})
             local_cfg.model = model
-            local_cfg.provider = local_cfg.provider or infer_provider_from_model(model)
+            local_cfg.logical_model = model
+            if not local_cfg.provider_locked:
+                local_cfg.provider = infer_provider_from_model(model)
             local_cfg.prompt_version = v
             typer.echo(f"Running {model}  K={local_cfg.K} R={local_cfg.R}  mode={mode_normalized}  version={v}")
 

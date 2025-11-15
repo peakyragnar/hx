@@ -16,6 +16,7 @@ class RunConfig:
     model: str = "gpt-5"
     logical_model: Optional[str] = None
     provider: Optional[str] = None
+    provider_locked: bool = False
     models: Optional[List[str]] = None
     prompt_version: str = "rpl_g5_v2"
     K: int = 8
@@ -49,14 +50,17 @@ class RuntimeSettings:
 def load_run_config(path: str | Path) -> RunConfig:
     p = Path(path)
     data = yaml.safe_load(p.read_text()) if p.suffix in {".yaml", ".yml"} else json.loads(p.read_text())
+    provider_value = data.get("provider") if isinstance(data, dict) else None
+    provider_explicit = bool(provider_value is not None and str(provider_value).strip())
     cfg = RunConfig(**data)
+    cfg.provider_locked = provider_explicit
     cfg.models = _normalize_models(cfg.models)
     if cfg.models:
         cfg.model = cfg.models[0]
     if cfg.logical_model is None:
         cfg.logical_model = cfg.model
     cfg.model = cfg.logical_model
-    if not cfg.provider:
+    if not cfg.provider_locked:
         cfg.provider = infer_provider_from_model(cfg.logical_model)
     # Env fallback (config takes precedence)
     if cfg.seed is None and os.getenv("HERETIX_RPL_SEED") is not None:

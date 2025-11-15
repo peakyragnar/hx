@@ -2,6 +2,7 @@ provider: "deepseek"
 default_model: "deepseek-r1-default"
 api_model_map:
   deepseek-r1-default: "deepseek-reasoner"
+  deepseek-r1: "deepseek-reasoner"
 supports_json_schema: false
 supports_json_mode: true
 supports_tools: false

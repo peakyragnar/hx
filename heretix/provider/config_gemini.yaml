@@ -1,7 +1,7 @@
 provider: "google"
 default_model: "gemini25-default"
 api_model_map:
-  gemini25-default: "gemini-2.5-pro-exp-0825"
+  gemini25-default: "gemini-2.5-pro"
 supports_json_schema: true
 supports_json_mode: true
 supports_tools: true

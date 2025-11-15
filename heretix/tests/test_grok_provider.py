@@ -133,3 +133,9 @@ def test_grok_adapter_fallbacks_to_chat_completion(monkeypatch: pytest.MonkeyPat
     assert telemetry.provider == "xai"
     assert telemetry.logical_model == "grok-4"
     assert telemetry.api_model == "mystery-model"
+
+
+def test_grok_adapter_accepts_versioned_model_ids():
+    meta = {"provider_model_id": "GROK-4-0709"}
+    grok_xai._append_model_warning(meta)
+    assert "model_warning" not in meta

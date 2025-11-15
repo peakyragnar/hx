@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import os
 import time
@@ -48,6 +49,9 @@ def _resolve_rate_limits() -> tuple[float, int]:
 
 _GEMINI_RPS, _GEMINI_BURST = _resolve_rate_limits()
 _GEMINI_RATE_LIMITER = RateLimiter(rate_per_sec=_GEMINI_RPS, burst=_GEMINI_BURST)
+_MAX_OUTPUT_CAP = 8192
+_DEFAULT_OUTPUT_LIMIT = 1024
+_REASONING_MIN_OUTPUT = 4000
 
 
 def _schema_instructions() -> str:
@@ -103,6 +107,41 @@ def _usage_counts(data: Dict[str, Any]) -> tuple[int, int]:
     return tokens_in, tokens_out
 
 
+def _effective_output_tokens(api_model: str, requested: Optional[int]) -> int:
+    try:
+        parsed = int(requested) if requested is not None else _DEFAULT_OUTPUT_LIMIT
+    except (TypeError, ValueError):
+        parsed = _DEFAULT_OUTPUT_LIMIT
+    if parsed <= 0:
+        parsed = _DEFAULT_OUTPUT_LIMIT
+    normalized = (api_model or "").lower()
+    if "gemini-2.5-pro" in normalized and parsed < _REASONING_MIN_OUTPUT:
+        parsed = _REASONING_MIN_OUTPUT
+    return min(parsed, _MAX_OUTPUT_CAP)
+
+
+def _format_http_error(response: Optional[requests.Response]) -> str:
+    if response is None:
+        return "no response payload"
+    detail: Optional[str] = None
+    try:
+        data = response.json()
+        if isinstance(data, dict):
+            error_obj = data.get("error")
+            if isinstance(error_obj, dict):
+                message = error_obj.get("message")
+                status = error_obj.get("status")
+                detail = str(message or status)
+            if not detail:
+                detail = json.dumps(data)[:500]
+    except ValueError:
+        pass
+    if not detail:
+        text = (response.text or "").strip()
+        detail = text[:500] if text else "no body"
+    return detail
+
+
 def score_claim(
     *,
     claim: str,
@@ -121,6 +160,7 @@ def score_claim(
 
     api_model = _resolve_api_model(model)
     api_key = _resolve_api_key()
+    max_tokens = _effective_output_tokens(api_model, max_output_tokens)
     payload = {
         "system_instruction": {"role": "system", "parts": [{"text": instructions}]},
         "contents": [
@@ -132,7 +172,7 @@ def score_claim(
         "generationConfig": {
             "response_mime_type": "application/json",
             "temperature": 0.0,
-            "max_output_tokens": max_output_tokens or 1024,
+            "max_output_tokens": max_tokens,
         },
     }
 
@@ -141,12 +181,23 @@ def score_claim(
 
     _GEMINI_RATE_LIMITER.acquire()
     t0 = time.time()
-    response = requests.post(url, params=params, json=payload, timeout=60)
+    try:
+        response = requests.post(url, params=params, json=payload, timeout=60)
+    except requests.RequestException as exc:
+        raise RuntimeError(f"Gemini HTTP request failed: {exc}") from exc
+
     try:
         response.raise_for_status()
+    except requests.HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else response.status_code
+        detail = _format_http_error(exc.response or response)
+        raise RuntimeError(f"Gemini request failed (HTTP {status}): {detail}") from exc
+
+    try:
         data = response.json()
-    except Exception as exc:
-        raise RuntimeError(f"Gemini request failed: {exc}") from exc
+    except ValueError as exc:
+        snippet = (response.text or "").strip()[:500]
+        raise RuntimeError(f"Gemini request returned non-JSON payload: {snippet}") from exc
 
     latency_ms = int((time.time() - t0) * 1000)
 
