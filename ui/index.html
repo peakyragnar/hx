@@ -647,19 +647,23 @@
         }
       });
 
-      function toggleLoading(show, claimText, modeValue) {
+      function toggleLoading(show, claimText, modeValue, modelEntries) {
         if (!loadingOverlay) return;
         var mode = modeValue || (modeSelect ? modeSelect.value : 'prior');
         var isWeb = mode === 'internet-search' || mode === 'web_informed';
+        var entries = Array.isArray(modelEntries) && modelEntries.length ? modelEntries : collectSelectedEntries();
+        var firstLabel = entries.length ? (entries[0].label || entries[0].code || 'GPT‑5') : 'GPT‑5';
+        var subjectText = entries.length === 1 ? firstLabel : 'the selected models';
+        var possessiveText = entries.length === 1 ? firstLabel + '’s' : 'the selected models’';
         if (loadingHeadline) {
           loadingHeadline.textContent = isWeb
-            ? "Synthesizing GPT‑5’s web-informed view of this claim…"
-            : "Measuring how GPT‑5’s training data anchors this claim…";
+            ? "Synthesizing " + possessiveText + " web-informed view of this claim…"
+            : "Measuring how " + possessiveText + " training data anchors this claim…";
         }
         if (loadingStep2) {
           loadingStep2.textContent = isWeb
             ? "Gathering and filtering fresh web snippets."
-            : "Asking GPT‑5 with internal knowledge only.";
+            : "Asking " + subjectText + " with internal knowledge only.";
         }
         if (loadingStep3) {
           loadingStep3.textContent = isWeb
@@ -1409,7 +1413,7 @@
             submitBtn.textContent = 'Running…';
           }
           setStatus('Comparing ' + selectedEntries.length + ' model' + (selectedEntries.length === 1 ? '' : 's') + '…', 'info');
-          toggleLoading(true, value, modeValue);
+          toggleLoading(true, value, modeValue, selectedEntries);
           try {
             if (isLocalHarness) {
               var jobPayload = await startLocalHarnessJob();
@@ -1478,7 +1482,7 @@
               submitBtn.disabled = false;
               submitBtn.textContent = originalBtnText;
             }
-            toggleLoading(false, null, modeValue);
+            toggleLoading(false, null, modeValue, selectedEntries);
           }
         });
       }
