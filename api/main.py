@@ -50,6 +50,8 @@ from .billing import (
 )
 from heretix_api.routes_checks import evaluate_web_informed
 
+logger = logging.getLogger(__name__)
+
 app = FastAPI(title="Heretix API", version="0.1.0")
 
 allowed_origins = {
@@ -173,8 +175,12 @@ def run_check(
         result = artifacts.result
     except HTTPException:
         raise
-    except Exception as exc:  # pragma: no cover - let FastAPI handle responses
+    except (RuntimeError, ValueError) as exc:
+        logger.exception("run_check failed for claim %s", claim)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Unexpected run failure for claim %s", claim)
+        raise HTTPException(status_code=500, detail="internal server error")
 
     aggregation = result.get("aggregation", {})
     aggregates = dict(result.get("aggregates", {}))

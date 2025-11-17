@@ -8,6 +8,7 @@ import time
 from typing import Any, Dict, Iterable, Optional
 
 import requests
+from requests.adapters import HTTPAdapter
 
 from heretix.ratelimit import RateLimiter
 
@@ -49,6 +50,8 @@ def _resolve_rate_limits() -> tuple[float, int]:
 
 _GEMINI_RPS, _GEMINI_BURST = _resolve_rate_limits()
 _GEMINI_RATE_LIMITER = RateLimiter(rate_per_sec=_GEMINI_RPS, burst=_GEMINI_BURST)
+_SESSION = requests.Session()
+_SESSION.mount("https://", HTTPAdapter(pool_connections=8, pool_maxsize=16))
 _MAX_OUTPUT_CAP = 8192
 _DEFAULT_OUTPUT_LIMIT = 1024
 _REASONING_MIN_OUTPUT = 4000
@@ -182,7 +185,7 @@ def score_claim(
     _GEMINI_RATE_LIMITER.acquire()
     t0 = time.time()
     try:
-        response = requests.post(url, params=params, json=payload, timeout=60)
+        response = _SESSION.post(url, params=params, json=payload, timeout=60)
     except requests.RequestException as exc:
         raise RuntimeError(f"Gemini HTTP request failed: {exc}") from exc
 

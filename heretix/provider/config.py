@@ -5,10 +5,13 @@ from pathlib import Path
 from typing import Any, Dict, Tuple
 
 import yaml
+import logging
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 
 _RATE_LIMIT_CACHE: dict[str, Any] | None = None
+_LOGGER = logging.getLogger(__name__)
+_RATE_LIMIT_WARNED: set[str] = set()
 
 
 def _load_config() -> dict[str, Any]:
@@ -34,7 +37,8 @@ def _load_config() -> dict[str, Any]:
                 data = {}
             _RATE_LIMIT_CACHE = data
             return _RATE_LIMIT_CACHE
-    except Exception:
+    except Exception as exc:
+        _LOGGER.warning("Failed to load provider config from %s: %s", path, exc)
         _RATE_LIMIT_CACHE = {}
         return _RATE_LIMIT_CACHE
 
@@ -70,6 +74,10 @@ def get_rate_limits(provider: str, model: str | None = None) -> Tuple[float, int
             except Exception:
                 pass
 
+    key = f"{provider}:{model or '*'}"
+    if key not in _RATE_LIMIT_WARNED:
+        _LOGGER.warning("Falling back to default rate limits for %s (%s)", provider, model or "any")
+        _RATE_LIMIT_WARNED.add(key)
     return 2.0, 2
 
 

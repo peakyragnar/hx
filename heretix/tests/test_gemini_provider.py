@@ -79,7 +79,7 @@ def test_gemini_rate_limiter_and_payload(monkeypatch: pytest.MonkeyPatch):
         called["json"] = json
         return _FakeResponse()
 
-    monkeypatch.setattr(gemini_google.requests, "post", fake_post)
+    monkeypatch.setattr(gemini_google, "_SESSION", type("Sess", (), {"post": staticmethod(fake_post)})())
 
     result = gemini_google.score_claim(
         claim="Do tariffs cause inflation?",
@@ -111,7 +111,7 @@ def test_gemini_http_error_is_surface(monkeypatch: pytest.MonkeyPatch):
         lambda: {"google": type("Cfg", (), {"api_model_map": {"gemini25-default": "gemini-2.5-real"}})()},
     )
     resp = _ErrorResponse(status=403, message="Permission denied for this model")
-    monkeypatch.setattr(gemini_google.requests, "post", lambda *a, **k: resp)
+    monkeypatch.setattr(gemini_google, "_SESSION", type("Sess", (), {"post": staticmethod(lambda *a, **k: resp)})())
 
     with pytest.raises(RuntimeError) as excinfo:
         gemini_google.score_claim(
