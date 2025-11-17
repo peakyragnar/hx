@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import time
+import atexit
 from typing import Any, Dict, Iterable, Optional
 
 import requests
@@ -52,6 +53,7 @@ _GEMINI_RPS, _GEMINI_BURST = _resolve_rate_limits()
 _GEMINI_RATE_LIMITER = RateLimiter(rate_per_sec=_GEMINI_RPS, burst=_GEMINI_BURST)
 _SESSION = requests.Session()
 _SESSION.mount("https://", HTTPAdapter(pool_connections=8, pool_maxsize=16))
+atexit.register(_SESSION.close)
 _MAX_OUTPUT_CAP = 8192
 _DEFAULT_OUTPUT_LIMIT = 1024
 _REASONING_MIN_OUTPUT = 4000
@@ -64,7 +66,7 @@ def _schema_instructions() -> str:
 def _resolve_api_key() -> str:
     api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if not api_key:
-        raise RuntimeError("Set GEMINI_API_KEY (or GOOGLE_API_KEY) to call Gemini.")
+        raise RuntimeError("Gemini API key is not configured.")
     return api_key
 
 

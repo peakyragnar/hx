@@ -16,7 +16,7 @@ from .telemetry import LLMTelemetry
 from heretix.schemas import RPLSampleV1
 
 try:  # pragma: no cover - import guard mirrors openai adapter
-    from openai import OpenAI
+    from openai import OpenAI, OpenAIError
 except Exception as exc:  # pragma: no cover - defer failure until use
     raise RuntimeError("openai SDK is required for the Grok adapter") from exc
 
@@ -199,7 +199,7 @@ def score_claim(
     t0 = time.time()
     try:
         resp = client.responses.create(**payload)
-    except Exception as exc:
+    except OpenAIError as exc:
         resp = _call_chat_completion(
             client,
             instructions=instructions,
@@ -208,6 +208,8 @@ def score_claim(
             max_output_tokens=max_tokens,
         )
         _LOGGER.debug("Grok responses.create failed (%s); used chat.completions fallback", exc)
+    except Exception:
+        raise
 
     latency_ms = int((time.time() - t0) * 1000)
 

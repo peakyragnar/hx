@@ -6,41 +6,45 @@ from typing import Any, Dict, Tuple
 
 import yaml
 import logging
+import threading
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 
 _RATE_LIMIT_CACHE: dict[str, Any] | None = None
 _LOGGER = logging.getLogger(__name__)
 _RATE_LIMIT_WARNED: set[str] = set()
+_CONFIG_LOCK = threading.Lock()
+_CAP_LOCK = threading.Lock()
 
 
 def _load_config() -> dict[str, Any]:
     """Load provider configuration from HERETIX_PROVIDER_CONFIG if present."""
 
     global _RATE_LIMIT_CACHE
-    if _RATE_LIMIT_CACHE is not None:
-        return _RATE_LIMIT_CACHE
+    with _CONFIG_LOCK:
+        if _RATE_LIMIT_CACHE is not None:
+            return _RATE_LIMIT_CACHE
 
-    path = os.getenv("HERETIX_PROVIDER_CONFIG")
-    if not path:
-        _RATE_LIMIT_CACHE = {}
-        return _RATE_LIMIT_CACHE
-
-    try:
-        p = Path(path)
-        if not p.exists():
+        path = os.getenv("HERETIX_PROVIDER_CONFIG")
+        if not path:
             _RATE_LIMIT_CACHE = {}
             return _RATE_LIMIT_CACHE
-        with p.open("r", encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
-            if not isinstance(data, dict):
-                data = {}
-            _RATE_LIMIT_CACHE = data
+
+        try:
+            p = Path(path)
+            if not p.exists():
+                _RATE_LIMIT_CACHE = {}
+                return _RATE_LIMIT_CACHE
+            with p.open("r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+                if not isinstance(data, dict):
+                    data = {}
+                _RATE_LIMIT_CACHE = data
+                return _RATE_LIMIT_CACHE
+        except Exception as exc:
+            _LOGGER.warning("Failed to load provider config from %s: %s", path, exc)
+            _RATE_LIMIT_CACHE = {}
             return _RATE_LIMIT_CACHE
-    except Exception as exc:
-        _LOGGER.warning("Failed to load provider config from %s: %s", path, exc)
-        _RATE_LIMIT_CACHE = {}
-        return _RATE_LIMIT_CACHE
 
 
 def get_rate_limits(provider: str, model: str | None = None) -> Tuple[float, int]:
@@ -140,46 +144,47 @@ def load_provider_capabilities(*, refresh: bool = False) -> Dict[str, ProviderCa
     """Return ProviderCapabilities records keyed by provider id."""
 
     global _CAPABILITIES_CACHE
-    if _CAPABILITIES_CACHE is not None and not refresh:
+    with _CAP_LOCK:
+        if _CAPABILITIES_CACHE is not None and not refresh:
+            return _CAPABILITIES_CACHE
+
+        capability_paths = _resolve_capability_paths()
+        records: Dict[str, ProviderCapabilities] = {}
+        errors: list[str] = []
+
+        for path in capability_paths:
+            try:
+                with path.open("r", encoding="utf-8") as handle:
+                    raw = yaml.safe_load(handle) or {}
+            except FileNotFoundError:
+                continue
+            except Exception as exc:
+                errors.append(f"{path}: {exc}")
+                continue
+
+            if not isinstance(raw, dict) or not raw:
+                errors.append(f"{path}: empty or invalid capability payload")
+                continue
+
+            try:
+                caps = ProviderCapabilities.model_validate(raw)
+            except ValidationError as exc:
+                raise ValueError(f"Invalid provider capability file {path}: {exc}") from exc
+
+            records[caps.provider] = caps
+
+        if not records:
+            details = f" ({'; '.join(errors)})" if errors else ""
+            raise RuntimeError(
+                "Provider capability files not found or empty. "
+                "Add config_*.yaml under heretix/provider or set "
+                f"{PROVIDER_CAPABILITIES_ENV} to a YAML file/directory{details}."
+            )
+
+        PROVIDERS.clear()
+        PROVIDERS.update(records)
+        _CAPABILITIES_CACHE = records
         return _CAPABILITIES_CACHE
-
-    capability_paths = _resolve_capability_paths()
-    records: Dict[str, ProviderCapabilities] = {}
-    errors: list[str] = []
-
-    for path in capability_paths:
-        try:
-            with path.open("r", encoding="utf-8") as handle:
-                raw = yaml.safe_load(handle) or {}
-        except FileNotFoundError:
-            continue
-        except Exception as exc:
-            errors.append(f"{path}: {exc}")
-            continue
-
-        if not isinstance(raw, dict) or not raw:
-            errors.append(f"{path}: empty or invalid capability payload")
-            continue
-
-        try:
-            caps = ProviderCapabilities.model_validate(raw)
-        except ValidationError as exc:
-            raise ValueError(f"Invalid provider capability file {path}: {exc}") from exc
-
-        records[caps.provider] = caps
-
-    if not records:
-        details = f" ({'; '.join(errors)})" if errors else ""
-        raise RuntimeError(
-            "Provider capability files not found or empty. "
-            "Add config_*.yaml under heretix/provider or set "
-            f"{PROVIDER_CAPABILITIES_ENV} to a YAML file/directory{details}."
-        )
-
-    PROVIDERS.clear()
-    PROVIDERS.update(records)
-    _CAPABILITIES_CACHE = records
-    return _CAPABILITIES_CACHE
 
 
 def reset_provider_capabilities_cache() -> None:

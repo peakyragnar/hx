@@ -49,6 +49,7 @@ def test_openai_rate_limiter_invoked(monkeypatch: pytest.MonkeyPatch):
     called = {"count": 0}
 
     monkeypatch.setattr(openai_gpt5, "_OPENAI_RATE_LIMITER", Limiter(called))
+    monkeypatch.setattr(openai_gpt5, "_OPENAI_CLIENT", None)
     monkeypatch.setattr(openai_gpt5, "load_provider_capabilities", lambda: {})
     client = FakeClient()
     monkeypatch.setattr(openai_gpt5, "OpenAI", lambda: client)
@@ -74,6 +75,7 @@ def test_openai_rate_limiter_invoked(monkeypatch: pytest.MonkeyPatch):
 def test_openai_resolves_logical_model(monkeypatch: pytest.MonkeyPatch):
     called = {"count": 0}
     monkeypatch.setattr(openai_gpt5, "_OPENAI_RATE_LIMITER", Limiter(called))
+    monkeypatch.setattr(openai_gpt5, "_OPENAI_CLIENT", None)
 
     caps_obj = type("Caps", (), {"api_model_map": {"gpt5-default": "gpt-5.2025-01-15"}})()
     monkeypatch.setattr(openai_gpt5, "load_provider_capabilities", lambda: {"openai": caps_obj})

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from openai import OpenAIError
 
 from heretix.provider import grok_xai
 from heretix.tests._samples import make_rpl_sample
@@ -76,7 +77,7 @@ class _FailingResponses:
         self._parent = parent
 
     def create(self, **kwargs):  # pragma: no cover - exercised via fallback
-        raise RuntimeError("boom")
+        raise OpenAIError("boom")
 
 
 class _FallbackClient(_FakeClient):

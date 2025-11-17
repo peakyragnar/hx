@@ -117,6 +117,12 @@ def test_strip_markdown_json_errors_without_json():
         strip_markdown_json("no json here")
 
 
+def test_strip_markdown_json_rejects_large_payload():
+    payload = "{" + (" " * 100_050) + "}"
+    with pytest.raises(ValueError):
+        strip_markdown_json(payload)
+
+
 def test_extract_and_validate_happy_path():
     raw = json.dumps(_sample_payload())
     parsed, warnings = extract_and_validate(raw, RPLSampleV1)

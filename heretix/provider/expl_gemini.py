@@ -43,7 +43,7 @@ _GEMINI_RATE_LIMITER = RateLimiter(rate_per_sec=_GEMINI_RPS, burst=_GEMINI_BURST
 def _resolve_api_key() -> str:
     api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if not api_key:
-        raise RuntimeError("Set GEMINI_API_KEY (or GOOGLE_API_KEY) for Gemini narration.")
+        raise RuntimeError("Gemini API key is not configured.")
     return api_key
 
 

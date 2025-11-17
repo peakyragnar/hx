@@ -5,6 +5,8 @@ import hashlib
 from typing import Any, Dict, Optional
 
 import os
+import atexit
+import threading
 from heretix.ratelimit import RateLimiter
 try:
     # Optional provider-config support; falls back to env/defaults if absent
@@ -88,7 +90,7 @@ def score_claim(
     t0 = time.time()
     _OPENAI_RATE_LIMITER.acquire()
     # Create a fresh client per call for thread-safety under concurrency
-    client = OpenAI()
+    client = _get_openai_client()
     try:
         resp = client.responses.create(
             model=api_model,
@@ -154,6 +156,28 @@ else:
     _burst = int(os.getenv("HERETIX_OPENAI_BURST", "2"))
 
 _OPENAI_RATE_LIMITER = RateLimiter(rate_per_sec=float(_rps), burst=int(_burst))
+_CLIENT_LOCK = threading.Lock()
+_OPENAI_CLIENT: Optional[OpenAI] = None
+
+
+def _get_openai_client() -> OpenAI:
+    global _OPENAI_CLIENT
+    with _CLIENT_LOCK:
+        if _OPENAI_CLIENT is None:
+            _OPENAI_CLIENT = OpenAI()
+        return _OPENAI_CLIENT
+
+
+def _close_openai_client() -> None:
+    client = _OPENAI_CLIENT
+    if client and hasattr(client, "close"):
+        try:
+            client.close()
+        except Exception:
+            pass
+
+
+atexit.register(_close_openai_client)
 
 from .registry import register_score_fn
 
