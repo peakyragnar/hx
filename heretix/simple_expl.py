@@ -164,15 +164,15 @@ def compose_simple_expl(
         )
         summary_tail = " Fresh web reporting fed into this verdict."
     elif web_block is not None:
-        context_line = "The web lens did not surface usable articles in this run, so the model leaned on its prior knowledge."
-        summary_tail = " No usable web articles cleared the filters, so the result mirrors the prior."
+        context_line = "The web lens did not surface usable articles in this run, so this mirrors the baseline verdict."
+        summary_tail = " No usable web articles cleared the filters, so this mirrors the baseline verdict."
     else:
         context_line = "This web-informed request fell back to the model’s prior because the web resolver returned nothing new."
         summary_tail = " The web resolver returned nothing new, so this mirrors the model’s prior."
 
     trimmed_lines = [ln for ln in lines if ln][:3]
     if not trimmed_lines:
-        trimmed_lines = [context_line or "This verdict relied on the model’s prior knowledge."]
+        trimmed_lines = [context_line or "No additional evidence was available, so this mirrors the baseline verdict."]
 
     return {
         "title": "Why the web‑informed verdict looks this way",
@@ -369,7 +369,7 @@ def compose_baseline_simple_expl(
         narrative_lines.extend(_generic_lines(verdict)[:3])
 
     final_lines: List[str] = []
-    _append_unique(final_lines, "This verdict relies only on the model’s prior knowledge; no live web evidence was added.")
+    _append_unique(final_lines, "This verdict reflects only the model’s internal knowledge; no live web evidence was added.")
 
     if narrative_lines:
         _append_unique(final_lines, narrative_lines[0])
