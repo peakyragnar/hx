@@ -20,7 +20,7 @@ from heretix.provider.utils import infer_provider_from_model
 from heretix.explanations import extract_reasons
 from heretix.pipeline import PipelineOptions, perform_run
 from heretix.constants import SCHEMA_VERSION
-from heretix.schemas import CombinedBlockV1, PriorBlockV1, SimpleExplV1, WebBlockV1
+from heretix.schemas import CombinedBlockV1, PriorBlockV1, SimpleExplV1, WebBlockV1, WebEvidenceStats
 
 from .auth import complete_magic_link, get_current_user, handle_magic_link, sign_out
 from .config import settings
@@ -368,6 +368,34 @@ def _build_prior_block_v1(payload: Dict[str, object], compliance_rate: float) ->
     )
 
 
+def _coerce_non_negative_int(value: object) -> Optional[int]:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
+def _coerce_non_negative_float(value: object) -> Optional[float]:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
+def _sanitize_citations(value: object) -> list[str]:
+    if not isinstance(value, (list, tuple, set)):
+        return []
+    citations: list[str] = []
+    for item in value:
+        if isinstance(item, str):
+            cleaned = item.strip()
+            if cleaned:
+                citations.append(cleaned)
+    return citations
+
+
 def _build_web_block_v1(payload: Optional[Dict[str, object]], weights: Optional[Dict[str, float]]) -> Optional[WebBlockV1]:
     if not payload:
         return None
@@ -377,11 +405,43 @@ def _build_web_block_v1(payload: Optional[Dict[str, object]], weights: Optional[
     prob_true = float(payload.get("p", 0.0))
     strength_val = (weights or {}).get("strength")
     evidence_strength = _evidence_strength_label(strength_val)
+    resolved_flag = payload.get("resolved")
+    if isinstance(resolved_flag, bool):
+        resolved_bool = resolved_flag
+    elif resolved_flag is None:
+        resolved_bool = None
+    else:
+        resolved_bool = None
+    resolved_truth_val = payload.get("resolved_truth")
+    resolved_truth = resolved_truth_val if isinstance(resolved_truth_val, bool) else None
+    resolved_reason_raw = payload.get("resolved_reason")
+    resolved_reason = None
+    if isinstance(resolved_reason_raw, str):
+        resolved_reason = resolved_reason_raw.strip() or None
+    resolved_citations = _sanitize_citations(payload.get("resolved_citations"))
+    raw_evidence = payload.get("evidence")
+    evidence_payload = raw_evidence if isinstance(raw_evidence, dict) else {}
+    evidence_model = None
+    if evidence_payload:
+        evidence_model = WebEvidenceStats(
+            n_docs=_coerce_non_negative_int(evidence_payload.get("n_docs")),
+            n_domains=_coerce_non_negative_int(evidence_payload.get("n_domains")),
+            median_age_days=_coerce_non_negative_float(evidence_payload.get("median_age_days")),
+        )
     return WebBlockV1(
         prob_true=prob_true,
         ci_lo=ci_lo,
         ci_hi=ci_hi,
         evidence_strength=evidence_strength,
+        resolved=resolved_bool,
+        resolved_truth=resolved_truth,
+        resolved_reason=resolved_reason,
+        resolved_citations=resolved_citations,
+        support=_coerce_non_negative_int(payload.get("support")),
+        contradict=_coerce_non_negative_int(payload.get("contradict")),
+        domains=_coerce_non_negative_int(payload.get("domains")),
+        evidence=evidence_model,
+        resolved_debug_votes=payload.get("resolved_debug_votes"),
     )
 
 
