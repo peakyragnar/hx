@@ -14,9 +14,9 @@ class FakeUsage:
 
 
 class FakeResponse:
-    def __init__(self):
+    def __init__(self, model_name: str = "gpt-5"):
         self.output_text = json.dumps(make_rpl_sample(0.5))
-        self.model = "gpt-5"
+        self.model = model_name
         self.id = "resp-1"
         self.created = 0
         self.usage = FakeUsage()
@@ -28,7 +28,7 @@ class FakeResponses:
 
     def create(self, **kwargs):
         self._parent.calls.append(kwargs)
-        return FakeResponse()
+        return FakeResponse(kwargs.get("model", "gpt-5"))
 
 
 class FakeClient:
@@ -49,6 +49,7 @@ def test_openai_rate_limiter_invoked(monkeypatch: pytest.MonkeyPatch):
     called = {"count": 0}
 
     monkeypatch.setattr(openai_gpt5, "_OPENAI_RATE_LIMITER", Limiter(called))
+    monkeypatch.setattr(openai_gpt5, "load_provider_capabilities", lambda: {})
     client = FakeClient()
     monkeypatch.setattr(openai_gpt5, "OpenAI", lambda: client)
 
@@ -68,3 +69,27 @@ def test_openai_rate_limiter_invoked(monkeypatch: pytest.MonkeyPatch):
     assert telemetry.api_model == "gpt-5"
     assert telemetry.tokens_in == FakeUsage.input_tokens
     assert telemetry.tokens_out == FakeUsage.output_tokens
+
+
+def test_openai_resolves_logical_model(monkeypatch: pytest.MonkeyPatch):
+    called = {"count": 0}
+    monkeypatch.setattr(openai_gpt5, "_OPENAI_RATE_LIMITER", Limiter(called))
+
+    caps_obj = type("Caps", (), {"api_model_map": {"gpt5-default": "gpt-5.2025-01-15"}})()
+    monkeypatch.setattr(openai_gpt5, "load_provider_capabilities", lambda: {"openai": caps_obj})
+    client = FakeClient()
+    monkeypatch.setattr(openai_gpt5, "OpenAI", lambda: client)
+
+    result = openai_gpt5.score_claim(
+        claim="test",
+        system_text="system",
+        user_template="template",
+        paraphrase_text="{CLAIM}",
+        model="gpt5-default",
+    )
+
+    assert called["count"] == 1
+    assert client.calls and client.calls[0]["model"] == "gpt-5.2025-01-15"
+    telemetry = result["telemetry"]
+    assert telemetry.logical_model == "gpt5-default"
+    assert telemetry.api_model == "gpt-5.2025-01-15"

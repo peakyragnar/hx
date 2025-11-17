@@ -8,9 +8,10 @@ import os
 from heretix.ratelimit import RateLimiter
 try:
     # Optional provider-config support; falls back to env/defaults if absent
-    from .config import get_rate_limits  # type: ignore
+    from .config import get_rate_limits, load_provider_capabilities  # type: ignore
 except Exception:  # pragma: no cover - defensive import guard
     get_rate_limits = None  # type: ignore
+    load_provider_capabilities = None  # type: ignore
 
 from openai import OpenAI
 
@@ -50,6 +51,19 @@ def _extract_output_text(resp: Any) -> Optional[str]:
     return None
 
 
+def _resolve_api_model(logical_model: str) -> str:
+    if not load_provider_capabilities:
+        return logical_model
+    try:
+        caps = load_provider_capabilities()
+    except Exception:
+        return logical_model
+    record = caps.get("openai") if isinstance(caps, dict) else None
+    if record and logical_model in record.api_model_map:
+        return record.api_model_map[logical_model]
+    return logical_model
+
+
 def score_claim(
     *,
     claim: str,
@@ -70,13 +84,14 @@ def score_claim(
     full_instructions = system_text + "\n\n" + schema_instructions
     prompt_sha256 = hashlib.sha256((full_instructions + "\n\n" + user_text).encode("utf-8")).hexdigest()
 
+    api_model = _resolve_api_model(model)
     t0 = time.time()
     _OPENAI_RATE_LIMITER.acquire()
     # Create a fresh client per call for thread-safety under concurrency
     client = OpenAI()
     try:
         resp = client.responses.create(
-            model=model,
+            model=api_model,
             instructions=full_instructions,
             input=[{"role": "user", "content": [{"type": "input_text", "text": user_text}]}],
             max_output_tokens=max_output_tokens,
@@ -85,7 +100,7 @@ def score_claim(
     except Exception as e:
         if "reasoning" in str(e):
             resp = client.responses.create(
-                model=model,
+                model=api_model,
                 instructions=full_instructions,
                 input=[{"role": "user", "content": [{"type": "input_text", "text": user_text}]}],
                 max_output_tokens=max_output_tokens,
@@ -98,7 +113,7 @@ def score_claim(
     raw_text = _extract_output_text(resp)
     raw_obj, sample_payload, warnings = parse_schema_from_text(raw_text, RPLSampleV1)
 
-    provider_model_id = getattr(resp, "model", model)
+    provider_model_id = getattr(resp, "model", api_model)
     response_id = getattr(resp, "id", None) or getattr(resp, "response_id", None)
     created_ts = int(getattr(resp, "created", int(time.time())))
     tokens_in, tokens_out = _extract_usage(resp)
