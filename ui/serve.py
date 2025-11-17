@@ -739,27 +739,13 @@ class Handler(BaseHTTPRequestHandler):
         combined = run.get("combined") if isinstance(run.get("combined"), dict) else {}
         aggregates = run.get("aggregates") if isinstance(run.get("aggregates"), dict) else {}
         simple_block = run.get("simple_expl") if isinstance(run.get("simple_expl"), dict) else {}
-        prior_block = run.get("prior") if isinstance(run.get("prior"), dict) else {}
         web_block = run.get("web") if isinstance(run.get("web"), dict) else None
-        weights_block = run.get("weights") if isinstance(run.get("weights"), dict) else {}
 
         probability = combined.get("p")
         if probability is None:
             probability = aggregates.get("prob_true_rpl")
         percent_text = _format_percent(probability)
         verdict_text = combined.get("label") or verdict_label(probability)
-
-        ci_vals = combined.get("ci95")
-        if not (isinstance(ci_vals, (list, tuple)) and len(ci_vals) >= 2):
-            ci_vals = aggregates.get("ci95")
-        ci_lo = ci_vals[0] if isinstance(ci_vals, (list, tuple)) and len(ci_vals) >= 1 else None
-        ci_hi = ci_vals[1] if isinstance(ci_vals, (list, tuple)) and len(ci_vals) >= 2 else None
-        ci_range = f"{_format_percent(ci_lo)} – {_format_percent(ci_hi)}"
-        ci_width = _format_number(aggregates.get("ci_width"))
-        stability = _format_number(aggregates.get("stability_score"), digits=2)
-        stability_band = aggregates.get("stability_band")
-        compliance = _format_percent(aggregates.get("rpl_compliance_rate"))
-        cache_hits = _format_percent(aggregates.get("cache_hit_rate"))
 
         model_label = meta.get("label") or run.get("model") or "Model"
         pill_text = f"{model_label} · {ui_mode_label}".strip()
@@ -796,70 +782,6 @@ class Handler(BaseHTTPRequestHandler):
                 "</div>"
             )
 
-        metric_items = [
-            ("CI 95% range", ci_range),
-            ("CI width", ci_width),
-            ("Template stability", f"{stability}" + (f" ({stability_band})" if stability_band else "")),
-            ("Policy compliance", compliance),
-            ("Cache hit rate", cache_hits),
-        ]
-        metric_block = "".join(
-            f"<div><div class=\"metric-label\">{html.escape(label)}</div>"
-            f"<div class=\"metric-value\">{html.escape(value or '--')}</div></div>"
-            for label, value in metric_items
-        )
-
-        prior_ci = prior_block.get("ci95") if isinstance(prior_block.get("ci95"), (list, tuple)) else None
-        prior_ci_text = (
-            f"{_format_percent(prior_ci[0])} – {_format_percent(prior_ci[1])}"
-            if prior_ci and len(prior_ci) >= 2
-            else "--% – --%"
-        )
-        prior_section = (
-            f"<h4>Training-only (model prior)</h4>"
-            f"<p>Baseline probability {html.escape(_format_percent(prior_block.get('p')))} "
-            f"with 95% CI {html.escape(prior_ci_text)}. "
-            f"Template stability score {html.escape(_format_number(prior_block.get('stability'), digits=2))}.</p>"
-        )
-
-        web_section = ""
-        if is_web_mode:
-            if web_block:
-                evidence = web_block.get("evidence") if isinstance(web_block.get("evidence"), dict) else {}
-                docs = int(evidence.get("n_docs") or 0)
-                domains = int(evidence.get("n_domains") or 0)
-                median_age = evidence.get("median_age_days")
-                recency_text = (
-                    f"median age ≈ {int(median_age)} days" if isinstance(median_age, (int, float)) else "fresh sources"
-                )
-                web_section = (
-                    "<h4>Web evidence (recent)</h4>"
-                    f"<p>{docs} docs across {domains} domains, {html.escape(recency_text)}. "
-                    "The web resolver funnels only policy-compliant evidence into this verdict.</p>"
-                )
-            else:
-                web_section = (
-                    "<h4>Web evidence (recent)</h4>"
-                    "<p>Waiting for web results. This run retained the model prior.</p>"
-                )
-
-        weight_section = ""
-        if weights_block:
-            try:
-                web_weight_val = float(weights_block.get("w_web") or 0.0)
-            except (TypeError, ValueError):
-                web_weight_val = 0.0
-            web_weight_val = max(0.0, min(1.0, web_weight_val))
-            prior_weight_val = max(0.0, min(1.0, 1.0 - web_weight_val))
-            w_web = _format_percent(web_weight_val)
-            w_prior = _format_percent(prior_weight_val)
-            weight_section = (
-                "<h4>How we combine</h4>"
-                f"<p>Current weighting: {html.escape(w_web)} web · "
-                f"{html.escape(w_prior)} prior."
-                " We default to the prior when web evidence is limited.</p>"
-            )
-
         summary_for_copy = "\n".join([line for line in [title_text, summary_text, *lines] if line])
         summary_attr = html.escape(summary_for_copy, quote=True)
 
@@ -874,15 +796,6 @@ class Handler(BaseHTTPRequestHandler):
             card_parts.append(f"<ul class=\"card-lines\">{lines_html}</ul>")
         if resolved_html:
             card_parts.append(resolved_html)
-        card_parts.append(
-            "<details class=\"card-details\">"
-            "<summary>Deeper explanation</summary>"
-            f"<div class=\"metric-grid\">{metric_block}</div>"
-            f"{prior_section}"
-            f"{web_section}"
-            f"{weight_section}"
-            "</details>"
-        )
         card_parts.append(
             f"<button type=\"button\" class=\"btn btn-secondary card-copy\" data-summary=\"{summary_attr}\">Copy summary</button>"
         )
