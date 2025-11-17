@@ -121,6 +121,15 @@ else:
 _OPENAI_EXPL_RATE_LIMITER = RateLimiter(rate_per_sec=float(_rps), burst=int(_burst))
 
 register_expl_adapter(
-    aliases=("gpt-5", "narrator", "simple-expl", "simple-expl-gpt5"),
+    aliases=(
+        "gpt-5",
+        "gpt5-default",
+        "openai-gpt5",
+        "openai:gpt-5",
+        "openai",
+        "narrator",
+        "simple-expl",
+        "simple-expl-gpt5",
+    ),
     fn=write_simple_expl,
 )
