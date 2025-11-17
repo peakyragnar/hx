@@ -216,3 +216,32 @@ def test_parse_schema_from_text_handles_invalid_payload():
     assert raw == {}
     assert sample is None
     assert warnings == ["schema_validation_failed"]
+
+
+def test_parse_schema_from_text_strips_reasoning_content_wrapper():
+    payload = json.dumps(_sample_payload(prob=0.42))
+    wrapped = '{"reasoning_content":"deliberate first"}\n\nHere you go:\n' + payload
+    raw, sample, warnings = parse_schema_from_text(wrapped, RPLSampleV1)
+    assert sample is not None
+    assert sample["belief"]["prob_true"] == pytest.approx(0.42)
+    assert raw["belief"]["prob_true"] == pytest.approx(0.42)
+    assert warnings == []
+
+
+def test_parse_schema_from_text_unwraps_reasoning_response_object():
+    payload = _sample_payload(prob=0.37)
+    wrapped = json.dumps({"reasoning_content": "notes", "response": payload})
+    raw, sample, warnings = parse_schema_from_text(wrapped, RPLSampleV1)
+    assert sample is not None
+    assert sample["belief"]["prob_true"] == pytest.approx(0.37)
+    assert "reasoning_content" not in raw
+    assert warnings == []
+
+
+def test_parse_schema_from_text_parses_nested_json_string_payload():
+    payload = _sample_payload(prob=0.61)
+    wrapped = json.dumps({"reasoning_content": "notes", "response": json.dumps(payload)})
+    raw, sample, warnings = parse_schema_from_text(wrapped, RPLSampleV1)
+    assert sample is not None
+    assert sample["belief"]["prob_true"] == pytest.approx(0.61)
+    assert warnings == []

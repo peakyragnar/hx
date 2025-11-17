@@ -13,7 +13,6 @@ Both surfaces live in `heretix/provider/config.py` and share caching/validation 
   - `heretix/provider/config_openai.yaml`
   - `heretix/provider/config_grok.yaml`
   - `heretix/provider/config_gemini.yaml`
-  - `heretix/provider/config_deepseek.yaml`
 - Each file maps **logical model ids** (e.g., `gpt5-default`, `grok4-default`) to actual API model names and declares feature flags the adapter can inspect at runtime.
 - The schema (validated via Pydantic) is:
 

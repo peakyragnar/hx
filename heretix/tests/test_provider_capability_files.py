@@ -12,7 +12,6 @@ CAP_FILES = {
     "openai": "config_openai.yaml",
     "xai": "config_grok.yaml",
     "google": "config_gemini.yaml",
-    "deepseek": "config_deepseek.yaml",
 }
 
 
@@ -50,10 +49,3 @@ def test_gemini_capability_details():
     assert caps.api_model_map["gemini25-default"].startswith("gemini-2.5")
     assert caps.supports_tools
     assert not caps.supports_seed
-
-
-def test_deepseek_capability_details():
-    caps = _load_capability("deepseek")
-    assert caps.api_model_map["deepseek-r1-default"] == "deepseek-reasoner"
-    assert caps.max_output_tokens >= 4096
-    assert not caps.supports_tools

@@ -38,8 +38,6 @@ _PROVIDER_ALIASES = {
     "google": "gemini",
     "gemini": "gemini",
     "gemini-1.5": "gemini",
-    "deepseek": "deepseek",
-    "deepseek-r1": "deepseek",
 }
 
 

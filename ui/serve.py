@@ -34,14 +34,12 @@ MODEL_CHOICES: Dict[str, Dict[str, str]] = {
     "gpt-5": {"label": "GPT‑5", "cli_model": "gpt-5"},
     "grok-4": {"label": "Grok 4", "cli_model": "grok-4"},
     "gemini-2.5": {"label": "Gemini 2.5", "cli_model": "gemini25-default"},
-    "deepseek-r1": {"label": "DeepSeek R1", "cli_model": "deepseek-r1"},
 }
 DEFAULT_MODEL_CODES = ["gpt-5"]
 MODEL_ENV_REQUIREMENTS: Dict[str, tuple[str, ...]] = {
     "gpt-5": ("OPENAI_API_KEY",),
     "grok-4": ("XAI_API_KEY", "GROK_API_KEY"),
     "gemini25-default": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
-    "deepseek-r1": ("DEEPSEEK_API_KEY",),
 }
 
 
@@ -235,7 +233,6 @@ class Handler(BaseHTTPRequestHandler):
             "gpt-5": "GPT‑5",
             "claude-4.1": "Claude 4.1",
             "grok-4": "Grok 4",
-            "deepseek-r1": "DeepSeek R1",
         }
         mode_labels = {
             "prior": "Internal Knowledge Only (no retrieval)",

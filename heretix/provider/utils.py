@@ -13,8 +13,6 @@ def infer_provider_from_model(model: str | None) -> str:
         return "anthropic"
     if "gemini" in text or "google" in text:
         return "google"
-    if "deepseek" in text or text.endswith("-r1") or "r1" in text:
-        return "deepseek"
     return "openai"
 
 

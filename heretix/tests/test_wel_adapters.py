@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from heretix.provider import wel_deepseek, wel_gemini, wel_grok
+from heretix.provider import wel_gemini, wel_grok
 
 
 def test_wel_grok_adapter_reads_bundle(monkeypatch):
@@ -85,39 +85,3 @@ def test_wel_gemini_adapter_reads_text(monkeypatch):
     assert result["meta"]["provider_model_id"].startswith("models")
     assert result["telemetry"].provider == "google"
 
-
-def test_wel_deepseek_adapter_reads_text(monkeypatch):
-    class FakeResponse:
-        def raise_for_status(self):
-            return None
-
-        def json(self):
-            return {
-                "model": "deepseek-r1",
-                "id": "deep123",
-                "choices": [
-                    {
-                        "message": {
-                            "content": json.dumps(
-                                {
-                                    "stance_prob_true": 0.33,
-                                    "stance_label": "mixed",
-                                    "support_bullets": [],
-                                    "oppose_bullets": [],
-                                    "notes": [],
-                                }
-                            )
-                        }
-                    }
-                ],
-            }
-
-    monkeypatch.setenv("DEEPSEEK_API_KEY", "test")
-    monkeypatch.setattr(wel_deepseek.requests, "post", lambda *a, **k: FakeResponse())
-    monkeypatch.setattr(wel_deepseek._DEEPSEEK_WEL_RATE_LIMITER, "acquire", lambda *a, **k: None)
-
-    result = wel_deepseek.score_wel_bundle(instructions="instr", bundle_text="bundle text", model="deepseek-r1", max_output_tokens=256)
-
-    assert json.loads(result["text"])["stance_label"] == "mixed"
-    assert result["meta"]["provider_model_id"] == "deepseek-r1"
-    assert result["telemetry"].provider == "deepseek"

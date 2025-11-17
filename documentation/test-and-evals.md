@@ -15,7 +15,6 @@ heretix/tests/
   test_openai_provider.py        # Live adapter scaffold (mocked HTTP)
   test_grok_provider.py
   test_gemini_provider.py
-  test_deepseek_provider.py
   test_ui_cards.py               # Landing-page card renderer regression coverage
   test_ui_multiselect.py         # New multi-model input + Promise.allSettled contract
 tests/evals/test_evals_smoke.py  # End-to-end run_evals.py smoke test

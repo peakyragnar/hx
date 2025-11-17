@@ -250,11 +250,6 @@
                 <span class="model-name">Gemini 2.5</span>
                 <span class="model-note">Google</span>
               </label>
-              <label class="model-option">
-                <input type="checkbox" name="ui_model" value="deepseek-r1">
-                <span class="model-name">DeepSeek R1</span>
-                <span class="model-note">DeepSeek</span>
-              </label>
             </fieldset>
             <select name="ui_mode" aria-label="Mode selection">
               <option value="prior" selected>Internal knowledge only</option>
@@ -481,7 +476,6 @@
         "gpt-5": { code: "gpt-5", label: "GPT‑5", provider: "openai", logical_model: "gpt-5" },
         "grok-4": { code: "grok-4", label: "Grok 4", provider: "xai", logical_model: "grok-4" },
         "gemini-2.5": { code: "gemini-2.5", label: "Gemini 2.5", provider: "google", logical_model: "gemini25-default" },
-        "deepseek-r1": { code: "deepseek-r1", label: "DeepSeek R1", provider: "deepseek", logical_model: "deepseek-r1" }
       };
       var MODE_LABELS = {
         "prior": "Internal knowledge only",

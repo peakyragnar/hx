@@ -244,13 +244,13 @@ def test_cli_run_multi_model_override_flag(tmp_path: Path):
             "--model",
             "grok-4",
             "--model",
-            "deepseek-r1",
+            "gemini25-default",
         ],
         env=env,
     )
     assert result.exit_code == 0, result.output
     payload = json.loads(out_path.read_text())
-    assert payload.get("requested_models") == ["grok-4", "deepseek-r1"]
-    assert [run["model"] for run in payload["runs"]] == ["grok-4", "deepseek-r1"]
+    assert payload.get("requested_models") == ["grok-4", "gemini25-default"]
+    assert [run["model"] for run in payload["runs"]] == ["grok-4", "gemini25-default"]
     run_ids = [run["run_id"] for run in payload["runs"]]
     assert len(set(run_ids)) == len(run_ids), "Each override run should generate distinct run_ids"

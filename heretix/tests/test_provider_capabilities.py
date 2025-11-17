@@ -21,7 +21,7 @@ def _reset_capability_cache(monkeypatch: pytest.MonkeyPatch):
 
 def test_loads_builtin_capabilities():
     caps = config.load_provider_capabilities(refresh=True)
-    assert {"openai", "xai", "google", "deepseek"}.issubset(set(caps.keys()))
+    assert {"openai", "xai", "google"}.issubset(set(caps.keys()))
 
     openai = caps["openai"]
     assert openai.default_model == "gpt5-default"

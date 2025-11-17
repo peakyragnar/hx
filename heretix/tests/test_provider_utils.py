@@ -11,6 +11,5 @@ def test_infer_provider_grok():
     assert infer_provider_from_model("XAI:GROK4") == "xai"
 
 
-def test_infer_provider_gemini_and_deepseek():
+def test_infer_provider_gemini():
     assert infer_provider_from_model("gemini25-default") == "google"
-    assert infer_provider_from_model("deepseek-r1") == "deepseek"

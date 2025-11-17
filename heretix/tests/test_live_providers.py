@@ -18,7 +18,6 @@ LIVE_PROVIDERS = [
     ("openai", "gpt-5", "OPENAI_API_KEY"),
     ("xai", "grok-4", "XAI_API_KEY"),
     ("google", "gemini25-default", "GEMINI_API_KEY"),
-    ("deepseek", "deepseek-r1", "DEEPSEEK_API_KEY"),
 ]
 
 

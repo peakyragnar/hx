@@ -63,7 +63,6 @@ def test_build_simple_expl_prompt_uses_context_and_style() -> None:
         ("openai", "Provider notes (OpenAI GPT-5)"),
         ("grok", "Provider notes (xAI Grok)"),
         ("google", "Provider notes (Google Gemini)"),
-        ("deepseek", "Provider notes (DeepSeek R1)"),
     ],
 )
 def test_build_rpl_prompt_includes_provider_specific_text(provider: str, expected: str) -> None:
@@ -82,7 +81,6 @@ def test_build_rpl_prompt_includes_provider_specific_text(provider: str, expecte
         ("openai", "Provider notes (OpenAI GPT-5)"),
         ("grok", "Provider notes (xAI Grok)"),
         ("google", "Provider notes (Google Gemini)"),
-        ("deepseek", "Provider notes (DeepSeek R1)"),
     ],
 )
 def test_build_wel_doc_prompt_includes_provider_specific_text(provider: str, expected: str) -> None:

@@ -18,9 +18,9 @@ def _load_dom() -> tuple[str, BeautifulSoup]:
 def test_model_checkboxes_cover_all_providers():
     _, soup = _load_dom()
     inputs = soup.select('input[name="ui_model"]')
-    assert len(inputs) == 4, "expected four multi-select checkboxes"
+    assert len(inputs) == 3, "expected three multi-select checkboxes"
     values = {el.get("value") for el in inputs}
-    assert values == {"gpt-5", "grok-4", "gemini-2.5", "deepseek-r1"}
+    assert values == {"gpt-5", "grok-4", "gemini-2.5"}
     checked = [el for el in inputs if el.has_attr("checked")]
     assert checked and checked[0]["value"] == "gpt-5"
 
@@ -46,7 +46,6 @@ def test_model_map_defines_provider_and_logical_model():
         "gpt-5": {"provider": "openai", "logical": "gpt-5"},
         "grok-4": {"provider": "xai", "logical": "grok-4"},
         "gemini-2.5": {"provider": "google", "logical": "gemini25-default"},
-        "deepseek-r1": {"provider": "deepseek", "logical": "deepseek-r1"},
     }
     for code, meta in expectations.items():
         pattern = re.compile(

@@ -11,7 +11,6 @@ ALIAS_TO_MODULE = {
     "grok4-default": "heretix.provider.grok_xai",
     "gemini25-default": "heretix.provider.gemini_google",
     "google": "heretix.provider.gemini_google",
-    "deepseek-r1-default": "heretix.provider.deepseek_r1",
 }
 
 

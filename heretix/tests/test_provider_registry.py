@@ -3,7 +3,6 @@ from __future__ import annotations
 import pytest
 
 from heretix.provider import (
-    deepseek_r1,
     gemini_google,
     grok_xai,
     openai_gpt5,
@@ -11,7 +10,6 @@ from heretix.provider import (
     wel_openai,
     wel_grok,
     wel_gemini,
-    wel_deepseek,
     expl_openai,
 )
 
@@ -34,7 +32,6 @@ def test_registry_lists_models_and_errors_on_unknown():
     assert "gpt-5" in models
     assert "grok-4" in models
     assert "gemini-2.5" in models
-    assert "deepseek-r1" in models
 
     with pytest.raises(ValueError):
         registry.get_score_fn("totally-unknown-model")
@@ -46,11 +43,9 @@ def test_registry_maps_grok_aliases():
     assert registry.get_score_fn("grok-5") is grok_xai.score_claim
 
 
-def test_registry_maps_gemini_and_deepseek():
+def test_registry_maps_gemini_models():
     assert registry.get_score_fn("gemini-2.5") is gemini_google.score_claim
     assert registry.get_score_fn("google") is gemini_google.score_claim
-    assert registry.get_score_fn("deepseek-r1") is deepseek_r1.score_claim
-    assert registry.get_score_fn("deepseek:r1") is deepseek_r1.score_claim
 
 
 def test_wel_registry_resolves_openai_adapter():
@@ -70,7 +65,6 @@ def test_wel_registry_maps_other_providers():
     assert registry.get_wel_score_fn("xai:grok-5") is wel_grok.score_wel_bundle
     assert registry.get_wel_score_fn("gemini-2.5") is wel_gemini.score_wel_bundle
     assert registry.get_wel_score_fn("google") is wel_gemini.score_wel_bundle
-    assert registry.get_wel_score_fn("deepseek-r1") is wel_deepseek.score_wel_bundle
 
 
 def test_expl_registry_resolves_narrator():
