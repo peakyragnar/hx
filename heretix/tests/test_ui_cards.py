@@ -52,7 +52,8 @@ def test_build_card_html_baseline_mode():
     assert "class=\"result-card\"" in card_html
     assert "GPT‑5 · Internal knowledge only" in card_html
     assert "67.0%" in card_html or "64%" in card_html
-    assert "Training-only (model prior)" in card_html
+    assert "card-summary-title" in card_html
+    assert "card-summary-body" in card_html
     assert "Copy summary" in card_html
 
 
@@ -95,8 +96,7 @@ def test_build_card_html_web_mode_resolved():
 
     assert "Grok" in card_html
     assert "resolved-note" in card_html
-    assert "Web evidence (recent)" in card_html
-    assert "How we combine" in card_html
+    assert "card-summary-title" in card_html
     assert "Copy summary" in card_html
 
 

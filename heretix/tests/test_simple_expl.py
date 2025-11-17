@@ -340,7 +340,7 @@ class TestComposeSimpleExpl:
         )
 
         assert result["lines"][0].startswith("The web lens did not surface usable articles")
-        assert result["summary"].endswith("No usable web articles cleared the filters, so the result mirrors the prior.")
+        assert result["summary"].endswith("No usable web articles cleared the filters, so this mirrors the baseline verdict.")
 
     def test_caps_lines_to_3_max(self):
         """Should cap content lines to 3 maximum."""
@@ -416,7 +416,7 @@ class TestComposeBaselineSimpleExpl:
             imbalance_ratio=1.05,
         )
 
-        assert result["lines"][0].startswith("This verdict relies only on the model’s prior knowledge")
+        assert result["lines"][0].startswith("This verdict reflects only the model’s internal knowledge")
         banned = ["ci", "stability", "imbalance", "logit"]
         for text in result["lines"]:
             lower = text.lower()
@@ -448,5 +448,5 @@ class TestComposeBaselineSimpleExpl:
         )
 
         assert len(result["lines"]) == 3
-        assert "prior knowledge" in result["lines"][0]
+        assert "internal knowledge" in result["lines"][0]
         assert "leave room for doubt" in " ".join(result["lines"])
