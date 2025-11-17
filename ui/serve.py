@@ -767,12 +767,8 @@ class Handler(BaseHTTPRequestHandler):
 
         title_text = simple_block.get("title") or verdict_text or ""
         summary_text = _extract_summary_text(simple_block, run) or "This model did not return an explanation."
-        summary_bits = []
-        if title_text:
-            summary_bits.append(f"<strong>{html.escape(title_text)}</strong>")
-        if summary_text:
-            summary_bits.append(html.escape(summary_text))
-        summary_clause = " ".join(summary_bits)
+        title_clean = _clean_line(title_text)
+        body_clean = (summary_text or "").strip()
 
         lines = _collect_lines(simple_block, run)
         summary_clean = _clean_line(summary_text)
@@ -797,7 +793,7 @@ class Handler(BaseHTTPRequestHandler):
                 "</div>"
             )
 
-        summary_for_copy = "\n".join([line for line in [title_text, summary_text, *lines] if line])
+        summary_for_copy = "\n".join([line for line in [title_clean or title_text, body_clean or summary_text, *lines] if line])
         summary_attr = html.escape(summary_for_copy, quote=True)
 
         card_parts = [
@@ -805,8 +801,17 @@ class Handler(BaseHTTPRequestHandler):
             f"<div class=\"card-pill\">{html.escape(pill_text)}</div>",
             f"<div class=\"card-percent\">{html.escape(percent_text)}</div>",
             f"<div class=\"card-verdict\">{html.escape(verdict_text)}</div>",
-            f"<p class=\"card-summary\">{summary_clause}</p>",
         ]
+        if title_clean:
+            card_parts.append(f"<div class=\"card-summary-title\">{html.escape(title_clean)}</div>")
+        if body_clean:
+            card_parts.append(
+                f"<p class=\"card-summary card-summary-body\">{html.escape(body_clean)}</p>"
+            )
+        else:
+            card_parts.append(
+                "<p class=\"card-summary card-summary-body\">This model did not return an explanation.</p>"
+            )
         if lines_html:
             card_parts.append(f"<ul class=\"card-lines\">{lines_html}</ul>")
         if resolved_html:

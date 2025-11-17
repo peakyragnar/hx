@@ -47,14 +47,28 @@
     label { display:block; font-size:14px; color:var(--muted); margin-bottom:8px; text-transform:uppercase; letter-spacing:1px; }
     textarea { width:100%; border-radius:12px; border:1px solid rgba(0,255,65,0.35); background:#0b0d0b; color:var(--fg); padding:18px; font-size:17px; line-height:1.5; min-height:150px; resize:none; }
     textarea::placeholder{ color:rgba(191,214,191,0.6); }
-    .form-meta { display:flex; gap:12px; flex-wrap:wrap; margin-top:16px; }
-    .model-select { display:flex; flex-direction:column; border:1px solid var(--border); border-radius:12px; padding:12px; min-width:260px; }
+    .form-meta { display:flex; gap:12px; flex-wrap:wrap; margin-top:16px; align-items:stretch; }
+    .model-select { display:flex; flex-direction:column; border:1px solid var(--border); border-radius:12px; padding:12px; min-width:260px; flex:1 1 280px; }
     .model-select legend { font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); margin-bottom:8px; }
-    .model-option { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:6px 0; font-size:14px; color:var(--fg); }
+    .model-option { display:grid; grid-template-columns:auto 1fr auto; align-items:center; column-gap:12px; padding:8px 0; font-size:14px; color:var(--fg); }
     .model-option input { accent-color:var(--bright); }
-    .model-name { font-weight:600; }
-    .model-note { font-size:12px; color:var(--muted); }
-    select { flex:1; min-width:150px; border-radius:10px; padding:12px; border:1px solid rgba(0,255,65,0.35); background:#0b0d0b; color:var(--fg); font-size:15px; }
+    .model-name { font-weight:600; display:block; }
+    .model-note { font-size:12px; color:var(--muted); letter-spacing:1px; }
+    .mode-select { display:flex; flex-direction:column; flex:1 1 200px; border:1px solid var(--border); border-radius:12px; padding:12px; min-width:200px; position:relative; }
+    .mode-select label { margin-bottom:8px; }
+    .mode-select select {
+      width:100%; flex:1; border-radius:10px; padding:14px 40px 14px 16px;
+      border:1px solid rgba(0,255,65,0.35); background:#0b0d0b; color:var(--fg);
+      font-size:15px; line-height:1.3; appearance:none; -webkit-appearance:none;
+      background-image:
+        linear-gradient(45deg, transparent 50%, var(--fg) 50%),
+        linear-gradient(135deg, var(--fg) 50%, transparent 50%),
+        linear-gradient(to right, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
+      background-position: right 20px center, right 14px center, 0 0;
+      background-repeat: no-repeat;
+      background-size: 7px 7px, 7px 7px, auto;
+    }
+    select { min-width:150px; border-radius:10px; padding:12px; border:1px solid rgba(0,255,65,0.35); background:#0b0d0b; color:var(--fg); font-size:15px; }
     .primary { margin-top:20px; width:100%; padding:16px; font-size:17px; font-weight:600; border-radius:12px; border:0; background:var(--bright); color:#041105; cursor:pointer; box-shadow:0 16px 40px rgba(0,255,65,0.15); transition:transform 0.2s ease, box-shadow 0.2s ease; }
     .primary:hover { transform:translateY(-2px); box-shadow:0 18px 46px rgba(0,255,65,0.25); }
     .footnote { margin-top:12px; font-size:13px; color:var(--muted); text-align:center; }
@@ -79,6 +93,8 @@
     .card-pill { display:inline-flex; align-items:center; padding:6px 12px; border-radius:999px; border:1px solid rgba(0,255,65,0.35); font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--bright); background:rgba(0,255,65,0.08); }
     .card-percent { font-size:clamp(48px,6vw,72px); font-weight:700; color:var(--bright); text-shadow:0 0 26px rgba(0,255,65,0.35); line-height:1; }
     .card-verdict { font-size:16px; text-transform:uppercase; letter-spacing:2px; color:var(--muted); }
+    .card-summary-title { margin:0 0 4px; font-size:18px; font-weight:600; color:var(--bright); letter-spacing:0.5px; }
+    .card-summary-body { margin:0; }
     .card-summary { margin:0; font-size:16px; line-height:1.6; color:var(--fg); }
     .card-lines { margin:0; padding-left:20px; color:var(--muted); line-height:1.5; }
     .card-lines li { margin-bottom:6px; }
@@ -251,11 +267,13 @@
                 <span class="model-note">Google</span>
               </label>
             </fieldset>
-            <select name="ui_mode" aria-label="Mode selection">
-              <option value="prior" selected>Internal knowledge only</option>
-              <option value="internet-search">Internet search</option>
-              <option value="user-data" disabled>User evidence · coming soon</option>
-            </select>
+            <div class="mode-select">
+              <label for="ui_mode">Mode</label>
+              <select id="ui_mode" name="ui_mode" aria-label="Mode selection">
+                <option value="prior" selected>Internal knowledge only</option>
+                <option value="internet-search">Internet search</option>
+              </select>
+            </div>
           </div>
           <div id="usage-meter" class="usage-meter hidden" aria-live="polite"></div>
           <button class="primary" type="submit">Ask the model</button>
@@ -968,17 +986,19 @@
         verdictEl.textContent = verdictText || '';
         card.appendChild(verdictEl);
 
-        var summaryPara = document.createElement('p');
-        summaryPara.className = 'card-summary';
-        var titleText = simpleBlock.title || verdictInfo.headline;
-        var summaryText = getSimpleSummary(simpleBlock, runEntry) || verdictInfo.text;
+        var titleRaw = simpleBlock.title || verdictInfo.headline || '';
+        var titleText = cleanLine(titleRaw);
         if (titleText) {
-          var strong = document.createElement('strong');
-          strong.textContent = titleText;
-          summaryPara.appendChild(strong);
-          summaryPara.appendChild(document.createTextNode(' '));
+          var titleEl = document.createElement('div');
+          titleEl.className = 'card-summary-title';
+          titleEl.textContent = titleText;
+          card.appendChild(titleEl);
         }
-        summaryPara.appendChild(document.createTextNode(summaryText || 'This model did not return an explanation.'));
+        var bodyRaw = getSimpleSummary(simpleBlock, runEntry) || verdictInfo.text || 'This model did not return an explanation.';
+        var bodyText = (bodyRaw || '').trim() || 'This model did not return an explanation.';
+        var summaryPara = document.createElement('p');
+        summaryPara.className = 'card-summary card-summary-body';
+        summaryPara.textContent = bodyText;
         card.appendChild(summaryPara);
 
         var lines = collectSimpleLines(simpleBlock, runEntry);
@@ -1090,8 +1110,7 @@
 
         card.appendChild(details);
 
-        var summaryPayload = [titleText, summaryText].concat(lines).filter(Boolean).join('
-');
+        var summaryPayload = [titleText || titleRaw, bodyText].concat(lines).filter(Boolean).join('\n');
         var copyBtn = document.createElement('button');
         copyBtn.type = 'button';
         copyBtn.className = 'btn btn-secondary card-copy';
