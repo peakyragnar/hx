@@ -140,6 +140,20 @@ def _missing_env_reason(cli_model: str) -> Optional[str]:
     return "Missing one of " + ", ".join(required)
 
 
+def _model_subject_text(entries: List[Dict[str, str]]) -> tuple[str, str]:
+    labels = [
+        item.get("label") or item.get("code") or item.get("cli_model") or "GPT‑5"
+        for item in entries
+        if isinstance(item, dict)
+    ]
+    if not labels:
+        return "GPT‑5", "GPT‑5’s"
+    if len(labels) == 1:
+        base = labels[0]
+        return base, f"{base}’s"
+    return "the selected models", "the selected models’"
+
+
 
 def _render(path: Path, mapping: dict[str, str]) -> bytes:
     html_text = path.read_text(encoding="utf-8")
@@ -328,15 +342,16 @@ class Handler(BaseHTTPRequestHandler):
 
         # Return a running page with meta refresh to /wait
         is_web_mode = ui_mode_val == "internet-search"
+        subject_text, possessive_text = _model_subject_text(model_entries)
         loading_headline = (
-            "Synthesizing GPT‑5’s web-informed view of this claim…"
+            f"Synthesizing {possessive_text} web-informed view of this claim…"
             if is_web_mode
-            else "Measuring how GPT‑5’s training data anchors this claim…"
+            else f"Measuring how {possessive_text} training data anchors this claim…"
         )
         step2_text = (
             "Gathering and filtering fresh web snippets."
             if is_web_mode
-            else "Asking GPT‑5 with internal knowledge only."
+            else f"Asking {subject_text} with internal knowledge only."
         )
         step3_text = (
             "Preparing the web-informed verdict."
