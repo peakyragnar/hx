@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 
 import pytest
 
+pytest.importorskip("tldextract")
+
 from heretix_wel.providers.tavily import TavilyRetriever
 
 

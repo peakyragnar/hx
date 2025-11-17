@@ -98,3 +98,30 @@ def test_build_card_html_web_mode_resolved():
     assert "Web evidence (recent)" in card_html
     assert "How we combine" in card_html
     assert "Copy summary" in card_html
+
+
+def test_build_card_html_handles_bullets_only_simple_expl():
+    handler = _make_handler()
+    run = {
+        "combined": {"p": 0.15, "ci95": [0.1, 0.2], "label": "Likely false"},
+        "aggregates": {
+            "prob_true_rpl": 0.15,
+            "ci95": [0.1, 0.2],
+            "ci_width": 0.1,
+            "stability_score": 0.8,
+            "rpl_compliance_rate": 1.0,
+            "cache_hit_rate": 0.5,
+        },
+        "prior": {"p": 0.12, "ci95": [0.08, 0.18], "stability": 0.76},
+        "simple_expl": {
+            "title": "Plain-language fallback",
+            "body_paragraphs": ["Baseline prior stayed in place."],
+            "bullets": ["No web evidence nudged the result.", "Different phrasings still agreed."],
+        },
+    }
+    meta = {"label": "Gemini 2.5"}
+    card_html = handler._build_card_html(run, meta, "Internal knowledge only", False)
+
+    assert "Plain-language fallback" in card_html
+    assert "No web evidence nudged the result." in card_html
+    assert "Copy summary" in card_html

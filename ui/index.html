@@ -892,10 +892,13 @@
           }
         }
         append(simpleBlock && simpleBlock.lines);
+        append(simpleBlock && simpleBlock.bullets);
         append(simpleBlock && simpleBlock.body_paragraphs);
-        append(runData && runData.explanation_reasons);
         if (!lines.length) {
-          var fallback = cleanLine((simpleBlock && simpleBlock.summary) || runData.explanation_text);
+          append(runData && runData.explanation_reasons);
+        }
+        if (!lines.length) {
+          var fallback = cleanLine(getSimpleSummary(simpleBlock, runData) || runData.explanation_text);
           if (fallback) {
             lines.push(fallback);
           }
@@ -903,11 +906,33 @@
         if (!lines.length) {
           lines.push('No additional context was provided.');
         }
-        var summaryClean = cleanLine((simpleBlock && simpleBlock.summary) || '');
+        var summaryClean = cleanLine(getSimpleSummary(simpleBlock, runData));
         if (summaryClean) {
           lines = lines.filter(function(item){ return item !== summaryClean; });
         }
         return lines.slice(0, 3);
+      }
+
+      function getSimpleSummary(simpleBlock, runData) {
+        var summary = (simpleBlock && typeof simpleBlock.summary === 'string') ? simpleBlock.summary.trim() : '';
+        if (summary) {
+          return summary;
+        }
+        var paragraphs = simpleBlock && simpleBlock.body_paragraphs;
+        if (Array.isArray(paragraphs)) {
+          for (var i = 0; i < paragraphs.length; i++) {
+            var para = typeof paragraphs[i] === 'string' ? paragraphs[i].trim() : '';
+            if (para) {
+              return para;
+            }
+          }
+        }
+        var legacy = (runData && typeof runData.explanation_headline === 'string') ? runData.explanation_headline.trim() : '';
+        if (legacy) {
+          return legacy;
+        }
+        var text = (runData && typeof runData.explanation_text === 'string') ? runData.explanation_text.trim() : '';
+        return text;
       }
 
 
@@ -942,7 +967,7 @@
         var summaryPara = document.createElement('p');
         summaryPara.className = 'card-summary';
         var titleText = simpleBlock.title || verdictInfo.headline;
-        var summaryText = simpleBlock.summary || runEntry.explanation_headline || runEntry.explanation_text || verdictInfo.text;
+        var summaryText = getSimpleSummary(simpleBlock, runEntry) || verdictInfo.text;
         if (titleText) {
           var strong = document.createElement('strong');
           strong.textContent = titleText;

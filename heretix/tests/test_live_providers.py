@@ -8,7 +8,10 @@ import pytest
 from heretix.config import RunConfig
 from heretix.rpl import run_single_version
 
-pytestmark = pytest.mark.live
+RUN_LIVE = bool(os.getenv("HERETIX_RUN_LIVE_TESTS"))
+pytestmark = [pytest.mark.live]
+if not RUN_LIVE:
+    pytestmark.append(pytest.mark.skip(reason="Set HERETIX_RUN_LIVE_TESTS=1 with provider API keys to run live provider tests"))
 
 PROMPT_FILE = str(Path(__file__).resolve().parents[1] / "prompts" / "rpl_g5_v2.yaml")
 TRUE_CLAIM = "The Earth orbits the Sun."

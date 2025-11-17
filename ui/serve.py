@@ -78,11 +78,18 @@ def _clean_line(text: Optional[str]) -> str:
 
 def _collect_lines(simple_block: dict, run: dict) -> List[str]:
     lines: List[str] = []
-    for source in (
+    simple_sources = (
         simple_block.get("lines"),
-        simple_block.get("body_paragraphs"),
-        run.get("explanation_reasons"),
-    ):
+        simple_block.get("bullets"),
+    )
+    paragraph_source = simple_block.get("body_paragraphs")
+    has_simple_content = any(source for source in (*simple_sources, paragraph_source) if source)
+    run_sources = (run.get("explanation_reasons"),) if not has_simple_content else tuple()
+    ordered_sources = [*simple_sources]
+    if paragraph_source:
+        ordered_sources.append(paragraph_source)
+    ordered_sources.extend(run_sources)
+    for source in ordered_sources:
         if not source:
             continue
         for item in source:
@@ -92,13 +99,34 @@ def _collect_lines(simple_block: dict, run: dict) -> List[str]:
             if len(lines) >= 3:
                 return lines
     if not lines:
-        fallback = simple_block.get("summary") or run.get("explanation_text")
+        fallback = simple_block.get("summary")
+        if not fallback:
+            paras = simple_block.get("body_paragraphs")
+            if isinstance(paras, (list, tuple)):
+                fallback = next((p for p in paras if _clean_line(p)), None)
+        if not fallback and not has_simple_content:
+            fallback = run.get("explanation_text")
         cleaned = _clean_line(fallback)
         if cleaned:
             lines.append(cleaned)
     if not lines:
         lines.append("No additional context was provided.")
     return lines[:3]
+
+
+def _extract_summary_text(simple_block: dict, run: dict) -> str:
+    summary = simple_block.get("summary")
+    if isinstance(summary, str) and summary.strip():
+        return summary
+    paras = simple_block.get("body_paragraphs")
+    if isinstance(paras, (list, tuple)):
+        for para in paras:
+            if isinstance(para, str) and para.strip():
+                return para
+    legacy = run.get("explanation_headline") or run.get("explanation_text")
+    if isinstance(legacy, str) and legacy.strip():
+        return legacy
+    return ""
 
 
 def _missing_env_reason(cli_model: str) -> Optional[str]:
@@ -737,12 +765,7 @@ class Handler(BaseHTTPRequestHandler):
         pill_text = f"{model_label} · {ui_mode_label}".strip()
 
         title_text = simple_block.get("title") or verdict_text or ""
-        summary_text = (
-            simple_block.get("summary")
-            or run.get("explanation_headline")
-            or run.get("explanation_text")
-            or "This model did not return an explanation."
-        )
+        summary_text = _extract_summary_text(simple_block, run) or "This model did not return an explanation."
         summary_bits = []
         if title_text:
             summary_bits.append(f"<strong>{html.escape(title_text)}</strong>")
