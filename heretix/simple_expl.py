@@ -429,11 +429,11 @@ def _describe_template_mix(template_count: Optional[int], imbalance_ratio: Optio
     if templates <= 0:
         return None
     if templates >= 8:
-        base = f"We asked the claim about {templates} different ways and the answers pointed the same way."
+        base = "We tried many phrasings and they still leaned the same direction."
     elif templates >= 4:
-        base = f"We tried several phrasings ({templates} in total) and they reinforced the same verdict."
+        base = "Several alternate phrasings landed near the same verdict."
     else:
-        base = f"Even with just {templates} paraphrases, the direction stayed consistent."
+        base = "Even a couple of paraphrases landed in the same direction."
     try:
         imb = float(imbalance_ratio) if imbalance_ratio is not None else None
     except (TypeError, ValueError):

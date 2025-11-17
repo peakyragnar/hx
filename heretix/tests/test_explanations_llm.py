@@ -21,7 +21,7 @@ class FakeTelemetry:
 def test_generate_simple_expl_llm_uses_adapter(monkeypatch: pytest.MonkeyPatch):
     captured = {}
 
-    def fake_prompt(provider: str, *, claim: str, context: str):
+    def fake_prompt(provider: str, *, claim: str, context: str, style: str = "narrator"):
         captured["provider"] = provider
         captured["claim"] = claim
         captured["context"] = context
@@ -55,16 +55,18 @@ def test_generate_simple_expl_llm_uses_adapter(monkeypatch: pytest.MonkeyPatch):
         warning_counts={"json_repaired": 2},
         sampling={"K": 8, "R": 2},
         weights={"w_web": 0.4},
-        model="gpt-5",
+        model="grok-4",
+        provider="grok",
         style="narrator",
     )
 
     assert result["simple_expl"]["title"].startswith("Why")
     assert result["telemetry"]["provider"] == "openai"
-    assert captured["provider"] == "narrator"
+    assert captured["provider"] == "grok"
     assert captured["adapter_kwargs"]["instructions"] == "SYS"
     assert captured["adapter_kwargs"]["user_text"] == "USER"
-    assert '"mode": "web_informed"' in captured["context"]
+    assert "Mode: web_informed" in captured["context"]
+    assert "Verdict:" in captured["context"]
 
 
 def test_generate_simple_expl_llm_raises_on_invalid_payload(monkeypatch: pytest.MonkeyPatch):

@@ -12,6 +12,7 @@ __all__ = [
     "build_wel_instructions",
     "build_wel_doc_prompt",
     "build_simple_expl_prompt",
+    "build_reasoning_prompt",
 ]
 
 
@@ -142,11 +143,66 @@ def build_simple_expl_prompt(
     """Construct the explanation prompt used to narrate prior + web results."""
 
     variant = provider or style or "narrator"
-    system = _compose_system_text("simple_expl", variant, fallback_variant="narrator")
+    normalized_variant = _normalize_provider(variant)
+
+    parts: list[str] = []
+    shared_v2 = _try_load("simple_expl/shared_v2.md")
+    if shared_v2:
+        parts.append(shared_v2)
+    else:
+        shared_v1 = _try_load("simple_expl/shared_v1.md")
+        if shared_v1:
+            parts.append(shared_v1)
+
+    candidate_files: list[str] = []
+    if normalized_variant:
+        candidate_files.append(f"simple_expl/{normalized_variant}_v2.md")
+        candidate_files.append(f"simple_expl/{normalized_variant}_v1.md")
+
+    fallback_variant = _normalize_provider(style) if style else None
+    if fallback_variant and fallback_variant != normalized_variant:
+        candidate_files.append(f"simple_expl/{fallback_variant}_v2.md")
+        candidate_files.append(f"simple_expl/{fallback_variant}_v1.md")
+
+    candidate_files.append("simple_expl/narrator_v1.md")
+
+    for rel in candidate_files:
+        text = _try_load(rel)
+        if text:
+            parts.append(text)
+            break
+
+    if not parts:
+        raise PromptTemplateError("Missing simple explanation prompt content")
+
+    system = "\n\n".join(part for part in parts if part).strip()
     user = (
         f"Claim: {claim.strip()}\n"
         "Context summary:\n"
         f"{context.strip()}\n"
         "Return JSON that matches SimpleExplV1 (title, body_paragraphs, bullets)."
+    )
+    return PromptParts(system=system, user=user)
+
+
+def build_reasoning_prompt(
+    provider: Optional[str] = None,
+    *,
+    claim: str,
+    verdict: str,
+    probability_text: str,
+    context: str,
+) -> PromptParts:
+    """Construct the reasoning paragraph prompt."""
+
+    variant = provider or "narrator"
+    system = _compose_system_text("simple_reason", _normalize_provider(variant), fallback_variant="narrator")
+    user = (
+        f"Claim: {claim.strip()}\n"
+        f"Verdict label: {verdict.strip()}\n"
+        f"Probability: {probability_text.strip()}\n"
+        "Reasoning context:\n"
+        f"{context.strip()}\n"
+        "Respond with 2-3 plain sentences explaining the reasoning for the verdict."
     )
     return PromptParts(system=system, user=user)

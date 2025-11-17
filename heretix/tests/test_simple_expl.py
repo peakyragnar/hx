@@ -434,7 +434,7 @@ class TestComposeBaselineSimpleExpl:
         )
 
         joined = " ".join(result["lines"][1:])
-        assert "10" in joined
+        assert "many phrasings" in joined
         assert "wordings were louder" in joined
 
     def test_baseline_generic_lines_fill_when_no_pattern(self):

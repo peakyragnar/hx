@@ -53,6 +53,7 @@ class PipelineArtifacts:
     artifact_replicates_uri: Optional[str] = None
     artifact_docs_uri: Optional[str] = None
     simple_expl: Optional[Dict[str, Any]] = None
+    reasoning_text: Optional[str] = None
 
 
 logger = logging.getLogger(__name__)
@@ -383,6 +384,8 @@ def perform_run(
         _assign(check, check_updates, "artifact_json_path", artifact_record.manifest_uri)
 
     normalized_reps = [_normalize_replica(rep) for rep in raw_replicates]
+    reasoning_text: Optional[str] = None
+    reasoning_evidence = _collect_reasoning_evidence(normalized_reps)
 
     # Backend-owned Simple View explanation
     simple_expl: Optional[Dict[str, Any]] = None
@@ -399,11 +402,39 @@ def perform_run(
                 warning_counts=(sanitized_web_block or {}).get("warning_counts") if sanitized_web_block else None,
                 sampling=sampling,
                 weights=weights_payload,
+                model=logical_model_value or cfg.model,
+                provider=provider_id,
             )
             simple_expl = llm_result["simple_expl"]
         except Exception:  # pragma: no cover
             logger.exception("Failed to generate LLM narration for run %s", run_id)
             simple_expl = None
+
+    if not use_mock and combined_block_payload is not None:
+        try:
+            from heretix.reasoning_llm import generate_reasoning_paragraph
+
+            verdict_label = str(combined_block_payload.get("label") or "Uncertain")
+            combined_prob_value = float(combined_block_payload.get("p", prior_p))
+            probability_text = f"{int(round(max(0.0, min(1.0, combined_prob_value)) * 100))}%"
+            context_text = _build_reasoning_context(
+                mode=mode,
+                stability_score=stability_score,
+                ci_width=ci_width,
+                evidence_lines=reasoning_evidence,
+            )
+            reasoning_result = generate_reasoning_paragraph(
+                claim=cfg.claim or "",
+                verdict=verdict_label,
+                probability_text=probability_text,
+                context=context_text,
+                model=logical_model_value or cfg.model,
+                provider=provider_id,
+            )
+            reasoning_text = reasoning_result.get("reasoning")
+        except Exception:  # pragma: no cover
+            logger.exception("Failed to generate reasoning paragraph for run %s", run_id)
+            reasoning_text = None
 
     if simple_expl is None:
         if mode == "web_informed" and combined_block_payload is not None and (
@@ -437,6 +468,16 @@ def perform_run(
                 logger.exception("Failed to compose baseline Simple View for run %s", run_id)
                 simple_expl = None
 
+    simple_expl = _normalize_simple_expl_payload(simple_expl)
+    if reasoning_text and simple_expl:
+        paragraphs = list(simple_expl.get("body_paragraphs", []))
+        if reasoning_text not in paragraphs:
+            paragraphs = [reasoning_text] + paragraphs
+        else:
+            paragraphs = [reasoning_text] + [p for p in paragraphs if p != reasoning_text]
+        simple_expl["body_paragraphs"] = paragraphs[:3]
+        simple_expl["reasoning"] = reasoning_text
+
     return PipelineArtifacts(
         result=result,
         prior_block=prior_block_payload,
@@ -452,6 +493,7 @@ def perform_run(
         artifact_replicates_uri=artifact_record.verdicts_uri if artifact_record else None,
         artifact_docs_uri=artifact_record.docs_uri if artifact_record else None,
         simple_expl=simple_expl,
+        reasoning_text=reasoning_text,
     )
 
 
@@ -482,6 +524,109 @@ def _normalize_replica(rep: Any) -> Dict[str, Any]:
         "notes": [str(x) for x in notes],
         "json_valid": bool(json_valid) if json_valid is not None else None,
     }
+
+
+def _normalize_simple_expl_payload(payload: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not payload:
+        return None
+
+    def _clean_list(values: Any) -> list[str]:
+        cleaned: list[str] = []
+        if not isinstance(values, (list, tuple)):
+            return cleaned
+        for value in values:
+            if not isinstance(value, str):
+                value = str(value)
+            text = value.strip()
+            if text and text not in cleaned:
+                cleaned.append(text)
+        return cleaned
+
+    title = str(payload.get("title") or "Why this verdict looks this way").strip()
+    summary = str(payload.get("summary") or "").strip()
+    paragraphs = []
+    bullets = []
+
+    if "body_paragraphs" in payload or "bullets" in payload:
+        paragraphs = _clean_list(payload.get("body_paragraphs"))
+        bullets = _clean_list(payload.get("bullets"))
+    else:
+        legacy_lines = _clean_list(payload.get("lines"))
+        bullets = legacy_lines[:3]
+        if summary:
+            paragraphs = [summary]
+        elif legacy_lines:
+            paragraphs = [legacy_lines[0]]
+
+    if not paragraphs:
+        paragraphs = ["This verdict relies on the model's prior knowledge."]
+    normalized = {
+        "title": title or "Why this verdict looks this way",
+        "body_paragraphs": paragraphs[:3],
+        "bullets": bullets[:4],
+    }
+    normalized["summary"] = summary or paragraphs[0]
+    normalized["lines"] = bullets[:4] if bullets else paragraphs[:3]
+    return normalized
+
+
+def _collect_reasoning_evidence(reps: list[Dict[str, Any]], limit: int = 4) -> list[str]:
+    lines: list[str] = []
+
+    def _append(text: Any) -> None:
+        if not text:
+            return
+        cleaned = " ".join(str(text).split()).strip()
+        if not cleaned:
+            return
+        if cleaned not in lines:
+            lines.append(cleaned)
+
+    for rep in reps or []:
+        for field in ("support_bullets", "oppose_bullets", "notes"):
+            for item in rep.get(field, []) or []:
+                _append(item)
+                if len(lines) >= limit:
+                    return lines
+    return lines
+
+
+def _bucket_stability_label(score: float) -> str:
+    try:
+        val = float(score)
+    except (TypeError, ValueError):
+        val = 0.0
+    if val >= 0.65:
+        return "high"
+    if val >= 0.35:
+        return "medium"
+    return "low"
+
+
+def _bucket_precision_label(ci_width: float) -> str:
+    try:
+        width = float(ci_width)
+    except (TypeError, ValueError):
+        width = 0.0
+    if width <= 0.2:
+        return "narrow"
+    if width <= 0.35:
+        return "moderate"
+    return "wide"
+
+
+def _build_reasoning_context(*, mode: str, stability_score: float, ci_width: float, evidence_lines: list[str]) -> str:
+    lines = [
+        f"Stability level: {_bucket_stability_label(stability_score)}",
+        f"Precision band: {_bucket_precision_label(ci_width)}",
+    ]
+    if evidence_lines:
+        lines.append("Evidence snippets:")
+        for item in evidence_lines:
+            lines.append(f"- {item}")
+    else:
+        lines.append("Evidence snippets: (not available)")
+    return "\n".join(lines)
 def _get_or_create_check(session: Session, run_id: str, env: str) -> Check:
     check = session.scalar(select(Check).where(Check.run_id == run_id))
     if check is None:
