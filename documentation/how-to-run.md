@@ -29,6 +29,7 @@ max_output_tokens: 1024
 Notes:
 - `K` = paraphrase slots; `R` = replicates per slot; `T` = templates used (<= size of the bank in `heretix/prompts/rpl_g5_v2.yaml`).
 - `max_prompt_chars` enforces a hard cap on the composed prompt length (system+schema+user); the run fails fast if exceeded.
+- To compare providers in a single invocation, add a `models` list to the config (e.g., `["gpt-5", "grok-4", "gemini25-default"]`). The CLI currently supports these three models and automatically skips any unsupported entries you include.
 
 ## 4) Optional: Describe the plan (no network)
 ```
@@ -56,6 +57,8 @@ uv run heretix run --config runs/rpl_example.yaml --out runs/rpl_web.json --mode
 ```
 The resulting JSON now contains `prior`, `web`, `combined`, `weights`, and the full web replicates and
 debug votes the UI uses when explaining web-informed verdicts.
+
+When running multiple providers, the CLI prints a warning for any unsupported model in the list (for example, legacy DeepSeek configs) and continues with the remaining supported models.
 
 ## 6) Smoke run (no network)
 For quick iteration without calling the provider:

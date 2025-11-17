@@ -53,7 +53,7 @@ This document captures the current architecture after adding the Postgres schema
 - Production domain: `https://heretix.ai`; preview domain: `https://heretix-ui.vercel.app`.
 - The HTML embeds `<meta name="heretix-api-base" content="https://api.heretix.ai">` and JS fallbacks for local development and preview hosts.
 - Client-side JS handles claim submission, magic-link sign-in, usage meter updates, and redirects to Stripe Checkout.
-- The landing page exposes a multi-select model block (checkboxes named `ui_model`) so users can compare GPT‑5, Grok, Gemini, and DeepSeek simultaneously. `renderMultiResults` renders a card per model using the same neon-styled layout as the single-card results page, keeping the design consistent across desktop/tablet/mobile breakpoints.
+ - The landing page exposes a multi-select model block (checkboxes named `ui_model`) so users can compare GPT‑5, Grok, and Gemini simultaneously. `renderMultiResults` renders a card per model using the same neon-styled layout as the single-card results page, keeping the design consistent across desktop/tablet/mobile breakpoints.
 
 ### Networking & DNS
 - `api.heretix.ai` → CNAME to Render (`heretix-api.onrender.com`).
@@ -134,7 +134,7 @@ This document captures the current architecture after adding the Postgres schema
    ```
 
 ### Future Extensions
-- Additional providers (Claude, Grok, DeepSeek) can be surfaced once the harness plugs in alternate adapters.
+- Additional providers (e.g., Claude) can be surfaced once the harness plugs in alternate adapters; for now the stack supports GPT‑5, Grok‑4, and Gemini 2.5 end to end.
 - Usage exports (Parquet + DuckDB) will enable analytics across SQLite + Neon datasets.
 - Stripe Customer Portal integration would allow self-serve plan management and invoicing.
 
