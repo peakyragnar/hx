@@ -22,6 +22,7 @@ from heretix.db.models import Check
 from heretix.provider.utils import infer_provider_from_model
 from heretix.provider.schema_text import RPL_SAMPLE_JSON_SCHEMA
 from heretix.constants import SCHEMA_VERSION
+from heretix.provider import registry
 
 
 app = typer.Typer(help="Heretix (new) RPL harness")
@@ -94,6 +95,22 @@ def cmd_run(
     override_models = _normalize_model_list(model_name)
     models_to_run = override_models or (cfg.models or [cfg.model])
     models_to_run = _normalize_model_list(models_to_run)
+    if models_to_run:
+        filtered: List[str] = []
+        skipped: List[str] = []
+        for candidate in models_to_run:
+            try:
+                registry.get_score_fn(candidate)
+            except ValueError:
+                skipped.append(candidate)
+                continue
+            filtered.append(candidate)
+        if skipped:
+            typer.echo(
+                f"Skipping unsupported models: {', '.join(skipped)}",
+                err=True,
+            )
+        models_to_run = filtered
     if not models_to_run:
         typer.echo("ERROR: No models specified", err=True)
         raise typer.Exit(1)
