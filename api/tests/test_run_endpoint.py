@@ -171,6 +171,19 @@ def test_run_check_respects_custom_provider_and_logical_model():
     assert run_model.logical_model == "grok-4"
 
 
+def test_run_check_infers_provider_from_logical_model():
+    payload = {
+        **_make_payload("baseline", provider="openai", logical_model="grok-4"),
+    }
+    payload.pop("provider", None)
+
+    resp = client.post("/api/checks/run", json=payload)
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["provider"] == "xai"
+    assert data["logical_model"] == "grok-4"
+
+
 def test_run_check_allows_case_insensitive_mode():
     payload = {
         **_make_payload("baseline"),

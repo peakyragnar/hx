@@ -129,9 +129,8 @@ def run_check(
         raise HTTPException(status_code=402, detail={"reason": reason, "plan": usage_state.plan.name})
 
     logical_model = payload.logical_model or payload.model or settings.rpl_model
-    provider = getattr(payload, "provider", None) or getattr(settings, "rpl_provider", None)
-    if not provider:
-        provider = infer_provider_from_model(logical_model)
+    requested_provider = getattr(payload, "provider", None)
+    provider = requested_provider or infer_provider_from_model(logical_model) or getattr(settings, "rpl_provider", None)
 
     cfg = RunConfig(
         claim=claim,
