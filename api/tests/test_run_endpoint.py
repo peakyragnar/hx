@@ -171,6 +171,17 @@ def test_run_check_respects_custom_provider_and_logical_model():
     assert run_model.logical_model == "grok-4"
 
 
+def test_run_check_allows_case_insensitive_mode():
+    payload = {
+        **_make_payload("baseline"),
+        "mode": "WEB_INFORMED",
+    }
+    resp = client.post("/api/checks/run", json=payload)
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["mode"] == "web_informed"
+
+
 def test_run_check_invalid_provider_returns_400():
     payload = {
         **_make_payload("baseline"),

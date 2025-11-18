@@ -58,6 +58,18 @@ class PipelineArtifacts:
 
 logger = logging.getLogger(__name__)
 
+_CACHE_HIT_THRESHOLD = 0.999
+
+
+def _should_generate_llm_narration(use_mock: bool, combined_block: Optional[Dict[str, Any]], cache_hit_rate: float) -> bool:
+    """Return True if we should call live narration helpers."""
+
+    if use_mock:
+        return False
+    if combined_block is None:
+        return False
+    return cache_hit_rate < _CACHE_HIT_THRESHOLD
+
 
 def resolve_prompt_file(cfg: RunConfig, options: PipelineOptions) -> Path:
     if cfg.prompts_file:
@@ -351,7 +363,7 @@ def perform_run(
         _assign(check, check_updates, "resolved_domains", None)
         _assign(check, check_updates, "resolved_citations", None)
 
-    _assign(check, check_updates, "was_cached", cache_hit_rate >= 0.999)
+    _assign(check, check_updates, "was_cached", cache_hit_rate >= _CACHE_HIT_THRESHOLD)
     provider_model_value = result.get("provider_model_id") or result.get("model", cfg.model)
     _assign(check, check_updates, "provider_model_id", provider_model_value)
     _assign(check, check_updates, "tokens_in", int(tokens_in) if tokens_in is not None else None)
@@ -389,7 +401,8 @@ def perform_run(
 
     # Backend-owned Simple View explanation
     simple_expl: Optional[Dict[str, Any]] = None
-    if not use_mock and combined_block_payload is not None:
+    narration_allowed = _should_generate_llm_narration(use_mock, combined_block_payload, cache_hit_rate)
+    if narration_allowed:
         try:
             from heretix.explanations_llm import generate_simple_expl_llm
 
@@ -410,7 +423,7 @@ def perform_run(
             logger.exception("Failed to generate LLM narration for run %s", run_id)
             simple_expl = None
 
-    if not use_mock and combined_block_payload is not None:
+    if narration_allowed:
         try:
             from heretix.reasoning_llm import generate_reasoning_paragraph
 
