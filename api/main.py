@@ -20,6 +20,7 @@ from heretix.provider.utils import infer_provider_from_model
 from heretix.explanations import extract_reasons
 from heretix.pipeline import PipelineOptions, perform_run
 from heretix.constants import SCHEMA_VERSION
+from heretix.rpl import ProviderResolutionError
 from heretix.schemas import CombinedBlockV1, PriorBlockV1, SimpleExplV1, WebBlockV1, WebEvidenceStats
 
 from .auth import complete_magic_link, get_current_user, handle_magic_link, sign_out
@@ -174,10 +175,10 @@ def run_check(
         result = artifacts.result
     except HTTPException:
         raise
-    except ValueError as exc:
-        logger.warning("Invalid run request for claim %s: %s", claim, exc)
+    except ProviderResolutionError as exc:
+        logger.warning("Invalid provider override for claim %s: %s", claim, exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except RuntimeError as exc:
+    except ValueError as exc:
         logger.exception("run_check failed for claim %s", claim)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except Exception:

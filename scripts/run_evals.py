@@ -63,7 +63,6 @@ def main() -> None:
     parser.add_argument("--out", type=Path, default=Path("evals/eval_results.json"))
     parser.add_argument("--provider", required=True)
     parser.add_argument("--logical-model", required=True)
-    parser.add_argument("--mode", choices=["baseline", "web_informed"], default="baseline")
     parser.add_argument("--prompt-version", default="rpl_g5_v2")
     parser.add_argument("--K", type=int, default=4)
     parser.add_argument("--R", type=int, default=1)
@@ -131,7 +130,7 @@ def main() -> None:
     payload = {
         "provider": args.provider,
         "logical_model": args.logical_model,
-        "mode": args.mode,
+        "mode": "baseline",
         "mock": args.mock,
         "claims_file": str(args.claims_file),
         "results": results,

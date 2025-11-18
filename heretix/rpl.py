@@ -103,6 +103,10 @@ def _normalize_provider_id(provider: Optional[str]) -> Optional[str]:
     return text or None
 
 
+class ProviderResolutionError(ValueError):
+    """Raised when a configured provider override cannot be satisfied."""
+
+
 def _resolve_provider_and_model(provider_hint: Optional[str], logical_model: str) -> tuple[str, str]:
     """Return (provider_id, logical_model) honoring explicit provider overrides."""
 
@@ -115,10 +119,12 @@ def _resolve_provider_and_model(provider_hint: Optional[str], logical_model: str
     try:
         caps = load_provider_capabilities()
     except Exception as exc:
-        raise ValueError(f"Provider override '{provider_hint}' requires provider capability files") from exc
+        raise ProviderResolutionError(
+            f"Provider override '{provider_hint}' requires provider capability files"
+        ) from exc
     record = caps.get(normalized_hint)
     if record is None:
-        raise ValueError(f"Unknown provider '{provider_hint}'")
+        raise ProviderResolutionError(f"Unknown provider '{provider_hint}'")
     resolved_model = record.default_model
     log.info(
         "provider_override_applied",
