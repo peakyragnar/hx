@@ -270,11 +270,16 @@ def cmd_run(
 
 def _build_run_entry(cfg: RunConfig, mode: str, mock: bool, artifacts) -> dict:
     result = artifacts.result
+    provenance_payload = result.get("provenance") or {}
     run_data: dict[str, Any] = {
         "execution_id": result.get("execution_id"),
         "run_id": result.get("run_id"),
         "claim": result.get("claim"),
         "model": result.get("model", cfg.model),
+        "logical_model": result.get("logical_model", cfg.logical_model or cfg.model),
+        "resolved_logical_model": result.get("resolved_logical_model", result.get("model", cfg.model)),
+        "provider": result.get("provider", cfg.provider or infer_provider_from_model(cfg.model)),
+        "provider_model_id": result.get("provider_model_id"),
         "prompt_version": result.get("prompt_version", cfg.prompt_version),
         "mode": mode,
         "schema_version": result.get("schema_version", SCHEMA_VERSION),
@@ -286,14 +291,13 @@ def _build_run_entry(cfg: RunConfig, mode: str, mock: bool, artifacts) -> dict:
         "combined": artifacts.combined_block,
         "weights": artifacts.weights,
         "mock": mock,
+        "tokens_in": result.get("tokens_in"),
+        "tokens_out": result.get("tokens_out"),
+        "cost_usd": result.get("cost_usd"),
+        "warning_counts": result.get("warning_counts"),
         "prompt_file": str(artifacts.prompt_file),
         "simple_expl": artifacts.simple_expl,
-        "provenance": {
-            "rpl": {
-                "prompt_version": result.get("prompt_version", cfg.prompt_version),
-                "model": result.get("model", cfg.model),
-            }
-        },
+        "provenance": provenance_payload,
     }
     if artifacts.wel_provenance:
         run_data["provenance"]["wel"] = artifacts.wel_provenance
