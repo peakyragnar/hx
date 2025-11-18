@@ -63,7 +63,8 @@ _XAI_RATE_LIMITER = RateLimiter(rate_per_sec=_XAI_RPS, burst=_XAI_BURST)
 def _build_client() -> Any:
     api_key = os.getenv("XAI_API_KEY") or os.getenv("GROK_API_KEY")
     if not api_key:
-        raise RuntimeError("Set XAI_API_KEY or GROK_API_KEY for Grok runs.")
+        _LOGGER.error("Grok adapter credentials not configured; see documentation for setup instructions.")
+        raise RuntimeError("Grok adapter credentials missing")
     base_url = os.getenv("XAI_API_BASE") or os.getenv("GROK_API_BASE") or _DEFAULT_API_BASE
     return OpenAI(api_key=api_key, base_url=base_url)
 

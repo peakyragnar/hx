@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Callable, Iterable, Dict
 
 from . import ensure_adapters_loaded
@@ -20,10 +21,23 @@ __all__ = [
 _SCORE_REGISTRY: Dict[str, Callable] = {}
 _WEL_SCORE_REGISTRY: Dict[str, Callable] = {}
 _EXPL_REGISTRY: Dict[str, Callable] = {}
+_ALIAS_RE = re.compile(r"^[a-z0-9][a-z0-9._:-]*$", re.IGNORECASE)
 
 
 def _normalize(name: str) -> str:
     return (name or "").strip().lower()
+
+
+def _validate_alias(name: str) -> str:
+    normalized = _normalize(name)
+    if not normalized:
+        return ""
+    if not _ALIAS_RE.fullmatch(normalized):
+        raise ValueError(
+            "model aliases must start with an alphanumeric character and "
+            "only contain letters, numbers, '.', '_', ':' or '-'"
+        )
+    return normalized
 
 
 def register_score_fn(*, aliases: Iterable[str], fn: Callable) -> None:
@@ -32,7 +46,11 @@ def register_score_fn(*, aliases: Iterable[str], fn: Callable) -> None:
     if not callable(fn):
         raise TypeError("fn must be callable")
 
-    alias_list = [_normalize(alias) for alias in aliases if _normalize(alias)]
+    alias_list = []
+    for alias in aliases:
+        normalized = _validate_alias(alias)
+        if normalized:
+            alias_list.append(normalized)
     if not alias_list:
         raise ValueError("At least one non-empty alias is required")
 
@@ -47,7 +65,7 @@ def get_score_fn(model: str) -> Callable:
     """Return the provider score function for a given model string."""
 
     ensure_adapters_loaded()
-    key = _normalize(model)
+    key = _validate_alias(model)
     if not key:
         raise ValueError("model must be a non-empty string")
     try:
@@ -75,7 +93,11 @@ def register_wel_score_fn(*, aliases: Iterable[str], fn: Callable) -> None:
     if not callable(fn):
         raise TypeError("fn must be callable")
 
-    alias_list = [_normalize(alias) for alias in aliases if _normalize(alias)]
+    alias_list = []
+    for alias in aliases:
+        normalized = _validate_alias(alias)
+        if normalized:
+            alias_list.append(normalized)
     if not alias_list:
         raise ValueError("At least one non-empty alias is required")
 
@@ -90,7 +112,7 @@ def get_wel_score_fn(model: str) -> Callable:
     """Return the WEL provider function for a given model string."""
 
     ensure_adapters_loaded()
-    key = _normalize(model)
+    key = _validate_alias(model)
     if not key:
         raise ValueError("model must be a non-empty string")
     try:
@@ -112,7 +134,11 @@ def register_expl_adapter(*, aliases: Iterable[str], fn: Callable) -> None:
     if not callable(fn):
         raise TypeError("fn must be callable")
 
-    alias_list = [_normalize(alias) for alias in aliases if _normalize(alias)]
+    alias_list = []
+    for alias in aliases:
+        normalized = _validate_alias(alias)
+        if normalized:
+            alias_list.append(normalized)
     if not alias_list:
         raise ValueError("At least one non-empty alias is required")
 
@@ -127,7 +153,7 @@ def get_expl_adapter(model: str) -> Callable:
     """Return the explanation adapter for a given narrator model string."""
 
     ensure_adapters_loaded()
-    key = _normalize(model)
+    key = _validate_alias(model)
     if not key:
         raise ValueError("model must be a non-empty string")
     try:

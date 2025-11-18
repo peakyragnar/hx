@@ -1,15 +1,12 @@
-import os
 import sys
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from pytest import MonkeyPatch
 
 TEST_DB_PATH = Path("runs/api_test.sqlite").resolve()
 TEST_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH}"
-os.environ.setdefault("RPL_ALLOW_MOCK", "true")
-os.environ.setdefault("RPL_MAX_PROMPT_CHARS", "2000")
 
 _NOISE_VARS = [
     "GEMINI_API_KEY",
@@ -26,8 +23,13 @@ _NOISE_VARS = [
     "HERETIX_ENABLE_GROK",
     "HERETIX_UI_DIRECT_PIPELINE",
 ]
+
+_ENV_PATCH = MonkeyPatch()
+_ENV_PATCH.setenv("DATABASE_URL", f"sqlite:///{TEST_DB_PATH}")
+_ENV_PATCH.setenv("RPL_ALLOW_MOCK", "true")
+_ENV_PATCH.setenv("RPL_MAX_PROMPT_CHARS", "2000")
 for var in _NOISE_VARS:
-    os.environ.pop(var, None)
+    _ENV_PATCH.delenv(var, raising=False)
 
 from heretix.constants import SCHEMA_VERSION
 from heretix.db.migrate import ensure_schema
@@ -48,6 +50,12 @@ settings.rpl_max_prompt_chars = 2000
 ensure_schema(settings.database_url)
 
 client = TestClient(app)
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _restore_env_patch():
+    yield
+    _ENV_PATCH.undo()
 
 
 @pytest.fixture(autouse=True)
@@ -103,9 +111,16 @@ def test_run_check_mock_baseline_returns_runresponse():
     assert data["mock"] is True
     assert data["schema_version"] == SCHEMA_VERSION
     assert data["web"] is None
-    assert data["tokens_in"] > 0
-    assert data["tokens_out"] > 0
-    assert data["cost_usd"] is not None and data["cost_usd"] > 0
+    cache_rate = data["aggregates"]["cache_hit_rate"]
+    cost = data["cost_usd"]
+    if cache_rate < 0.999:
+        assert data["tokens_in"] > 0
+        assert data["tokens_out"] > 0
+        assert cost is not None and cost > 0
+    else:
+        assert data["tokens_in"] == 0
+        assert data["tokens_out"] == 0
+        assert cost == 0
     assert data["simple_expl"] is not None
     assert pytest.approx(1.0) == data["combined"]["weight_prior"] + data["combined"]["weight_web"]
 

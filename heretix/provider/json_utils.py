@@ -13,7 +13,7 @@ _REASONING_TAG_RE = re.compile(
 )
 _WRAPPER_KEYS = ("response", "answer", "result", "output", "data", "payload", "content")
 _REASONING_KEYS = {"reasoning_content", "reasoning_trace", "deliberation", "thoughts", "scratchpad"}
-_MAX_SANITIZE_BYTES = 100_000
+_MAX_SANITIZE_BYTES = 20_000  # Keep sanitization bounded to small provider payloads
 
 
 def _find_matching_brace(text: str, start_idx: int) -> int:

@@ -27,7 +27,7 @@ def test_build_web_explanation_basic():
     )
 
     assert headline.startswith("Why the web-informed verdict")
-    assert "0.1" in summary
+    assert "10.0%" in summary
     assert any("Web evidence across" in r for r in reasons)
     assert any("Recent coverage" in r for r in reasons)
 

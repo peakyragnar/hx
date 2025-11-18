@@ -367,8 +367,9 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
         compliant = (json_valid == 1) and (not _has_citation_or_url(txt_concat))
         valid = int(1 if compliant else 0)
         response_chars = len(txt_concat)
+        resp_tokens_est = est_tokens(response_chars)
         with metrics_lock:
-            total_tokens_out += est_tokens(response_chars)
+            total_tokens_out += resp_tokens_est
 
         row = {
             "run_id": "",
@@ -381,7 +382,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             "provider_model_id": meta.get("provider_model_id"),
             "response_id": meta.get("response_id"),
             "created_at": int(time.time()),
-            "tokens_out": None,
+            "tokens_out": int(resp_tokens_est),
             "latency_ms": int(timing.get("latency_ms") or 0),
             "json_valid": valid,
         }
