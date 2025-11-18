@@ -24,6 +24,31 @@ from heretix.provider.schema_text import RPL_SAMPLE_JSON_SCHEMA
 from heretix.constants import SCHEMA_VERSION
 from heretix.provider import registry
 
+_PROVIDER_ENV_REQUIREMENTS = {
+    "openai": ("OPENAI_API_KEY",),
+    "xai": ("XAI_API_KEY", "GROK_API_KEY"),
+    "google": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+}
+
+
+def _require_provider_credentials(providers: List[str]) -> None:
+    missing: List[str] = []
+    for provider in providers:
+        normalized = (provider or "").strip().lower()
+        if not normalized:
+            continue
+        env_options = _PROVIDER_ENV_REQUIREMENTS.get(normalized)
+        if not env_options:
+            continue
+        if not any(os.getenv(name) for name in env_options):
+            missing.append(f"{provider} ({' or '.join(env_options)})")
+    if missing:
+        typer.echo(
+            "ERROR: Missing API keys for provider(s): " + "; ".join(missing),
+            err=True,
+        )
+        raise typer.Exit(1)
+
 
 app = typer.Typer(help="Heretix (new) RPL harness")
 
@@ -87,10 +112,6 @@ def cmd_run(
         typer.echo("ERROR: mode must be 'baseline' or 'web_informed'", err=True)
         raise typer.Exit(1)
 
-    if not mock and not os.getenv("HERETIX_MOCK") and not os.getenv("OPENAI_API_KEY"):
-        typer.echo("ERROR: OPENAI_API_KEY not set (required for live runs)", err=True)
-        raise typer.Exit(1)
-
     cfg = load_run_config(str(config))
     override_models = _normalize_model_list(model_name)
     models_to_run = override_models or (cfg.models or [cfg.model])
@@ -114,6 +135,26 @@ def cmd_run(
     if not models_to_run:
         typer.echo("ERROR: No models specified", err=True)
         raise typer.Exit(1)
+
+    if not mock and not os.getenv("HERETIX_MOCK"):
+        providers_needed: List[str] = []
+        for model in models_to_run:
+            if cfg.provider_locked:
+                provider_id = cfg.provider or infer_provider_from_model(model)
+            else:
+                provider_id = infer_provider_from_model(model)
+            providers_needed.append(provider_id or "openai")
+        # Preserve order while deduplicating
+        seen: set[str] = set()
+        unique_providers = []
+        for provider in providers_needed:
+            key = (provider or "").lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            unique_providers.append(provider)
+        _require_provider_credentials(unique_providers)
+
     cfg.models = models_to_run
     cfg.model = models_to_run[0]
     cfg.logical_model = cfg.model
