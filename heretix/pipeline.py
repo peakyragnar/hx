@@ -416,6 +416,7 @@ def perform_run(
         tokens_in,
         tokens_out,
     )
+    resolved_model_value = result.get("resolved_logical_model", logical_model_value)
     if narration_allowed:
         try:
             from heretix.explanations_llm import generate_simple_expl_llm
@@ -429,7 +430,7 @@ def perform_run(
                 warning_counts=(sanitized_web_block or {}).get("warning_counts") if sanitized_web_block else None,
                 sampling=sampling,
                 weights=weights_payload,
-                model=logical_model_value or cfg.model,
+                model=resolved_model_value or cfg.model,
                 provider=provider_id,
             )
             simple_expl = llm_result["simple_expl"]
@@ -455,7 +456,7 @@ def perform_run(
                 verdict=verdict_label,
                 probability_text=probability_text,
                 context=context_text,
-                model=logical_model_value or cfg.model,
+                model=resolved_model_value or cfg.model,
                 provider=provider_id,
             )
             reasoning_text = reasoning_result.get("reasoning")
