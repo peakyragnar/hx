@@ -225,6 +225,27 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             for label in labels:
                 warning_counts[label] = warning_counts.get(label, 0) + 1
 
+    def _apply_cached_warnings(row_obj: Dict[str, Any]) -> None:
+        raw = row_obj.get("warnings_json")
+        if not raw:
+            return
+        decoded: Any = None
+        if isinstance(raw, str):
+            raw_str = raw.strip()
+            if not raw_str:
+                return
+            try:
+                decoded = json.loads(raw_str)
+            except Exception:
+                return
+        elif isinstance(raw, (list, tuple)):
+            decoded = raw
+        else:
+            return
+        labels = [str(item).strip() for item in decoded if isinstance(item, str) and item.strip()]
+        if labels:
+            _record_warnings(labels)
+
     # Precompute deterministic work list (one entry per attempt)
     class _Work:
         __slots__ = (
@@ -289,6 +310,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             )
             if row:
                 sample_cache_hits += 1
+                _apply_cached_warnings(row)
         if row is None:
             if not cfg.no_cache:
                 sample_cache_misses += 1
@@ -385,6 +407,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             "tokens_out": int(resp_tokens_est),
             "latency_ms": int(timing.get("latency_ms") or 0),
             "json_valid": valid,
+            "warnings_json": json.dumps(adapter_warnings) if adapter_warnings else None,
         }
         sample_cache_set(w.cache_key, row)
         return row

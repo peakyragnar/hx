@@ -107,11 +107,16 @@ def _ensure_db(path: Path | None = None) -> sqlite3.Connection:
             tokens_out INTEGER,
             latency_ms REAL,
             json_valid INTEGER,
+            warnings_json TEXT,
             PRIMARY KEY (cache_key),
             FOREIGN KEY (run_id) REFERENCES runs(run_id)
         )
         """
     )
+    try:
+        conn.execute("ALTER TABLE samples ADD COLUMN warnings_json TEXT")
+    except Exception:
+        pass
     # Executions: immutable per-invocation summaries
     conn.execute(
         """
