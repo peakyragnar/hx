@@ -3,7 +3,7 @@ from heretix.provider.utils import infer_provider_from_model
 
 def test_infer_provider_openai_default():
     assert infer_provider_from_model("gpt-5") == "openai"
-    assert infer_provider_from_model(None) == "openai"
+    assert infer_provider_from_model(None) is None
 
 
 def test_infer_provider_grok():

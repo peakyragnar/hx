@@ -110,7 +110,7 @@ def perform_run(
     aggregates = dict(result.get("aggregates", {}))
     sampling = dict(result.get("sampling", {}))
 
-    provider_id = result.get("provider") or cfg.provider or infer_provider_from_model(cfg.model)
+    provider_id = result.get("provider") or cfg.provider or infer_provider_from_model(cfg.model) or "openai"
     logical_model_value = result.get("logical_model", result.get("model", cfg.model))
     schema_version = result.get("schema_version", SCHEMA_VERSION)
     tokens_in = result.get("tokens_in")

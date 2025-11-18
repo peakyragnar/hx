@@ -30,7 +30,7 @@ def call_wel_once(bundle_text: str, model: str = "gpt-5") -> Tuple[Dict[str, obj
     """
     Evaluate a bundle of snippets using the registered WEL adapter.
     """
-    provider_id = infer_provider_from_model(model)
+    provider_id = infer_provider_from_model(model) or "openai"
     base_instructions = build_wel_instructions(provider_id)
     instructions = f"{base_instructions}\n\n{WEL_SCHEMA}".strip()
     prompt_hash = hashlib.sha256((instructions + bundle_text).encode("utf-8")).hexdigest()

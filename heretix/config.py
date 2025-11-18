@@ -61,7 +61,7 @@ def load_run_config(path: str | Path) -> RunConfig:
         cfg.logical_model = cfg.model
     cfg.model = cfg.logical_model
     if not cfg.provider_locked:
-        cfg.provider = infer_provider_from_model(cfg.logical_model)
+        cfg.provider = infer_provider_from_model(cfg.logical_model) or cfg.provider or "openai"
     # Env fallback (config takes precedence)
     if cfg.seed is None and os.getenv("HERETIX_RPL_SEED") is not None:
         try:

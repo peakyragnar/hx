@@ -111,7 +111,7 @@ def _resolve_provider_and_model(provider_hint: Optional[str], logical_model: str
     """Return (provider_id, logical_model) honoring explicit provider overrides."""
 
     normalized_hint = _normalize_provider_id(provider_hint)
-    inferred = infer_provider_from_model(logical_model)
+    inferred = infer_provider_from_model(logical_model) or "openai"
     if not normalized_hint:
         return inferred, logical_model
     if normalized_hint == inferred:

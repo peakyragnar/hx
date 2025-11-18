@@ -140,9 +140,9 @@ def cmd_run(
         providers_needed: List[str] = []
         for model in models_to_run:
             if cfg.provider_locked:
-                provider_id = cfg.provider or infer_provider_from_model(model)
+                provider_id = cfg.provider or infer_provider_from_model(model) or "openai"
             else:
-                provider_id = infer_provider_from_model(model)
+                provider_id = infer_provider_from_model(model) or "openai"
             providers_needed.append(provider_id or "openai")
         # Preserve order while deduplicating
         seen: set[str] = set()
@@ -168,7 +168,7 @@ def cmd_run(
                 local_cfg.model = model
                 local_cfg.logical_model = model
                 if not local_cfg.provider_locked:
-                    local_cfg.provider = infer_provider_from_model(model)
+                    local_cfg.provider = infer_provider_from_model(model) or "openai"
                 local_cfg.prompt_version = v
                 prompt_file = (
                     Path(local_cfg.prompt_file_path)
@@ -225,7 +225,7 @@ def cmd_run(
             local_cfg.model = model
             local_cfg.logical_model = model
             if not local_cfg.provider_locked:
-                local_cfg.provider = infer_provider_from_model(model)
+                local_cfg.provider = infer_provider_from_model(model) or "openai"
             local_cfg.prompt_version = v
             typer.echo(f"Running {model}  K={local_cfg.K} R={local_cfg.R}  mode={mode_normalized}  version={v}")
 
@@ -285,7 +285,7 @@ def _build_run_entry(cfg: RunConfig, mode: str, mock: bool, artifacts) -> dict:
         "model": result.get("model", cfg.model),
         "logical_model": result.get("logical_model", cfg.logical_model or cfg.model),
         "resolved_logical_model": result.get("resolved_logical_model", result.get("model", cfg.model)),
-        "provider": result.get("provider", cfg.provider or infer_provider_from_model(cfg.model)),
+        "provider": result.get("provider", cfg.provider or infer_provider_from_model(cfg.model) or "openai"),
         "provider_model_id": result.get("provider_model_id"),
         "prompt_version": result.get("prompt_version", cfg.prompt_version),
         "mode": mode,

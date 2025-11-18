@@ -131,7 +131,16 @@ def run_check(
 
     logical_model = payload.logical_model or payload.model or settings.rpl_model
     requested_provider = getattr(payload, "provider", None)
-    provider = requested_provider or infer_provider_from_model(logical_model) or getattr(settings, "rpl_provider", None)
+    default_provider = getattr(settings, "rpl_provider", None)
+    inferred_provider = infer_provider_from_model(logical_model)
+    if requested_provider:
+        provider = requested_provider
+    elif inferred_provider:
+        provider = inferred_provider
+    elif default_provider:
+        provider = default_provider
+    else:
+        provider = "openai"
 
     cfg = RunConfig(
         claim=claim,
@@ -269,7 +278,7 @@ def run_check(
         session.rollback()
         raise
 
-    provider_id = result.get("provider") or cfg.provider or infer_provider_from_model(cfg.model)
+    provider_id = result.get("provider") or cfg.provider or infer_provider_from_model(cfg.model) or "openai"
     logical_model_requested = result.get("logical_model", cfg.logical_model or cfg.model)
     logical_model_resolved = result.get("resolved_logical_model", result.get("model", cfg.model))
     provider_model_id = result.get("provider_model_id")
