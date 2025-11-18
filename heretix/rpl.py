@@ -224,6 +224,9 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
                     "ci_status",
                     {"phase": "final", "B_used": final_B, "job_id": None},
                 )
+                cached_run["tokens_in"] = 0
+                cached_run["tokens_out"] = 0
+                cached_run["cost_usd"] = 0.0
                 log.info(
                     "run_summary",
                     extra={

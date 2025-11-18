@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Literal
+from typing import Dict, List, Optional
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from heretix.schemas import CombinedBlockV1, PriorBlockV1, SimpleExplV1, WebBlockV1
 
 
 class RunRequest(BaseModel):
     claim: str = Field(..., min_length=1, description="The claim to evaluate")
-    mode: Literal["baseline", "web_informed"] = Field("baseline", description="Evaluation mode")
+    mode: str = Field("baseline", description="Evaluation mode (baseline or web_informed)")
     provider: Optional[str] = Field(None, description="Provider id (e.g., openai, xai, google)")
     logical_model: Optional[str] = Field(None, description="Logical model id (e.g., gpt5-default)")
     model: Optional[str] = Field(None, description="Override model id (legacy alias)")
@@ -21,6 +21,16 @@ class RunRequest(BaseModel):
     seed: Optional[int] = None
     no_cache: Optional[bool] = None
     mock: Optional[bool] = Field(None, description="Force mock provider for this run")
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def _normalize_mode(cls, value: str | None) -> str:
+        if value is None or str(value).strip() == "":
+            return "baseline"
+        normalized = str(value).strip().lower()
+        if normalized not in {"baseline", "web_informed"}:
+            raise ValueError("mode must be 'baseline' or 'web_informed'")
+        return normalized
 
 
 class AggregationInfo(BaseModel):
