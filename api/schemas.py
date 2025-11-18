@@ -92,6 +92,7 @@ class RunResponse(BaseModel):
     claim: Optional[str]
     model: str
     logical_model: str
+    resolved_logical_model: Optional[str] = None
     provider: str
     provider_model_id: Optional[str] = None
     prompt_version: str

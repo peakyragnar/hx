@@ -738,6 +738,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
         "claim": cfg.claim,
         "model": cfg.model,
         "logical_model": requested_logical_model,
+        "resolved_logical_model": cfg.model,
         "provider": provider_id,
         "prompt_version": prompt_version_full,
         "sampling": sampling_info,

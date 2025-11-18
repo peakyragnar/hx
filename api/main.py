@@ -270,7 +270,7 @@ def run_check(
         raise
 
     provider_id = result.get("provider") or cfg.provider or infer_provider_from_model(cfg.model)
-    logical_model_result = result.get("logical_model", result.get("model", cfg.model))
+    logical_model_result = result.get("resolved_logical_model", result.get("model", cfg.model))
     provider_model_id = result.get("provider_model_id")
     schema_version = result.get("schema_version", SCHEMA_VERSION)
     tokens_in = result.get("tokens_in")
