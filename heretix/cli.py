@@ -271,6 +271,13 @@ def cmd_run(
 def _build_run_entry(cfg: RunConfig, mode: str, mock: bool, artifacts) -> dict:
     result = artifacts.result
     provenance_payload = result.get("provenance") or {}
+    provenance_payload.setdefault(
+        "rpl",
+        {
+            "prompt_version": result.get("prompt_version", cfg.prompt_version),
+            "model": result.get("model", cfg.model),
+        },
+    )
     run_data: dict[str, Any] = {
         "execution_id": result.get("execution_id"),
         "run_id": result.get("run_id"),
