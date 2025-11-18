@@ -270,7 +270,8 @@ def run_check(
         raise
 
     provider_id = result.get("provider") or cfg.provider or infer_provider_from_model(cfg.model)
-    logical_model_result = result.get("resolved_logical_model", result.get("model", cfg.model))
+    logical_model_requested = result.get("logical_model", cfg.logical_model or cfg.model)
+    logical_model_resolved = result.get("resolved_logical_model", result.get("model", cfg.model))
     provider_model_id = result.get("provider_model_id")
     schema_version = result.get("schema_version", SCHEMA_VERSION)
     tokens_in = result.get("tokens_in")
@@ -284,7 +285,8 @@ def run_check(
     provenance_payload: dict[str, object] = {
         "rpl": {
             "prompt_version": result.get("prompt_version", cfg.prompt_version),
-            "model": logical_model_result,
+            "model": logical_model_resolved,
+            "logical_model": logical_model_requested,
             "provider": provider_id,
             "provider_model_id": provider_model_id,
             "schema_version": schema_version,
@@ -308,7 +310,8 @@ def run_check(
         run_id=run_id,
         claim=result.get("claim"),
         model=result.get("model", cfg.model),
-        logical_model=logical_model_result,
+        logical_model=logical_model_requested,
+        resolved_logical_model=logical_model_resolved,
         provider=provider_id,
         provider_model_id=provider_model_id,
         prompt_version=result.get("prompt_version", cfg.prompt_version),

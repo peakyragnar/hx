@@ -163,12 +163,29 @@ def test_run_check_respects_custom_provider_and_logical_model():
 
     assert data["provider"] == "xai"
     assert data["logical_model"] == "grok-4"
+    assert data["resolved_logical_model"] == "grok-4"
     assert data["prior"] is not None
     assert data["combined"] is not None
 
     run_model = RunResponse.model_validate(data)
     assert run_model.provider == "xai"
     assert run_model.logical_model == "grok-4"
+    assert run_model.resolved_logical_model == "grok-4"
+
+
+def test_run_check_reports_resolved_logical_model_for_override():
+    payload = {
+        **_make_payload("baseline", provider="openai", logical_model="grok-4"),
+    }
+    resp = client.post("/api/checks/run", json=payload)
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["provider"] == "openai"
+    assert data["logical_model"] == "grok-4"
+    assert data["resolved_logical_model"] != data["logical_model"]
+    run_model = RunResponse.model_validate(data)
+    assert run_model.logical_model == "grok-4"
+    assert run_model.resolved_logical_model != run_model.logical_model
 
 
 def test_run_check_infers_provider_from_logical_model():
