@@ -30,8 +30,8 @@ class WebBlockV1(BaseModel):
     resolved_truth: Optional[bool] = None
     resolved_reason: Optional[str] = None
     resolved_citations: List[Dict[str, Any]] = Field(default_factory=list)
-    support: Optional[int] = Field(default=None, ge=0)
-    contradict: Optional[int] = Field(default=None, ge=0)
+    support: Optional[float] = Field(default=None, ge=0.0)
+    contradict: Optional[float] = Field(default=None, ge=0.0)
     domains: Optional[int] = Field(default=None, ge=0)
     evidence: Optional[WebEvidenceStats] = None
     resolved_debug_votes: Optional[Any] = None
