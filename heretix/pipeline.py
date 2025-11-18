@@ -61,12 +61,20 @@ logger = logging.getLogger(__name__)
 _CACHE_HIT_THRESHOLD = 0.999
 
 
-def _should_generate_llm_narration(use_mock: bool, combined_block: Optional[Dict[str, Any]], cache_hit_rate: float) -> bool:
+def _should_generate_llm_narration(
+    use_mock: bool,
+    combined_block: Optional[Dict[str, Any]],
+    cache_hit_rate: float,
+    tokens_in: Optional[int],
+    tokens_out: Optional[int],
+) -> bool:
     """Return True if we should call live narration helpers."""
 
     if use_mock:
         return False
     if combined_block is None:
+        return False
+    if (tokens_in or 0) == 0 and (tokens_out or 0) == 0:
         return False
     return cache_hit_rate < _CACHE_HIT_THRESHOLD
 
@@ -401,7 +409,13 @@ def perform_run(
 
     # Backend-owned Simple View explanation
     simple_expl: Optional[Dict[str, Any]] = None
-    narration_allowed = _should_generate_llm_narration(use_mock, combined_block_payload, cache_hit_rate)
+    narration_allowed = _should_generate_llm_narration(
+        use_mock,
+        combined_block_payload,
+        cache_hit_rate,
+        tokens_in,
+        tokens_out,
+    )
     if narration_allowed:
         try:
             from heretix.explanations_llm import generate_simple_expl_llm

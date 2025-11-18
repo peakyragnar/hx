@@ -227,6 +227,8 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
                 cached_run["tokens_in"] = 0
                 cached_run["tokens_out"] = 0
                 cached_run["cost_usd"] = 0.0
+                cached_run["aggregates"] = dict(cached_run.get("aggregates") or {})
+                cached_run["aggregates"]["cache_hit_rate"] = 1.0
                 log.info(
                     "run_summary",
                     extra={
