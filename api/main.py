@@ -384,16 +384,44 @@ def _coerce_non_negative_float(value: object) -> Optional[float]:
     return parsed if parsed >= 0 else None
 
 
-def _sanitize_citations(value: object) -> list[str]:
+def _sanitize_citations(value: object) -> list[dict[str, object]]:
     if not isinstance(value, (list, tuple, set)):
         return []
-    citations: list[str] = []
+    cleaned: list[dict[str, object]] = []
     for item in value:
-        if isinstance(item, str):
-            cleaned = item.strip()
-            if cleaned:
-                citations.append(cleaned)
-    return citations
+        if isinstance(item, dict):
+            citation: dict[str, object] = {}
+            url = item.get("url")
+            domain = item.get("domain")
+            quote = item.get("quote")
+            stance = item.get("stance")
+            field = item.get("field")
+            val = item.get("value")
+            weight = item.get("weight")
+            published_at = item.get("published_at")
+            if isinstance(url, str) and url.strip():
+                citation["url"] = url.strip()
+            if isinstance(domain, str) and domain.strip():
+                citation["domain"] = domain.strip()
+            if isinstance(quote, str) and quote.strip():
+                citation["quote"] = quote.strip()
+            if isinstance(stance, str) and stance.strip():
+                citation["stance"] = stance.strip()
+            if isinstance(field, str) and field.strip():
+                citation["field"] = field.strip()
+            if val is not None:
+                citation["value"] = val
+            if isinstance(weight, (int, float)):
+                citation["weight"] = float(weight)
+            if isinstance(published_at, str) and published_at.strip():
+                citation["published_at"] = published_at.strip()
+            if citation:
+                cleaned.append(citation)
+        elif isinstance(item, str):
+            stripped = item.strip()
+            if stripped:
+                cleaned.append({"url": stripped})
+    return cleaned
 
 
 def _build_web_block_v1(payload: Optional[Dict[str, object]], weights: Optional[Dict[str, float]]) -> Optional[WebBlockV1]:

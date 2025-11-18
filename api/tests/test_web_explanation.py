@@ -39,7 +39,18 @@ def test_build_web_block_preserves_resolution():
         "resolved": True,
         "resolved_truth": False,
         "resolved_reason": "Resolver disagreed with the claim.",
-        "resolved_citations": [" https://example.com/post "],
+        "resolved_citations": [
+            {
+                "url": " https://example.com/post ",
+                "domain": "Example.com",
+                "quote": "A direct quote",
+                "stance": "support",
+                "field": "inflation",
+                "value": 0.8,
+                "weight": 1.2,
+                "published_at": "2024-01-01T00:00:00Z",
+            }
+        ],
         "support": 4,
         "contradict": 1,
         "domains": 3,
@@ -50,6 +61,7 @@ def test_build_web_block_preserves_resolution():
     assert block.resolved is True
     assert block.resolved_truth is False
     assert block.resolved_reason == "Resolver disagreed with the claim."
-    assert block.resolved_citations == ["https://example.com/post"]
+    assert block.resolved_citations and block.resolved_citations[0]["url"] == "https://example.com/post"
+    assert block.resolved_citations[0]["domain"] == "Example.com"
     assert block.support == 4
     assert block.evidence and block.evidence.n_docs == 6
