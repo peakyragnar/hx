@@ -169,3 +169,14 @@ def test_run_check_respects_custom_provider_and_logical_model():
     run_model = RunResponse.model_validate(data)
     assert run_model.provider == "xai"
     assert run_model.logical_model == "grok-4"
+
+
+def test_run_check_invalid_provider_returns_400():
+    payload = {
+        **_make_payload("baseline"),
+        "provider": "unknown-provider",
+    }
+    resp = client.post("/api/checks/run", json=payload)
+    assert resp.status_code == 400
+    detail = resp.json().get("detail")
+    assert "unknown-provider" in detail

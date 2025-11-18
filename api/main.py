@@ -175,7 +175,10 @@ def run_check(
         result = artifacts.result
     except HTTPException:
         raise
-    except (RuntimeError, ValueError) as exc:
+    except ValueError as exc:
+        logger.warning("Invalid run request for claim %s: %s", claim, exc)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
         logger.exception("run_check failed for claim %s", claim)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except Exception:
