@@ -14,7 +14,7 @@ from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
 from heretix.config import RunConfig
-from heretix.provider.openai_gpt5 import score_claim as score_claim_live
+from heretix.provider.factory import get_rpl_adapter
 from heretix.provider.mock import score_claim_mock
 from heretix.provider.utils import infer_provider_from_model
 from heretix.explanations import extract_reasons
@@ -651,8 +651,9 @@ def build_explanation(
     if use_mock:
         reasons = fallback_reasons(prob)
     elif system_text and user_template and paraphrase_text:
+        adapter = get_rpl_adapter(provider_mode="MOCK" if use_mock else "LIVE", model=cfg.model)
         try:
-            out = score_claim_live(
+            out = adapter.score_claim(
                 claim=claim,
                 system_text=system_text,
                 user_template=user_template,
