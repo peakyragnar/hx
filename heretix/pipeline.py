@@ -65,16 +65,12 @@ def _should_generate_llm_narration(
     use_mock: bool,
     combined_block: Optional[Dict[str, Any]],
     cache_hit_rate: float,
-    tokens_in: Optional[int],
-    tokens_out: Optional[int],
 ) -> bool:
     """Return True if we should call live narration helpers."""
 
     if use_mock:
         return False
     if combined_block is None:
-        return False
-    if (tokens_in or 0) == 0 and (tokens_out or 0) == 0:
         return False
     return cache_hit_rate < _CACHE_HIT_THRESHOLD
 
@@ -413,8 +409,6 @@ def perform_run(
         use_mock,
         combined_block_payload,
         cache_hit_rate,
-        tokens_in,
-        tokens_out,
     )
     resolved_model_value = result.get("resolved_logical_model", logical_model_value)
     run_warning_counts = result.get("warning_counts")
