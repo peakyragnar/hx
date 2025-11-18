@@ -37,6 +37,7 @@ from .storage import (
     update_run_ci,
     update_execution_ci,
 )
+from .provider.config import load_provider_capabilities
 from .provider.factory import get_rpl_adapter
 from .provider.schema_text import RPL_SAMPLE_JSON_SCHEMA
 from .provider.utils import infer_provider_from_model
@@ -95,10 +96,47 @@ def _extract_prob_true(raw: Any) -> Optional[float]:
     return None
 
 
+def _normalize_provider_id(provider: Optional[str]) -> Optional[str]:
+    if provider is None:
+        return None
+    text = str(provider).strip().lower()
+    return text or None
+
+
+def _resolve_provider_and_model(provider_hint: Optional[str], logical_model: str) -> tuple[str, str]:
+    """Return (provider_id, logical_model) honoring explicit provider overrides."""
+
+    normalized_hint = _normalize_provider_id(provider_hint)
+    inferred = infer_provider_from_model(logical_model)
+    if not normalized_hint:
+        return inferred, logical_model
+    if normalized_hint == inferred:
+        return normalized_hint, logical_model
+    try:
+        caps = load_provider_capabilities()
+    except Exception as exc:
+        raise ValueError(f"Provider override '{provider_hint}' requires provider capability files") from exc
+    record = caps.get(normalized_hint)
+    if record is None:
+        raise ValueError(f"Unknown provider '{provider_hint}'")
+    resolved_model = record.default_model
+    log.info(
+        "provider_override_applied",
+        extra={
+            "provider": normalized_hint,
+            "requested_model": logical_model,
+            "resolved_model": resolved_model,
+        },
+    )
+    return normalized_hint, resolved_model
+
+
 def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) -> Dict[str, Any]:
     logical_model = cfg.logical_model or cfg.model
-    cfg.logical_model = logical_model
-    cfg.model = logical_model
+    provider_id, resolved_model = _resolve_provider_and_model(cfg.provider, logical_model)
+    cfg.provider = provider_id
+    cfg.logical_model = resolved_model
+    cfg.model = resolved_model
     prompts = _load_prompts(prompt_file)
     prompt_version_full = str(prompts.get("version"))
     system_text = str(prompts.get("system"))
@@ -149,7 +187,6 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
     # Decide provider mode and target DB path once per run
     provider_mode = "MOCK" if (mock or os.getenv("HERETIX_MOCK")) else "LIVE"
     adapter = get_rpl_adapter(provider_mode=provider_mode, model=cfg.model)
-    provider_id = cfg.provider or infer_provider_from_model(cfg.model)
     db_path = Path("runs/heretix_mock.sqlite") if provider_mode == "MOCK" else Path("runs/heretix.sqlite")
 
     final_B = max(1, int(cfg.B))
