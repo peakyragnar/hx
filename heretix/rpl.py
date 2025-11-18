@@ -278,7 +278,6 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
     # First, satisfy from cache (main thread) and collect misses
     rows_ready: List[Dict[str, Any]] = []
     misses: List[_Work] = []
-    missing_tokens_out_warned = False
     for w in work_items:
         attempted += 1
         row = None
@@ -290,18 +289,6 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             )
             if row:
                 sample_cache_hits += 1
-                with metrics_lock:
-                    total_tokens_in += est_tokens(w.prompt_char_len)
-                    cached_out = row.get("tokens_out")
-                    if cached_out is None:
-                        cached_out = est_tokens(max(1, w.prompt_char_len))
-                        if not missing_tokens_out_warned:
-                            log.warning("sample cache row missing tokens_out; estimating via prompt length")
-                            missing_tokens_out_warned = True
-                    cached_out_int = int(cached_out)
-                    if cached_out_int <= 0:
-                        cached_out_int = 1
-                    total_tokens_out += cached_out_int
                 rows_ready.append(row)
                 continue
             sample_cache_misses += 1

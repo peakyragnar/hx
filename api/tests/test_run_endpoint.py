@@ -111,10 +111,19 @@ def test_run_check_mock_baseline_returns_runresponse():
     assert data["mock"] is True
     assert data["schema_version"] == SCHEMA_VERSION
     assert data["web"] is None
-    assert data["tokens_in"] > 0
-    assert data["tokens_out"] > 0
-    assert data["cost_usd"] is not None and data["cost_usd"] > 0
+    cache_rate = data["aggregates"]["cache_hit_rate"]
+    if cache_rate < 0.999:
+        assert data["tokens_in"] > 0
+        assert data["tokens_out"] > 0
+    else:
+        assert data["tokens_in"] == 0
+        assert data["tokens_out"] == 0
+    cost = data["cost_usd"]
     assert data["simple_expl"] is not None
+    if cache_rate < 0.999:
+        assert cost is not None and cost > 0
+    else:
+        assert cost == 0
     assert pytest.approx(1.0) == data["combined"]["weight_prior"] + data["combined"]["weight_web"]
 
     # Ensure response conforms to RunResponse and includes required sections
