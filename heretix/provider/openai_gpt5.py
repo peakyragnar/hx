@@ -185,3 +185,4 @@ register_score_fn(
     aliases=("gpt-5", "openai-gpt5", "openai:gpt-5", "openai", "gpt5-default"),
     fn=score_claim,
 )
+score_claim.__logical_model__ = "gpt5-default"

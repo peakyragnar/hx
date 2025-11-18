@@ -59,6 +59,11 @@ def register_score_fn(*, aliases: Iterable[str], fn: Callable) -> None:
         if existing is not None and existing is not fn:
             raise ValueError(f"Alias '{alias}' already registered to a different adapter")
         _SCORE_REGISTRY[alias] = fn
+        model = getattr(fn, "__logical_model__", None)
+        if isinstance(model, str):
+            normalized_model = _validate_alias(model)
+            if normalized_model and normalized_model not in _SCORE_REGISTRY:
+                _SCORE_REGISTRY[normalized_model] = fn
 
 
 def get_score_fn(model: str) -> Callable:
