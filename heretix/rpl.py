@@ -278,6 +278,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
     # First, satisfy from cache (main thread) and collect misses
     rows_ready: List[Dict[str, Any]] = []
     misses: List[_Work] = []
+    missing_tokens_out_warned = False
     for w in work_items:
         attempted += 1
         row = None
@@ -289,12 +290,22 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             )
             if row:
                 sample_cache_hits += 1
-        if row is None:
-            if not cfg.no_cache:
-                sample_cache_misses += 1
-            misses.append(w)
-        else:
-            rows_ready.append(row)
+                with metrics_lock:
+                    total_tokens_in += est_tokens(w.prompt_char_len)
+                    cached_out = row.get("tokens_out")
+                    if cached_out is None:
+                        cached_out = est_tokens(max(1, w.prompt_char_len))
+                        if not missing_tokens_out_warned:
+                            log.warning("sample cache row missing tokens_out; estimating via prompt length")
+                            missing_tokens_out_warned = True
+                    cached_out_int = int(cached_out)
+                    if cached_out_int <= 0:
+                        cached_out_int = 1
+                    total_tokens_out += cached_out_int
+                rows_ready.append(row)
+                continue
+            sample_cache_misses += 1
+        misses.append(w)
 
     # Define a worker to call provider and build a sample row
     def _call_and_build(w: _Work) -> Dict[str, Any]:
@@ -367,8 +378,9 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
         compliant = (json_valid == 1) and (not _has_citation_or_url(txt_concat))
         valid = int(1 if compliant else 0)
         response_chars = len(txt_concat)
+        resp_tokens_est = est_tokens(response_chars)
         with metrics_lock:
-            total_tokens_out += est_tokens(response_chars)
+            total_tokens_out += resp_tokens_est
 
         row = {
             "run_id": "",
@@ -381,7 +393,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             "provider_model_id": meta.get("provider_model_id"),
             "response_id": meta.get("response_id"),
             "created_at": int(time.time()),
-            "tokens_out": None,
+            "tokens_out": int(resp_tokens_est),
             "latency_ms": int(timing.get("latency_ms") or 0),
             "json_valid": valid,
         }

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Optional, Dict, List
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -29,7 +29,7 @@ class WebBlockV1(BaseModel):
     resolved: Optional[bool] = None
     resolved_truth: Optional[bool] = None
     resolved_reason: Optional[str] = None
-    resolved_citations: list[str] = Field(default_factory=list)
+    resolved_citations: List[Dict[str, Any]] = Field(default_factory=list)
     support: Optional[int] = Field(default=None, ge=0)
     contradict: Optional[int] = Field(default=None, ge=0)
     domains: Optional[int] = Field(default=None, ge=0)

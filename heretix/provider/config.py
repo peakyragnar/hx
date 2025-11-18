@@ -15,6 +15,16 @@ _LOGGER = logging.getLogger(__name__)
 _RATE_LIMIT_WARNED: set[str] = set()
 _CONFIG_LOCK = threading.Lock()
 _CAP_LOCK = threading.Lock()
+_MAX_PROVIDER_CONFIG_BYTES = 64 * 1024  # 64KiB guardrail for provider settings
+_MAX_CAPABILITY_BYTES = 64 * 1024
+
+
+def _load_yaml_payload(path: Path, *, max_bytes: int) -> Any:
+    size = path.stat().st_size if path.exists() else 0
+    if size > max_bytes:
+        raise ValueError(f"{path} exceeds {max_bytes} byte limit")
+    with path.open("r", encoding="utf-8") as handle:
+        return yaml.safe_load(handle)
 
 
 def _load_config() -> dict[str, Any]:
@@ -30,17 +40,16 @@ def _load_config() -> dict[str, Any]:
             _RATE_LIMIT_CACHE = {}
             return _RATE_LIMIT_CACHE
 
+        p = Path(path)
+        if not p.exists():
+            _RATE_LIMIT_CACHE = {}
+            return _RATE_LIMIT_CACHE
         try:
-            p = Path(path)
-            if not p.exists():
-                _RATE_LIMIT_CACHE = {}
-                return _RATE_LIMIT_CACHE
-            with p.open("r", encoding="utf-8") as f:
-                data = yaml.safe_load(f) or {}
-                if not isinstance(data, dict):
-                    data = {}
-                _RATE_LIMIT_CACHE = data
-                return _RATE_LIMIT_CACHE
+            data = _load_yaml_payload(p, max_bytes=_MAX_PROVIDER_CONFIG_BYTES) or {}
+            if not isinstance(data, dict):
+                data = {}
+            _RATE_LIMIT_CACHE = data
+            return _RATE_LIMIT_CACHE
         except Exception as exc:
             _LOGGER.warning("Failed to load provider config from %s: %s", path, exc)
             _RATE_LIMIT_CACHE = {}
@@ -154,8 +163,7 @@ def load_provider_capabilities(*, refresh: bool = False) -> Dict[str, ProviderCa
 
         for path in capability_paths:
             try:
-                with path.open("r", encoding="utf-8") as handle:
-                    raw = yaml.safe_load(handle) or {}
+                raw = _load_yaml_payload(path, max_bytes=_MAX_CAPABILITY_BYTES) or {}
             except FileNotFoundError:
                 continue
             except Exception as exc:
