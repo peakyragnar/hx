@@ -1,6 +1,7 @@
+from pathlib import Path
 import pytest
 
-from api.main import build_web_explanation, _build_web_block_v1, _build_combined_block_v1
+from api.main import build_web_explanation, _build_web_block_v1, _build_combined_block_v1, build_explanation
 
 
 def test_build_web_explanation_basic():
@@ -97,6 +98,36 @@ def test_build_web_explanation_sanitizes_json_reasons():
     assert any("Conflicting source summaries" in r for r in reasons)
     assert any("Some outlets dispute the claim" in r for r in reasons)
     assert all("{" not in r for r in reasons[-2:])
+
+
+def test_build_explanation_sanitizes_reason_lines(monkeypatch: pytest.MonkeyPatch):
+    from heretix.config import RunConfig
+
+    class DummyAdapter:
+        def score_claim(self, **kwargs):
+            return {}
+
+    def fake_adapter(**kwargs):
+        return DummyAdapter()
+
+    monkeypatch.setattr("api.main.get_rpl_adapter", fake_adapter)
+    monkeypatch.setattr(
+        "api.main.extract_reasons",
+        lambda output: ['{ "reason": "Structured output" }', {"text": "Dict based note"}],
+    )
+    cfg = RunConfig(claim="Test claim", model="gpt-5", prompt_version="rpl_g5_v2", K=2, R=1, B=100)
+    prompt_file = Path("heretix/prompts/rpl_g5_v2.yaml")
+    _, _, _, _, reasons = build_explanation(
+        claim="Some claim",
+        prob=0.42,
+        cfg=cfg,
+        prompt_file=prompt_file,
+        use_mock=False,
+        max_output_tokens=128,
+    )
+    assert any("Structured output" in r for r in reasons)
+    assert any("Dict based note" in r for r in reasons)
+    assert all("{" not in r for r in reasons)
 
 
 def test_build_combined_block_preserves_resolution_metadata():

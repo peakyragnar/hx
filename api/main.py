@@ -711,6 +711,9 @@ def build_explanation(
         except Exception as exc:  # pragma: no cover - best-effort explanation
             logging.warning("Explanation provider call failed: %s", exc)
 
+    if reasons:
+        normalized = [_normalize_reason_line(reason) for reason in reasons]
+        reasons = [line for line in normalized if line]
     if not reasons:
         reasons = fallback_reasons(prob)
 
