@@ -69,6 +69,36 @@ def test_build_web_block_preserves_resolution():
     assert block.evidence and block.evidence.n_docs == 6
 
 
+def test_build_web_explanation_sanitizes_json_reasons():
+    prior = {"p": 0.42}
+    combined = {"p": 0.51, "ci95": [0.48, 0.55], "resolved": False}
+    web = {
+        "p": 0.53,
+        "ci95": [0.5, 0.57],
+        "evidence": {"n_docs": 7, "n_domains": 4, "median_age_days": 5},
+    }
+    weights = {"w_web": 0.35}
+    replicates = [
+        {
+            "support_bullets": ['{ "reason": "Conflicting source summaries" }'],
+            "oppose_bullets": [{"text": "Some outlets dispute the claim"}],
+            "notes": ['"Needs better sourcing"'],
+        }
+    ]
+
+    _, _, reasons = build_web_explanation(
+        prior_block=prior,
+        combined_block=combined,
+        web_block=web,
+        weights=weights,
+        wel_replicates=replicates,
+    )
+
+    assert any("Conflicting source summaries" in r for r in reasons)
+    assert any("Some outlets dispute the claim" in r for r in reasons)
+    assert all("{" not in r for r in reasons[-2:])
+
+
 def test_build_combined_block_preserves_resolution_metadata():
     payload = {
         "p": 0.82,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import secrets
 from datetime import datetime, timezone
@@ -716,6 +717,44 @@ def build_explanation(
     return verdict_label, verdict_text, headline, interpretation, reasons
 
 
+def _normalize_reason_line(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, dict):
+        parsed = value
+        text = ""
+        for key in ("reason", "text", "message", "summary", "content"):
+            candidate = parsed.get(key)
+            if isinstance(candidate, str) and candidate.strip():
+                text = candidate.strip()
+                break
+        if not text:
+            text = json.dumps(parsed, ensure_ascii=False)
+    elif isinstance(value, (list, tuple, set)):
+        parts = [_normalize_reason_line(item) for item in value]
+        text = " ".join(part for part in parts if part).strip()
+    else:
+        text = str(value).strip()
+        if text.startswith("{") and text.endswith("}"):
+            try:
+                parsed = json.loads(text)
+            except Exception:
+                parsed = None
+            if isinstance(parsed, dict):
+                for key in ("reason", "text", "message", "summary", "content"):
+                    candidate = parsed.get(key)
+                    if isinstance(candidate, str) and candidate.strip():
+                        text = candidate.strip()
+                        break
+    if not text:
+        return ""
+    if text.startswith('"') and text.endswith('"') and len(text) >= 2:
+        text = text[1:-1].strip()
+    if text and text[-1] not in ".!?":
+        text += "."
+    return text
+
+
 def build_web_explanation(
     *,
     prior_block: dict[str, object],
@@ -767,13 +806,9 @@ def build_web_explanation(
     for replica in wel_replicates or []:
         for key in ("support_bullets", "oppose_bullets", "notes"):
             for item in (replica.get(key) or []):
-                if not isinstance(item, str):
-                    continue
-                line = item.strip()
+                line = _normalize_reason_line(item)
                 if not line:
                     continue
-                if line[-1] not in ".!?":
-                    line += "."
                 if line not in seen_lines:
                     seen_lines.add(line)
                     reason_lines.append(line)

@@ -318,6 +318,30 @@ class TestComposeSimpleExpl:
         assert "$500" not in result["lines"][2]
         assert "a high value" in result["lines"][2]
 
+    def test_json_like_bullets_are_normalized(self):
+        """Should strip JSON/dict wrappers from replicate bullets."""
+        replicates = [
+            {
+                "support_bullets": [
+                    '{"reason": "Conflicting source summaries"}',
+                    {"text": "Some outlets dispute the claim"},
+                    ["Nested list entry", "with details"],
+                ]
+            }
+        ]
+        result = compose_simple_expl(
+            claim="Test claim",
+            combined_p=0.5,
+            web_block=None,
+            replicates=replicates,
+        )
+
+        joined = " ".join(result["lines"])
+        assert "Conflicting source summaries" in joined
+        assert "Some outlets dispute the claim" in joined
+        assert "Nested list entry" in joined
+        assert "{" not in joined
+
     def test_web_block_with_docs_adds_context_line(self):
         web_block = {"evidence": {"n_docs": 4, "n_domains": 2}}
         result = compose_simple_expl(

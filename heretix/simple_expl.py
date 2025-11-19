@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import json
 from typing import Any, Dict, List, Optional, Tuple
 
 
@@ -26,6 +27,36 @@ def _sanitize(text: str) -> str:
     if not t:
         return ""
     return t if t.endswith((".", "!", "?")) else (t + ".")
+
+
+def _normalize_replica_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, dict):
+        for key in ("reason", "text", "message", "summary", "content", "note"):
+            candidate = value.get(key)
+            if isinstance(candidate, str) and candidate.strip():
+                return candidate.strip()
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, (list, tuple, set)):
+        parts = [_normalize_replica_text(item) for item in value]
+        return " ".join(part for part in parts if part).strip()
+    text = str(value).strip()
+    if not text:
+        return ""
+    if text.startswith("{") and text.endswith("}"):
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            parsed = None
+        if isinstance(parsed, dict):
+            for key in ("reason", "text", "message", "summary", "content", "note"):
+                candidate = parsed.get(key)
+                if isinstance(candidate, str) and candidate.strip():
+                    return candidate.strip()
+    if text.startswith('"') and text.endswith('"') and len(text) >= 2:
+        text = text[1:-1].strip()
+    return text
 
 
 def _format_line(text: Optional[str]) -> Optional[str]:
@@ -80,7 +111,10 @@ def compose_simple_expl(
                 key = (rep_idx, item_idx)
                 if key in used_bullets:
                     continue
-                s = _sanitize(str(it))
+                raw_text = _normalize_replica_text(it)
+                if not raw_text:
+                    continue
+                s = _sanitize(raw_text)
                 if pat.search(s):
                     used_bullets.add(key)
                     return s
