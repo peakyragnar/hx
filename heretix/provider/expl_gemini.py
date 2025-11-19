@@ -190,49 +190,49 @@ def write_simple_expl_gemini(
                     parsed["body_paragraphs"] = [parsed["body_paragraphs"]]
                 elif isinstance(parsed["body_paragraphs"], list):
                     # Flatten any nested JSON or ensure all elements are strings
-                    cleaned_paras = []
-                    for item in parsed["body_paragraphs"]:
-                        if isinstance(item, str):
-                            trimmed = item.strip()
+                    cleaned_paras: list[str] = []
+
+                    def _extend_from_nested(value: Any) -> None:
+                        if isinstance(value, str):
+                            trimmed = value.strip()
                             # Check if this string is actually JSON
-                            if trimmed.startswith('{') or trimmed.startswith('['):
+                            if trimmed.startswith("{") or trimmed.startswith("["):
                                 try:
                                     nested_json = json.loads(trimmed)
-                                    # If it's a dict with body_paragraphs, extract those
-                                    if isinstance(nested_json, dict):
-                                        nested_paras = nested_json.get("body_paragraphs")
-                                        if isinstance(nested_paras, list):
-                                            # Recursively extract from nested body_paragraphs
-                                            for nested_item in nested_paras:
-                                                if isinstance(nested_item, str):
-                                                    cleaned_paras.append(nested_item.strip())
-                                                else:
-                                                    cleaned_paras.append(str(nested_item).strip())
-                                        elif isinstance(nested_paras, str):
-                                            cleaned_paras.append(nested_paras.strip())
-                                        else:
-                                            # No body_paragraphs, try other common keys
-                                            text_val = nested_json.get("text") or nested_json.get("content") or nested_json.get("reason")
-                                            if text_val:
-                                                cleaned_paras.append(str(text_val).strip())
-                                            else:
-                                                # Just use the original string if we can't extract anything useful
-                                                cleaned_paras.append(trimmed)
-                                    else:
-                                        # It's a JSON array or primitive, just stringify it
-                                        cleaned_paras.append(str(nested_json).strip())
                                 except (json.JSONDecodeError, ValueError):
-                                    # Not valid JSON, use as-is
                                     cleaned_paras.append(trimmed)
-                            else:
-                                # Not JSON, use as-is
+                                    return
+                                _extend_from_nested(nested_json)
+                                return
+                            if trimmed:
                                 cleaned_paras.append(trimmed)
-                        elif isinstance(item, dict):
-                            # Extract text from nested dict
-                            text_val = item.get("text") or item.get("content") or str(item)
-                            cleaned_paras.append(str(text_val).strip())
-                        else:
-                            cleaned_paras.append(str(item).strip())
+                            return
+                        if isinstance(value, dict):
+                            nested_vals = []
+                            bp = value.get("body_paragraphs")
+                            if isinstance(bp, list):
+                                nested_vals.extend(bp)
+                            elif isinstance(bp, str):
+                                nested_vals.append(bp)
+                            if not nested_vals:
+                                for key in ("summary", "title", "text", "content", "reason"):
+                                    candidate = value.get(key)
+                                    if isinstance(candidate, str) and candidate.strip():
+                                        nested_vals.append(candidate)
+                                        break
+                            if not nested_vals:
+                                nested_vals.append(str(value))
+                            for item in nested_vals:
+                                _extend_from_nested(item)
+                            return
+                        if isinstance(value, list):
+                            for item in value:
+                                _extend_from_nested(item)
+                            return
+                        cleaned_paras.append(str(value).strip())
+
+                    for item in parsed["body_paragraphs"]:
+                        _extend_from_nested(item)
                     parsed["body_paragraphs"] = [p for p in cleaned_paras if p]
 
             if "bullets" in parsed:

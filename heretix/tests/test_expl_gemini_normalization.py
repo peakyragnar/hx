@@ -93,6 +93,54 @@ def test_gemini_expl_normalizes_nested_dict_in_body_paragraphs(monkeypatch: pyte
         assert not para.strip().startswith("{'")
 
 
+def test_gemini_expl_flattens_body_paragraph_blocks(monkeypatch: pytest.MonkeyPatch):
+    """Gemini sometimes nests a SimpleExpl shape inside body_paragraphs; ensure it flattens."""
+
+    monkeypatch.setattr(expl_gemini, "_GEMINI_RATE_LIMITER", _FakeRateLimiter())
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    nested_payload = {
+        "title": "Outer",
+        "body_paragraphs": [
+            {
+                "title": "Inner title",
+                "summary": "Inner summary sentence.",
+                "body_paragraphs": [
+                    "Nested paragraph one.",
+                    "Nested paragraph two.",
+                ],
+            },
+            "Standalone paragraph.",
+        ],
+        "bullets": [],
+    }
+
+    def fake_post(url, params=None, json=None, timeout=None):
+        import json as json_module
+        return _FakeResponse(json_module.dumps(nested_payload))
+
+    monkeypatch.setattr("requests.post", fake_post)
+
+    result = expl_gemini.write_simple_expl_gemini(
+        instructions="Test instructions",
+        user_text="Test user text",
+        model="gemini25-default",
+        max_output_tokens=640,
+    )
+
+    parsed = json.loads(result["text"])
+    paragraphs = parsed.get("body_paragraphs")
+    assert isinstance(paragraphs, list)
+    # Should include the nested lines as separate paragraphs
+    assert "Nested paragraph one." in paragraphs
+    assert "Nested paragraph two." in paragraphs
+    assert "Standalone paragraph." in paragraphs
+    # None of the entries should be dicts or JSON blobs
+    for para in paragraphs:
+        assert isinstance(para, str)
+        assert not para.strip().startswith("{")
+
+
 def test_gemini_expl_extracts_from_json_string_in_body_paragraphs(monkeypatch: pytest.MonkeyPatch):
     """Test that Gemini adapter detects and parses JSON strings inside body_paragraphs."""
 
