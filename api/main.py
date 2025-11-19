@@ -545,8 +545,21 @@ def _build_simple_expl_v1(simple_block: Optional[Dict[str, object]]) -> Optional
     body_paragraphs_raw = simple_block.get("body_paragraphs")
     bullets_raw = simple_block.get("bullets")
     if isinstance(body_paragraphs_raw, list) and isinstance(bullets_raw, list):
-        body_paragraphs = [str(p).strip() for p in body_paragraphs_raw if str(p).strip()]
-        bullets = [str(b).strip() for b in bullets_raw if str(b).strip()]
+        # Extract text from body_paragraphs, handling dicts/objects
+        body_paragraphs = []
+        for p in body_paragraphs_raw:
+            if isinstance(p, str):
+                text = p.strip()
+                if text:
+                    body_paragraphs.append(text)
+            elif isinstance(p, dict):
+                # Extract text from common keys
+                text = p.get("text") or p.get("content") or p.get("body") or ""
+                if text and isinstance(text, str):
+                    body_paragraphs.append(str(text).strip())
+            # Skip non-string, non-dict items
+
+        bullets = [str(b).strip() for b in bullets_raw if isinstance(b, str) and str(b).strip()]
         if not body_paragraphs:
             body_paragraphs = ["Explanation not available."]
         return SimpleExplV1(title=title, body_paragraphs=body_paragraphs, bullets=bullets)
