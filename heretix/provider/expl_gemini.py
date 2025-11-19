@@ -12,6 +12,7 @@ from heretix.ratelimit import RateLimiter
 from .config import get_rate_limits, load_provider_capabilities
 from .registry import register_expl_adapter
 from .telemetry import LLMTelemetry
+from .json_utils import strip_markdown_json
 
 _API_BASE = "https://generativelanguage.googleapis.com/v1beta"
 _DEFAULT_OUTPUT = 640
@@ -171,14 +172,8 @@ def write_simple_expl_gemini(
 
     # Attempt to normalize the JSON payload before returning
     try:
-        clean_text = text.strip()
-        if clean_text.startswith("```json"):
-            clean_text = clean_text[7:]
-        elif clean_text.startswith("```"):
-            clean_text = clean_text[3:]
-        if clean_text.endswith("```"):
-            clean_text = clean_text[:-3]
-        clean_text = clean_text.strip()
+        # robustly extract the JSON substring (handles fences and preamble)
+        clean_text = strip_markdown_json(text)
         
         # Partial parse to fix common schema hallucinations
         parsed = json.loads(clean_text)
