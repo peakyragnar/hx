@@ -1,62 +1,69 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
-from openai import OpenAI
+from heretix.prompts.prompt_builder import build_wel_instructions
+from heretix.provider.json_utils import parse_schema_from_text
+from heretix.provider.registry import get_wel_score_fn
+from heretix.provider.telemetry import LLMTelemetry
+from heretix.provider.utils import infer_provider_from_model
+from heretix.schemas import WELDocV1
 
-from .json_utils import load_json_obj
 
-WEL_SYSTEM = """You are the Web Evidence Lens (WEL).
-Estimate P(true) for the claim using only the provided snippets.
-- Ignore external knowledge.
-- Point out conflicts or missing evidence in notes.
-- Return strict JSON only."""
+class WELSchemaError(ValueError):
+    def __init__(self, warnings: List[str]):
+        super().__init__("WEL response failed schema validation")
+        self.warnings = warnings
 
 WEL_SCHEMA = """Return ONLY a JSON object with:
 {
-  "p_true": number between 0 and 1,
+  "stance_prob_true": number between 0 and 1,
+  "stance_label": "supports" | "contradicts" | "mixed" | "irrelevant",
   "support_bullets": array of 1-4 short strings,
   "oppose_bullets": array of 1-4 short strings,
   "notes": array of 0-3 short strings
 }"""
 
 
-def call_wel_once(bundle_text: str, model: str = "gpt-5") -> Tuple[Dict[str, object], str]:
+def call_wel_once(bundle_text: str, model: str = "gpt-5") -> Tuple[Dict[str, object], List[str], str, LLMTelemetry]:
     """
-    Evaluate a bundle of snippets with GPT-5 and return the parsed JSON plus prompt hash.
+    Evaluate a bundle of snippets using the registered WEL adapter.
     """
-    client = OpenAI()
-    instructions = f"{WEL_SYSTEM}\n\n{WEL_SCHEMA}"
+    provider_id = infer_provider_from_model(model) or "openai"
+    base_instructions = build_wel_instructions(provider_id)
+    instructions = f"{base_instructions}\n\n{WEL_SCHEMA}".strip()
     prompt_hash = hashlib.sha256((instructions + bundle_text).encode("utf-8")).hexdigest()
 
-    response = client.responses.create(
-        model=model,
+    adapter = get_wel_score_fn(model)
+    result = adapter(
         instructions=instructions,
-        input=[{"role": "user", "content": [{"type": "input_text", "text": bundle_text}]}],
+        bundle_text=bundle_text,
+        model=model,
         max_output_tokens=768,
-        reasoning={"effort": "minimal"},
     )
+    if not isinstance(result, dict):
+        raise TypeError("WEL adapter must return a dict payload with 'text'")
+    payload = result.get("text")
+    adapter_warnings = list(result.get("warnings") or [])
+    if not payload:
+        raise RuntimeError("WEL adapter returned an empty payload")
 
-    payload = None
-    if getattr(response, "output_text", None):
-        payload = response.output_text
+    telemetry_obj = result.get("telemetry")
+    telemetry: LLMTelemetry
+    if isinstance(telemetry_obj, LLMTelemetry):
+        telemetry = telemetry_obj
+    elif isinstance(telemetry_obj, dict):
+        telemetry = LLMTelemetry.model_validate(telemetry_obj)
     else:
-        for item in response.output:
-            if item.type == "message":
-                for content in item.content:
-                    text = getattr(content, "text", None)
-                    if text:
-                        payload = text
-                        break
-            if payload:
-                break
+        telemetry = LLMTelemetry(
+            provider=provider_id,
+            logical_model=str(model),
+            api_model=None,
+        )
 
-    if payload is None:
-        raise RuntimeError("No response payload received from GPT-5")
-
-    try:
-        parsed = load_json_obj(payload)
-    except ValueError as exc:
-        raise ValueError(f"Invalid JSON from WEL model: {exc}") from exc
-    return parsed, prompt_hash
+    _, canonical, schema_warnings = parse_schema_from_text(payload, WELDocV1)
+    warnings = adapter_warnings + schema_warnings
+    if canonical is None:
+        raise WELSchemaError(warnings)
+    return canonical, warnings, prompt_hash, telemetry

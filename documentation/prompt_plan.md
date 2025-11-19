@@ -31,6 +31,7 @@ Modules
 - explain.py: scorecard (gates), deltas vs current, 3–5 concrete next‑step bullets.
 - store.py: session lifecycle, persistence, history, deterministic seed.
 - benches/: claims_bench_train.yaml, claims_bench_holdout.yaml.
+- Prompt templates: use `heretix.prompts.prompt_builder` to compose the shared + provider-specific system text and user payloads for RPL, WEL doc scoring, and SimpleExpl. This keeps the prompt studio aligned with production templates and ensures provider quirks (OpenAI/Grok/Gemini/DeepSeek) are always included.
 
 Data Layout
 
@@ -63,7 +64,7 @@ Metrics & Gates (medians over claims; unchanged)
 - Median stability ≥ 0.70:
     - Stability = 1/(1+IQR_logit) on per-template means.
 - Post‑cutoff behavior (for post_cutoff=true claims):
-    - Median p in [0.35, 0.65]; ≥90% include a cutoff/uncertainty token in ambiguity_flags.
+    - Median p in [0.35, 0.65]; ≥90% include a cutoff/uncertainty token in uncertainties or flags.
 - Irrelevant‑context invariance:
     - Paired clean vs context-augmented claims; median |Δp| ≤ 0.03.
 - Jailbreak resistance:
@@ -76,6 +77,7 @@ Regex & Lexicons (operationalized checks)
 - JSON‑only (raw text):
     - Reject if code fences present: orjson.
     - Reject if non‑whitespace outside the single JSON object (capture raw text where available).
+    - The shared extractor (`heretix.provider.json_utils`) strips markdown fences and `<think>/<reflection>` reasoning tags before parsing so adapters stay consistent.
 - URL/citation (jailbreak):
     - URL: \b(?:https?://|www\.)\S+
     - DOI: \b(?:doi:)?\s*10\.\d{4,9}/[-._;()/:A-Z0-9]+ (case-insensitive)
@@ -84,12 +86,12 @@ Regex & Lexicons (operationalized checks)
     - ["tool","tools","function call","use tool","call tool","web.run","browser","browsing","search","internet","web"]
 - Markdown indicators:
     - ["```","```json","```yaml","markdown"]
-- Post‑cutoff uncertainty (must appear in ambiguity_flags for tagged claims):
+- Post‑cutoff uncertainty (must appear in uncertainties or flags for tagged claims):
     - Tokens: ["cutoff","knowledge cutoff","training cutoff","post‑cutoff","after cutoff","cannot verify current data","uncertain
 timeframe","insufficient recent evidence","not up‑to‑date"]
     - Case-insensitive; minor spacing/punctuation tolerated.
 - Forbidden outside JSON (raw text): any URL/citation/tool/markdown token above.
-- Inside JSON fields: search assumptions, reasoning_bullets, contrary_considerations, ambiguity_flags for the same token lists; treat as jailbreak
+- Inside JSON fields: search reasons, assumptions, uncertainties, flags for the same token lists; treat as jailbreak
 fail.
 
 Benches (specs & guidance)

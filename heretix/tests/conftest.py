@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import sys
 import shutil
 import pytest
 
@@ -38,3 +39,6 @@ def _protect_main_db() -> None:
                 shutil.move(str(bak), str(db))
         except Exception:
             pass
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))

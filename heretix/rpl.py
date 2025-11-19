@@ -6,7 +6,7 @@ import os
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, Optional
+from typing import Any, Dict, Iterable, List, Tuple, Optional
 
 import numpy as np
 import yaml
@@ -37,10 +37,13 @@ from .storage import (
     update_run_ci,
     update_execution_ci,
 )
-from .provider.openai_gpt5 import score_claim
-from .provider.mock import score_claim_mock
+from .provider.config import load_provider_capabilities
+from .provider.factory import get_rpl_adapter
+from .provider.schema_text import RPL_SAMPLE_JSON_SCHEMA
+from .provider.utils import infer_provider_from_model
 from .telemetry import timed, est_tokens, est_cost, log
 from .finalizer import kick_off_final_ci
+from .constants import SCHEMA_VERSION
 
 
 def _logit(p: float) -> float:
@@ -67,7 +70,79 @@ def _has_citation_or_url(text: str) -> bool:
     return ("http://" in t) or ("https://" in t) or ("www." in t)
 
 
+def _coerce_prob(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        prob = float(value)
+    except (TypeError, ValueError):
+        return None
+    if prob < 0 or prob > 1:
+        return None
+    return prob
+
+
+def _extract_prob_true(raw: Any) -> Optional[float]:
+    if not isinstance(raw, dict):
+        return None
+    direct = _coerce_prob(raw.get("prob_true"))
+    if direct is not None:
+        return direct
+    belief = raw.get("belief")
+    if isinstance(belief, dict):
+        nested = _coerce_prob(belief.get("prob_true"))
+        if nested is not None:
+            return nested
+    return None
+
+
+def _normalize_provider_id(provider: Optional[str]) -> Optional[str]:
+    if provider is None:
+        return None
+    text = str(provider).strip().lower()
+    return text or None
+
+
+class ProviderResolutionError(ValueError):
+    """Raised when a configured provider override cannot be satisfied."""
+
+
+def _resolve_provider_and_model(provider_hint: Optional[str], logical_model: str) -> tuple[str, str]:
+    """Return (provider_id, logical_model) honoring explicit provider overrides."""
+
+    normalized_hint = _normalize_provider_id(provider_hint)
+    inferred = infer_provider_from_model(logical_model) or "openai"
+    if not normalized_hint:
+        return inferred, logical_model
+    if normalized_hint == inferred:
+        return normalized_hint, logical_model
+    try:
+        caps = load_provider_capabilities()
+    except Exception as exc:
+        raise ProviderResolutionError(
+            f"Provider override '{provider_hint}' requires provider capability files"
+        ) from exc
+    record = caps.get(normalized_hint)
+    if record is None:
+        raise ProviderResolutionError(f"Unknown provider '{provider_hint}'")
+    resolved_model = record.default_model
+    log.info(
+        "provider_override_applied",
+        extra={
+            "provider": normalized_hint,
+            "requested_model": logical_model,
+            "resolved_model": resolved_model,
+        },
+    )
+    return normalized_hint, resolved_model
+
+
 def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) -> Dict[str, Any]:
+    requested_logical_model = cfg.logical_model or cfg.model
+    provider_id, resolved_model = _resolve_provider_and_model(cfg.provider, requested_logical_model)
+    cfg.provider = provider_id
+    cfg.logical_model = requested_logical_model
+    cfg.model = resolved_model
     prompts = _load_prompts(prompt_file)
     prompt_version_full = str(prompts.get("version"))
     system_text = str(prompts.get("system"))
@@ -98,13 +173,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
     seq = balanced_indices_with_rotation(T_stage, cfg.K, offset=0)  # already rotated via tpl_indices
 
     # Compose instruction prefix (system + schema) once
-    schema_instructions = (
-        "Return ONLY JSON matching this schema: "
-        "{ \"prob_true\": 0..1, \"confidence_self\": 0..1, "
-        "\"assumptions\": [string], \"reasoning_bullets\": [3-6 strings], "
-        "\"contrary_considerations\": [2-4 strings], \"ambiguity_flags\": [string] } "
-        "Output the JSON object only."
-    )
+    schema_instructions = RPL_SAMPLE_JSON_SCHEMA
     full_instructions = system_text + "\n\n" + schema_instructions
 
     # Compute per-template prompt lengths and enforce cap
@@ -123,6 +192,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
 
     # Decide provider mode and target DB path once per run
     provider_mode = "MOCK" if (mock or os.getenv("HERETIX_MOCK")) else "LIVE"
+    adapter = get_rpl_adapter(provider_mode=provider_mode, model=cfg.model)
     db_path = Path("runs/heretix_mock.sqlite") if provider_mode == "MOCK" else Path("runs/heretix.sqlite")
 
     final_B = max(1, int(cfg.B))
@@ -160,6 +230,11 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
                     "ci_status",
                     {"phase": "final", "B_used": final_B, "job_id": None},
                 )
+                cached_run["tokens_in"] = 0
+                cached_run["tokens_out"] = 0
+                cached_run["cost_usd"] = 0.0
+                cached_run["aggregates"] = dict(cached_run.get("aggregates") or {})
+                cached_run["aggregates"]["cache_hit_rate"] = 1.0
                 log.info(
                     "run_summary",
                     extra={
@@ -189,6 +264,35 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
     total_tokens_in = 0
     total_tokens_out = 0
     metrics_lock = threading.Lock()
+    warning_counts: Dict[str, int] = {}
+
+    def _record_warnings(labels: Iterable[str]) -> None:
+        if not labels:
+            return
+        with metrics_lock:
+            for label in labels:
+                warning_counts[label] = warning_counts.get(label, 0) + 1
+
+    def _apply_cached_warnings(row_obj: Dict[str, Any]) -> None:
+        raw = row_obj.get("warnings_json")
+        if not raw:
+            return
+        decoded: Any = None
+        if isinstance(raw, str):
+            raw_str = raw.strip()
+            if not raw_str:
+                return
+            try:
+                decoded = json.loads(raw_str)
+            except Exception:
+                return
+        elif isinstance(raw, (list, tuple)):
+            decoded = raw
+        else:
+            return
+        labels = [str(item).strip() for item in decoded if isinstance(item, str) and item.strip()]
+        if labels:
+            _record_warnings(labels)
 
     # Precompute deterministic work list (one entry per attempt)
     class _Work:
@@ -254,6 +358,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             )
             if row:
                 sample_cache_hits += 1
+                _apply_cached_warnings(row)
         if row is None:
             if not cfg.no_cache:
                 sample_cache_misses += 1
@@ -270,16 +375,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             total_tokens_in += prompt_tokens_est
 
         def _once() -> Dict[str, Any]:
-            if provider_mode == "MOCK":
-                return score_claim_mock(
-                    claim=cfg.claim,
-                    system_text=system_text,
-                    user_template=user_template,
-                    paraphrase_text=w.paraphrase_text,
-                    model=cfg.model,
-                    max_output_tokens=cfg.max_output_tokens,
-                )
-            return score_claim(
+            return adapter.score_claim(
                 claim=cfg.claim,
                 system_text=system_text,
                 user_template=user_template,
@@ -297,16 +393,19 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             },
         ):
             out = _once()
+        adapter_warnings = list(out.get("warnings") or [])
+        _record_warnings(adapter_warnings)
         raw = out.get("raw", {})
+        sample_payload = out.get("sample")
+        canonical_payload = sample_payload or raw
         meta = out.get("meta", {})
         timing = out.get("timing", {})
 
         # Minimal retry: if live and no numeric prob_true or URL leakage, try once more
         def _is_valid_raw(obj: Dict[str, Any]) -> bool:
             try:
-                if not isinstance(obj, dict):
-                    return False
-                if not ("prob_true" in obj and isinstance(obj["prob_true"], (int, float))):
+                prob_val = _extract_prob_true(obj)
+                if prob_val is None:
                     return False
                 if _has_citation_or_url(json.dumps(obj)):
                     return False
@@ -314,7 +413,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             except Exception:
                 return False
 
-        if provider_mode != "MOCK" and not _is_valid_raw(raw):
+        if provider_mode != "MOCK" and not _is_valid_raw(canonical_payload):
             # small jitter based on cache key to reduce burst
             try:
                 sleep_ms = (int(w.cache_key[:6], 16) % 50) / 1000.0
@@ -322,19 +421,25 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             except Exception:
                 time.sleep(0.05)
             out = _once()
+            adapter_warnings = list(out.get("warnings") or [])
+            _record_warnings(adapter_warnings)
             raw = out.get("raw", {})
+            sample_payload = out.get("sample")
+            canonical_payload = sample_payload or raw
             meta = out.get("meta", {})
             timing = out.get("timing", {})
 
-        prob = float(raw.get("prob_true")) if "prob_true" in raw else float("nan")
+        prob_val = _extract_prob_true(canonical_payload)
+        prob = float(prob_val) if prob_val is not None else float("nan")
         lgt = _logit(prob) if prob == prob else float("nan")
-        json_valid = int(1 if ("prob_true" in raw and isinstance(raw["prob_true"], (int, float))) else 0)
+        json_valid = int(1 if prob_val is not None else 0)
         txt_concat = json.dumps(raw)
         compliant = (json_valid == 1) and (not _has_citation_or_url(txt_concat))
         valid = int(1 if compliant else 0)
         response_chars = len(txt_concat)
+        resp_tokens_est = est_tokens(response_chars)
         with metrics_lock:
-            total_tokens_out += est_tokens(response_chars)
+            total_tokens_out += resp_tokens_est
 
         row = {
             "run_id": "",
@@ -347,9 +452,10 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             "provider_model_id": meta.get("provider_model_id"),
             "response_id": meta.get("response_id"),
             "created_at": int(time.time()),
-            "tokens_out": None,
+            "tokens_out": int(resp_tokens_est),
             "latency_ms": int(timing.get("latency_ms") or 0),
             "json_valid": valid,
+            "warnings_json": json.dumps(adapter_warnings) if adapter_warnings else None,
         }
         sample_cache_set(w.cache_key, row)
         return row
@@ -478,6 +584,13 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
     digest = hashlib.sha256(f"{cfg.claim}|{cfg.model}|{prompt_version_full}|K={cfg.K}|R={cfg.R}".encode("utf-8")).hexdigest()[:12]
     run_id = f"heretix-rpl-{digest}"
 
+    estimated_cost = est_cost(
+        total_tokens_in,
+        total_tokens_out,
+        runtime.price_per_1k_prompt,
+        runtime.price_per_1k_output,
+    )
+
     # persist
     conn = _ensure_db(db_path)
     # Persist prompt text for provenance (once per version)
@@ -498,6 +611,17 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
         )
     except Exception:
         pass
+    warning_total = sum(warning_counts.values())
+    warning_counts_export = dict(warning_counts)
+    sampler_meta = {
+        "T_bank": T_bank,
+        "T": T_stage,
+        "seq": seq,
+        "tpl_indices": tpl_indices,
+        "warning_counts": warning_counts_export,
+        "warning_total": warning_total,
+    }
+
     for it in runs:
         it["row"]["run_id"] = run_id
     insert_samples(conn, [it["row"] for it in runs])
@@ -510,7 +634,10 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             "created_at": int(time.time()),
             "claim": cfg.claim,
             "model": cfg.model,
+            "provider": provider_id,
+            "logical_model": requested_logical_model,
             "prompt_version": prompt_version_full,
+            "schema_version": SCHEMA_VERSION,
             "K": cfg.K,
             "R": cfg.R,
             "T": T_stage,
@@ -528,7 +655,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             "rpl_compliance_rate": rpl_compliance_rate,
             "cache_hit_rate": cache_hit_rate,
             "config_json": json.dumps(cfg.__dict__),
-            "sampler_json": json.dumps({"T_bank": T_bank, "T": T_stage, "seq": seq, "tpl_indices": tpl_indices}),
+            "sampler_json": json.dumps(sampler_meta),
             "counts_by_template_json": json.dumps(counts),
             "artifact_json_path": None,
             "prompt_char_len_max": prompt_char_len_max,
@@ -537,6 +664,9 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             "gate_stability_ok": gate_stability_ok,
             "gate_precision_ok": gate_precision_ok,
             "pqs_version": pqs_version,
+            "tokens_in": total_tokens_in,
+            "tokens_out": total_tokens_out,
+            "cost_usd": estimated_cost,
         },
     )
 
@@ -566,7 +696,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             "rpl_compliance_rate": rpl_compliance_rate,
             "cache_hit_rate": cache_hit_rate,
             "config_json": json.dumps(cfg.__dict__),
-            "sampler_json": json.dumps({"T_bank": T_bank, "T": T_stage, "seq": seq, "tpl_indices": tpl_indices}),
+            "sampler_json": json.dumps(sampler_meta),
             "counts_by_template_json": json.dumps(counts),
             "artifact_json_path": None,
             "prompt_char_len_max": prompt_char_len_max,
@@ -585,17 +715,33 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
     ]
     insert_execution_samples(conn, exec_maps)
 
+    provider_model_id = next(
+        (it["row"].get("provider_model_id") for it in runs if it["row"].get("provider_model_id")),
+        None,
+    )
+
     ci_status = {"phase": "final", "B_used": fast_B, "job_id": None}
     if runtime.fast_then_final and final_B > fast_B:
         ci_status = {"phase": "fast", "B_used": fast_B, "job_id": execution_id}
+
+    sampling_info: Dict[str, Any] = {
+        "K": cfg.K,
+        "R": cfg.R,
+        "T": T_stage,
+        "warning_counts": warning_counts_export,
+        "warning_total": warning_total,
+    }
 
     run_payload: Dict[str, Any] = {
         "execution_id": execution_id,
         "run_id": run_id,
         "claim": cfg.claim,
         "model": cfg.model,
+        "logical_model": requested_logical_model,
+        "resolved_logical_model": cfg.model,
+        "provider": provider_id,
         "prompt_version": prompt_version_full,
-        "sampling": {"K": cfg.K, "R": cfg.R, "T": T_stage},
+        "sampling": sampling_info,
         "aggregation": {
             "method": diag.get("method"),
             "B": fast_B,
@@ -619,7 +765,13 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             "cache_hit_rate": cache_hit_rate,
         },
         "ci_status": ci_status,
+        "provider_model_id": provider_model_id,
+        "schema_version": SCHEMA_VERSION,
+        "tokens_in": total_tokens_in,
+        "tokens_out": total_tokens_out,
+        "cost_usd": estimated_cost,
     }
+    run_payload["warning_counts"] = warning_counts_export
 
     if run_cache_key and not cfg.no_cache:
         run_cache_set(
@@ -684,12 +836,6 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
         )
 
     total_ms = int((time.perf_counter() - run_start) * 1000)
-    estimated_cost = est_cost(
-        total_tokens_in,
-        total_tokens_out,
-        runtime.price_per_1k_prompt,
-        runtime.price_per_1k_output,
-    )
     log.info(
         "run_summary",
         extra={

@@ -5,11 +5,13 @@ from pathlib import Path
 from typing import Optional
 
 from pydantic import Field
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Application configuration loaded from environment variables."""
+
+    model_config = SettingsConfigDict(env_file=".env", extra="allow", case_sensitive=False)
 
     app_env: str = Field("local", alias="APP_ENV")
     database_url: str = Field(
@@ -18,6 +20,7 @@ class Settings(BaseSettings):
     )
     api_url: str = Field("http://127.0.0.1:8000", alias="API_URL")
     app_url: str = Field("http://127.0.0.1:3000", alias="APP_URL")
+    rpl_provider: str = Field("openai", alias="RPL_PROVIDER")
     rpl_model: str = Field("gpt-5", alias="RPL_MODEL")
     rpl_prompt_version: str = Field("rpl_g5_v2", alias="RPL_PROMPT_VERSION")
     rpl_k: int = Field(16, alias="RPL_K")
@@ -55,10 +58,6 @@ class Settings(BaseSettings):
     database_url_prod: Optional[str] = Field(None, alias="DATABASE_URL_PROD")
     kalshi_api_key: Optional[str] = Field(None, alias="KALSHI_API_KEY")
     kalshi_private_key: Optional[str] = Field(None, alias="KALSHI_PRIVATE_KEY")
-
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
 
     def prompt_file(self) -> Path:
         """Return resolved prompt file path for the configured prompt version."""

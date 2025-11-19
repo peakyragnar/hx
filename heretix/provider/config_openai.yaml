@@ -1,0 +1,10 @@
+provider: "openai"
+default_model: "gpt5-default"
+api_model_map:
+  gpt5-default: "gpt-5.2025-01-15"
+supports_json_schema: true
+supports_json_mode: true
+supports_tools: true
+supports_seed: true
+max_output_tokens: 4096
+default_temperature: 0.0

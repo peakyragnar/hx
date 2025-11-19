@@ -68,7 +68,7 @@ Goal: parallelize only the slow part — provider calls — while keeping sampli
 
 - Current UI makes one post‑run explainer call. If preferred, you can:
   - Make it async (doesn’t block headline).
-  - Or remove it and summarize from existing fields: `reasoning_bullets`, `contrary_considerations`, `assumptions`, `ambiguity_flags` (already in run JSON).
+  - Or remove it and summarize from existing fields: `reasons`, `assumptions`, `uncertainties`, `flags` (already in run JSON).
 - This keeps the core RPL cost unchanged.
 
 ## Rollout Plan (Minimal Risk)
@@ -118,4 +118,3 @@ HERETIX_CONCURRENCY=8
 ---
 
 This plan keeps the estimator and policy fixed, removes duplication, uses stdlib concurrency behind a single toggle, and makes reversibility trivial — faster without unnecessary complexity.
-

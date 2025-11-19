@@ -1,0 +1,10 @@
+provider: "xai"
+default_model: "grok4-default"
+api_model_map:
+  grok4-default: "grok-4"
+supports_json_schema: false
+supports_json_mode: true
+supports_tools: false
+supports_seed: true
+max_output_tokens: 4096
+default_temperature: 0.0

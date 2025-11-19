@@ -28,6 +28,25 @@ def _sanitize(text: str) -> str:
     return t if t.endswith((".", "!", "?")) else (t + ".")
 
 
+def _format_line(text: Optional[str]) -> Optional[str]:
+    if not text:
+        return None
+    cleaned = " ".join(str(text).split()).strip()
+    if not cleaned:
+        return None
+    if cleaned[-1] not in ".!?":
+        cleaned += "."
+    return cleaned
+
+
+def _append_unique(lines: List[str], text: Optional[str]) -> None:
+    formatted = _format_line(text)
+    if not formatted:
+        return
+    if formatted not in lines:
+        lines.append(formatted)
+
+
 def compose_simple_expl(
     claim: str,
     combined_p: float,
@@ -68,51 +87,54 @@ def compose_simple_expl(
         return None
 
     lines: List[str] = []
+
+    def add_line(text: Optional[str]) -> None:
+        _append_unique(lines, text)
     # Patterns
     if ("ban" in claim_low or "banned" in claim_low):
-        lines.append(
+        add_line(
             f"A ban would require formal approval by the owners at a rules meeting{(' in ' + year_txt) if year_txt else ''}."
         )
-        lines.append("Recent reporting points to debate and expectations of a vote, not a finalized decision.")
+        add_line("Recent reporting points to debate and expectations of a vote, not a finalized decision.")
         hist = grab(r"delayed|tabled|no decision|not approved|postponed")
         if hist:
-            lines.append("Earlier proposals were discussed or tabled; there is no announced rule change yet.")
+            add_line("Earlier proposals were discussed or tabled; there is no announced rule change yet.")
     elif (("source" in claim_low or "domestic" in claim_low) and pct_txt):
         if year_txt:
-            lines.append(
+            add_line(
                 f"Reaching {pct_txt}% by {year_txt} would need rapid build‑out of extraction, processing and magnet capacity."
             )
         else:
-            lines.append(f"Meeting a {pct_txt}% threshold would require substantial new domestic capacity.")
+            add_line(f"Meeting a {pct_txt}% threshold would require substantial new domestic capacity.")
         cap = grab(r"production|processing|refining|magnet|capacity|output|plant|factory")
         if cap:
-            lines.append(cap)
+            add_line(cap)
         dep = grab(r"import|depend|reliance|supply chain|bottleneck|intermediate")
         if dep:
-            lines.append(dep)
+            add_line(dep)
     elif ("market cap" in claim_low) or ("market capitalization" in claim_low) or ("trillion" in claim_low):
         if year_txt:
-            lines.append(f"Hitting that milestone by {year_txt} depends on earnings and broader market conditions.")
+            add_line(f"Hitting that milestone by {year_txt} depends on earnings and broader market conditions.")
         else:
-            lines.append("Reaching that milestone depends on results and market conditions.")
+            add_line("Reaching that milestone depends on results and market conditions.")
         crossed = grab(r"crossed|surpassed|joined|reached")
         if crossed:
-            lines.append("Recent reporting notes the milestone has already been reached at times, showing it is attainable.")
+            add_line("Recent reporting notes the milestone has already been reached at times, showing it is attainable.")
         sustain = grab(r"sustain|maintain|trajectory|growth|margin")
         if sustain:
-            lines.append("Sustaining it will depend on the company’s trajectory over the next periods.")
+            add_line("Sustaining it will depend on the company’s trajectory over the next periods.")
     elif ("data center" in claim_low or "datacenter" in claim_low) and (
         "electric" in claim_low or "power" in claim_low or "rate" in claim_low or "bill" in claim_low or "inflation" in claim_low
     ):
-        lines.append("Large data center build‑outs raise peak demand and capacity needs in some regions.")
+        add_line("Large data center build‑outs raise peak demand and capacity needs in some regions.")
         cap_price = grab(r"capacity price|auction|monitor|PJM|MISO|ISO|market monitor")
         if cap_price:
-            lines.append(
+            add_line(
                 "Recent market reports attribute a sizable share of capacity price increases to data center demand, costs typically recovered from customers."
             )
         conn = grab(r"connection|interconnection|upgrade|transmission|rate case|bill impact|cost shift")
         if conn:
-            lines.append(
+            add_line(
                 "Reports describe higher connection and upgrade costs tied to data center hookups, often passed through to ratepayers under current rules."
             )
     else:
@@ -120,7 +142,7 @@ def compose_simple_expl(
         for _ in range(3):
             line = grab(r".")
             if line:
-                lines.append(line)
+                add_line(line)
             else:
                 break
 
@@ -132,10 +154,30 @@ def compose_simple_expl(
     verdict = "likely true" if combined_p >= 0.6 else ("likely false" if combined_p <= 0.4 else "uncertain")
     summary = f"Taken together, these points suggest the claim is {verdict}."
 
+    context_line = None
+    evidence = web_block.get("evidence") if isinstance(web_block, dict) else {}
+    docs = int(evidence.get("n_docs") or 0) if evidence else 0
+    if docs > 0:
+        descriptor = "a handful of" if docs <= 3 else "several"
+        context_line = (
+            f"The web lens pulled {descriptor} recent articles and only policy-compliant details were blended with the model’s prior."
+        )
+        summary_tail = " Fresh web reporting fed into this verdict."
+    elif web_block is not None:
+        context_line = "The web lens did not surface usable articles in this run, so this mirrors the baseline verdict."
+        summary_tail = " No usable web articles cleared the filters, so this mirrors the baseline verdict."
+    else:
+        context_line = "This web-informed request fell back to the model’s prior because the web resolver returned nothing new."
+        summary_tail = " The web resolver returned nothing new, so this mirrors the model’s prior."
+
+    trimmed_lines = [ln for ln in lines if ln][:3]
+    if not trimmed_lines:
+        trimmed_lines = [context_line or "No additional evidence was available, so this mirrors the baseline verdict."]
+
     return {
         "title": "Why the web‑informed verdict looks this way",
-        "lines": [ln for ln in lines if ln],
-        "summary": summary,
+        "lines": trimmed_lines,
+        "summary": summary + summary_tail,
     }
 
 
@@ -231,7 +273,7 @@ def compose_baseline_simple_expl(
     """Compose Simple View lines for baseline (model-only) runs."""
 
     claim_low = (claim or "").lower()
-    pattern_lines: List[str] = []
+    narrative_lines: List[str] = []
     year_m = re.search(r"(20\\d{2})", claim or "")
     pct_m = re.search(r"(\\d{1,3})\\s?%[^\n]*", claim or "")
     year_txt = year_m.group(1) if year_m else None
@@ -239,17 +281,21 @@ def compose_baseline_simple_expl(
 
     def add(*lines: str) -> None:
         for line in lines:
-            if line and line not in pattern_lines:
-                pattern_lines.append(line)
+            _append_unique(narrative_lines, line)
 
     keywords = _extract_keywords(claim)
     topic_phrase = _format_topic(keywords)
+    template_num: Optional[int]
+    try:
+        template_num = int(template_count) if template_count is not None else None
+    except (TypeError, ValueError):
+        template_num = None
 
     if "ban" in claim_low or "banned" in claim_low:
         add(
             f"A ban would require formal approval and rulebook changes{(' in ' + year_txt) if year_txt else ''}.",
-            "Model priors recall that committee debates and votes often stall before a blanket ban is adopted.",
-            "Historical summaries show proposals usually cite safety data and league politics before anything is final.",
+            "Committee debates and votes often stall before a blanket ban is adopted.",
+            "Recent discussions cite safety data and league politics, showing the idea is still being argued.",
         )
     elif any(word in claim_low for word in ["domestic", "source", "sourcing", "content"]) and pct_txt:
         add(
@@ -259,7 +305,7 @@ def compose_baseline_simple_expl(
         )
     elif any(term in claim_low for term in ["market cap", "trillion", "valuation", "most valuable"]):
         add(
-            "Model priors note that valuation milestones swing with market conditions, not just company statements.",
+            "Valuation milestones swing with market conditions, not just company statements.",
             "Historical peaks often reverse unless earnings and margins keep pace, so permanence is doubtful.",
             "Claims about trillion‑dollar caps usually need sustained profitability and macro support, which priors treat cautiously.",
         )
@@ -269,19 +315,19 @@ def compose_baseline_simple_expl(
         add(
             "Training data ties large data center growth to higher grid demand and peak pricing debates.",
             "Regulator dockets and ISO reports often show rate increases spreading across customers, not just operators.",
-            "Priors remember that new hookups trigger transmission upgrades and cost shifting, so broad bill impacts stay contested.",
+            "Past hookups triggered transmission upgrades and cost shifting, so broad bill impacts stay contested.",
         )
     elif any(word in claim_low for word in ["greatest", "best ever", "goat", "most dominant", "greatest of all time"]):
         add(
-            "“Greatest” debates typically hinge on championships, sustained dominance, and historical impact.",
-            "Model priors weigh how lists and historians balance rings, longevity, and era strength, not single stats.",
-            "Without agreed criteria, the claim depends on subjective definitions, so GPT‑5 stays skeptical.",
+            "“Greatest” debates hinge on championships, sustained dominance, and historical impact.",
+            "Model priors weigh how lists balance rings, longevity, and era strength, not single stats.",
+            "Without agreed criteria, the claim depends on subjective definitions, so the verdict stays cautious.",
         )
     elif "inflation" in claim_low and ("tariff" in claim_low or "tariffs" in claim_low):
         add(
-            "Training data links tariffs to higher import costs, but pass‑through to consumer inflation varies by product mix.",
-            "Historical episodes show monetary policy and demand shocks dominate CPI, so tariffs alone rarely drive inflation.",
-            "Model priors remember that many sectors can substitute suppliers, muting broad price effects.",
+            "Training data links tariffs to higher import costs, but pass‑through to consumer prices varies by product mix.",
+            "Historical episodes show monetary policy and demand shocks dominate broad inflation, so tariffs rarely drive the entire move.",
+            "Model priors remember that many sectors can substitute suppliers, muting sweeping price effects.",
         )
     elif any(word in claim_low for word in ["europe", "england", "france", "germany", "italy"]) and any(
         word in claim_low for word in ["execut", "gallows", "criminal"]
@@ -289,76 +335,109 @@ def compose_baseline_simple_expl(
         add(
             "Historical court records show execution rates varied widely across Europe and rarely stayed fixed for generations.",
             "Legal reforms and shifting penal codes drove execution counts down long before the modern era.",
-            "Model priors flag century‑spanning claims about uniform execution quotas as exaggerations requiring citations.",
+            "Century-spanning claims about uniform execution quotas usually turn out to be exaggerations requiring citations.",
         )
     elif pct_txt and any(word in claim_low for word in ["population", "people", "generation", "citizen", "share"]):
         add(
             f"Claims that {pct_txt}% of a population faced the same outcome trigger checks against census and mortality tables.",
-            "GPT‑5 recalls that demographic swings, migration, and reporting gaps make tidy percentages suspect.",
-            "Without archival data, priors view sweeping percentage assertions as more rhetorical than factual.",
+            "Training data recalls that demographic swings, migration, and reporting gaps make tidy percentages suspect.",
+            "Without archival data, sweeping percentage assertions read more rhetorical than factual.",
         )
 
     verdict = "likely true" if prior_p >= 0.60 else ("likely false" if prior_p <= 0.40 else "uncertain")
-    lines: List[str] = pattern_lines[:3]
 
     def _generic_lines(direction: str) -> List[str]:
         if direction == "likely true":
             return [
-                f"Training data references {topic_phrase} and usually reports outcomes consistent with the claim.",
-                "Historical summaries in the corpus mention similar incentives and mechanisms, so GPT‑5 leans toward it being accurate.",
-                "Counterexamples exist, but they are outweighed by supporting accounts in its prior knowledge.",
+                f"Training examples about {topic_phrase} usually land on similar outcomes.",
+                "Mechanisms and incentives cited in prior cases line up with this claim.",
+                "Counterexamples exist, but supporting accounts outnumber them in the model’s memory.",
             ]
         if direction == "likely false":
             return [
-                f"Many references to {topic_phrase} describe scenarios where the claim breaks down or stays limited.",
-                "Definitions, precedent, and expert commentary in the corpus nudge GPT‑5 toward skepticism.",
-                "Supporting anecdotes appear, but contradictory evidence dominates the material it has seen.",
+                f"Many references to {topic_phrase} describe where the claim breaks down or stays limited.",
+                "Definitions, precedent, and expert commentary nudge the model toward skepticism.",
+                "Supporting anecdotes appear, but contradictory evidence dominates what it has seen.",
             ]
         return [
-            f"Examples about {topic_phrase} split between success and failure in GPT‑5’s training data.",
-            "Outcomes hinge on missing details or context, so the model keeps the prior near the middle.",
-            "Supporting and opposing references appear in roughly equal measure, preventing a decisive verdict.",
+            f"Examples about {topic_phrase} split between success and failure in the training data.",
+            "Outcomes hinge on missing details or context, so the verdict sits near the middle.",
+            "Supporting and opposing references appear in roughly equal measure, preventing a decisive call.",
         ]
 
-    if not lines:
-        lines.extend(_generic_lines(verdict)[:3])
+    if not narrative_lines:
+        narrative_lines.extend(_generic_lines(verdict)[:3])
 
-    ci_lo_raw = prior_ci[0] if prior_ci and prior_ci[0] is not None else None
-    ci_hi_raw = prior_ci[1] if prior_ci and prior_ci[1] is not None else None
-    ci_lo = ci_lo_raw if isinstance(ci_lo_raw, (int, float)) else max(0.0, prior_p - 0.05)
-    ci_hi = ci_hi_raw if isinstance(ci_hi_raw, (int, float)) else min(1.0, prior_p + 0.05)
-    ci_sentence = (
-        f"The training-only probability is {prior_p*100:.1f}% with a 95% interval of {ci_lo*100:.1f}% to {ci_hi*100:.1f}%."
-    )
-    stability_sentence = (
-        f"Stability across paraphrases scores {stability_score:.2f}, meaning the verdict stays steady under rewordings."
-    )
-    template_sentence = None
-    if template_count:
-        if isinstance(imbalance_ratio, (int, float)):
-            template_sentence = (
-                f"{template_count} templates were balanced (imbalance ratio {imbalance_ratio:.2f}), so no single phrasing dominated."
-            )
-        else:
-            template_sentence = f"{template_count} paraphrases agreed on the direction of the verdict."
+    final_lines: List[str] = []
+    _append_unique(final_lines, "This verdict reflects only the model’s internal knowledge; no live web evidence was added.")
 
-    for sentence in (ci_sentence, stability_sentence, template_sentence):
-        if sentence and len(lines) < 3:
-            lines.append(sentence)
+    if narrative_lines:
+        _append_unique(final_lines, narrative_lines[0])
+
+    stability_sentence = _describe_stability(stability_score)
+    template_sentence = _describe_template_mix(template_count, imbalance_ratio)
+
+    prefer_template_first = bool(template_num and template_num >= 6)
+    extra_candidates: List[Optional[str]] = []
+    if prefer_template_first and template_sentence:
+        extra_candidates.append(template_sentence)
+    if stability_sentence:
+        extra_candidates.append(stability_sentence)
+    if not prefer_template_first and template_sentence:
+        extra_candidates.append(template_sentence)
+    extra_candidates.extend(narrative_lines[1:])
 
     fallback_reasons = [
-        "GPT‑5 compares thousands of historical examples before settling on a prior.",
-        "Definitions and context matter; priors stay cautious when a claim needs extra assumptions.",
-        "Counterexamples in its training data keep the probability from moving into confident territory.",
+        "The model compares the claim to thousands of historical examples before locking in a verdict.",
+        "It stays cautious when a claim hinges on missing details, so extreme statements get softened.",
+        "Conflicting anecdotes keep the answer grounded instead of swinging to a hard yes or no.",
     ]
-    idx = 0
-    while len(lines) < 3 and idx < len(fallback_reasons):
-        lines.append(fallback_reasons[idx])
-        idx += 1
+    extra_candidates.extend(fallback_reasons)
+
+    for reason in extra_candidates:
+        if len(final_lines) >= 3:
+            break
+        _append_unique(final_lines, reason)
 
     summary = f"Taken together, these points suggest the claim is {verdict}."
     return {
         "title": "Why the model‑only verdict looks this way",
-        "lines": lines,
+        "lines": final_lines[:3],
         "summary": summary,
     }
+
+
+def _describe_stability(stability_score: float) -> str:
+    try:
+        score = float(stability_score)
+    except (TypeError, ValueError):
+        score = 0.0
+    if score >= 0.85:
+        return "Rewording the claim kept landing in the same place, so the verdict is steady."
+    if score >= 0.6:
+        return "Most rephrasings agreed, though a few wobbled, so the label stays cautious."
+    return "Different phrasings pulled the verdict in both directions, so we leave room for doubt."
+
+
+def _describe_template_mix(template_count: Optional[int], imbalance_ratio: Optional[float]) -> Optional[str]:
+    if not template_count:
+        return None
+    try:
+        templates = int(template_count)
+    except (TypeError, ValueError):
+        return None
+    if templates <= 0:
+        return None
+    if templates >= 8:
+        base = "We tried many phrasings and they still leaned the same direction."
+    elif templates >= 4:
+        base = "Several alternate phrasings landed near the same verdict."
+    else:
+        base = "Even a couple of paraphrases landed in the same direction."
+    try:
+        imb = float(imbalance_ratio) if imbalance_ratio is not None else None
+    except (TypeError, ValueError):
+        imb = None
+    if imb and imb > 1.25:
+        base += " One or two wordings were louder, but they did not flip the answer."
+    return base

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, List, Optional
 import json
@@ -18,6 +19,35 @@ from .seed import make_bootstrap_seed
 import yaml
 from heretix.pipeline import PipelineOptions, perform_run
 from heretix.db.models import Check
+from heretix.provider.utils import infer_provider_from_model
+from heretix.provider.schema_text import RPL_SAMPLE_JSON_SCHEMA
+from heretix.constants import SCHEMA_VERSION
+from heretix.provider import registry
+
+_PROVIDER_ENV_REQUIREMENTS = {
+    "openai": ("OPENAI_API_KEY",),
+    "xai": ("XAI_API_KEY", "GROK_API_KEY"),
+    "google": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+}
+
+
+def _require_provider_credentials(providers: List[str]) -> None:
+    missing: List[str] = []
+    for provider in providers:
+        normalized = (provider or "").strip().lower()
+        if not normalized:
+            continue
+        env_options = _PROVIDER_ENV_REQUIREMENTS.get(normalized)
+        if not env_options:
+            continue
+        if not any(os.getenv(name) for name in env_options):
+            missing.append(f"{provider} ({' or '.join(env_options)})")
+    if missing:
+        typer.echo(
+            "ERROR: Missing API keys for provider(s): " + "; ".join(missing),
+            err=True,
+        )
+        raise typer.Exit(1)
 
 
 app = typer.Typer(help="Heretix (new) RPL harness")
@@ -36,7 +66,8 @@ def _plan_summary(cfg_local: RunConfig, prompt_path: Path) -> dict:
     T_bank = len(paraphrases)
     T_stage = int(cfg_local.T) if cfg_local.T is not None else T_bank
     T_stage = max(1, min(T_stage, T_bank))
-    off = rotation_offset(cfg_local.claim, cfg_local.model, str(doc.get("version")), T_bank)
+    logical_model = cfg_local.logical_model or cfg_local.model
+    off = rotation_offset(cfg_local.claim, logical_model, str(doc.get("version")), T_bank)
     order = list(range(T_bank))
     if T_bank > 1 and off % T_bank != 0:
         rot = off % T_bank
@@ -67,6 +98,7 @@ def _plan_summary(cfg_local: RunConfig, prompt_path: Path) -> dict:
 def cmd_run(
     config: Path = typer.Option(..., exists=True, dir_okay=False, help="Path to run config YAML/JSON"),
     prompt_version: List[str] = typer.Option(None, help="Override prompt versions to run (one or many)"),
+    model_name: List[str] = typer.Option(None, "--model", "-m", help="Override models to run (repeatable)"),
     out: Path = typer.Option(Path("runs/rpl_run.json"), help="Output JSON file (A/B summary)"),
     mock: bool = typer.Option(False, help="Use deterministic mock provider (no network) for smoke tests"),
     dry_run: bool = typer.Option(False, help="Preview effective plan without running or writing to DB"),
@@ -80,24 +112,74 @@ def cmd_run(
         typer.echo("ERROR: mode must be 'baseline' or 'web_informed'", err=True)
         raise typer.Exit(1)
 
-    if not mock and not os.getenv("HERETIX_MOCK") and not os.getenv("OPENAI_API_KEY"):
-        typer.echo("ERROR: OPENAI_API_KEY not set (required for live runs)", err=True)
+    cfg = load_run_config(str(config))
+    override_models = _normalize_model_list(model_name)
+    models_to_run = override_models or (cfg.models or [cfg.model])
+    models_to_run = _normalize_model_list(models_to_run)
+    if models_to_run:
+        filtered: List[str] = []
+        skipped: List[str] = []
+        for candidate in models_to_run:
+            try:
+                registry.get_score_fn(candidate)
+            except ValueError:
+                skipped.append(candidate)
+                continue
+            filtered.append(candidate)
+        if skipped:
+            typer.echo(
+                f"Skipping unsupported models: {', '.join(skipped)}",
+                err=True,
+            )
+        models_to_run = filtered
+    if not models_to_run:
+        typer.echo("ERROR: No models specified", err=True)
         raise typer.Exit(1)
 
-    cfg = load_run_config(str(config))
+    if not mock and not os.getenv("HERETIX_MOCK"):
+        providers_needed: List[str] = []
+        for model in models_to_run:
+            if cfg.provider_locked:
+                provider_id = cfg.provider or infer_provider_from_model(model) or "openai"
+            else:
+                provider_id = infer_provider_from_model(model) or "openai"
+            providers_needed.append(provider_id or "openai")
+        # Preserve order while deduplicating
+        seen: set[str] = set()
+        unique_providers = []
+        for provider in providers_needed:
+            key = (provider or "").lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            unique_providers.append(provider)
+        _require_provider_credentials(unique_providers)
+
+    cfg.models = models_to_run
+    cfg.model = models_to_run[0]
+    cfg.logical_model = cfg.model
     versions = prompt_version if prompt_version else [cfg.prompt_version]
 
     if dry_run:
-        v = versions[0]
-        local_cfg = RunConfig(**{**cfg.__dict__})
-        local_cfg.prompt_version = v
-        prompt_file = (
-            Path(local_cfg.prompt_file_path)
-            if local_cfg.prompts_file
-            else Path(__file__).parent / "prompts" / f"{v}.yaml"
-        )
-        plan = _plan_summary(local_cfg, prompt_file)
-        typer.echo(json.dumps({"mode": "single", "plan": plan}, indent=2))
+        plans: List[dict[str, Any]] = []
+        for model in models_to_run:
+            for v in versions:
+                local_cfg = RunConfig(**{**cfg.__dict__})
+                local_cfg.model = model
+                local_cfg.logical_model = model
+                if not local_cfg.provider_locked:
+                    local_cfg.provider = infer_provider_from_model(model) or "openai"
+                local_cfg.prompt_version = v
+                prompt_file = (
+                    Path(local_cfg.prompt_file_path)
+                    if local_cfg.prompts_file
+                    else Path(__file__).parent / "prompts" / f"{v}.yaml"
+                )
+                plans.append(_plan_summary(local_cfg, prompt_file))
+        if len(plans) == 1:
+            typer.echo(json.dumps({"mode": "single", "plan": plans[0]}, indent=2))
+        else:
+            typer.echo(json.dumps({"mode": "multi", "plans": plans}, indent=2))
         return
 
     effective_db_url = database_url or os.getenv("DATABASE_URL", "sqlite:///runs/heretix.sqlite")
@@ -137,48 +219,77 @@ def cmd_run(
     )
 
     runs_output: list[dict] = []
-    for v in versions:
-        local_cfg = RunConfig(**{**cfg.__dict__})
-        local_cfg.prompt_version = v
-        typer.echo(f"Running {local_cfg.model}  K={local_cfg.K} R={local_cfg.R}  mode={mode_normalized}  version={v}")
+    for model in models_to_run:
+        for v in versions:
+            local_cfg = RunConfig(**{**cfg.__dict__})
+            local_cfg.model = model
+            local_cfg.logical_model = model
+            if not local_cfg.provider_locked:
+                local_cfg.provider = infer_provider_from_model(model) or "openai"
+            local_cfg.prompt_version = v
+            typer.echo(f"Running {model}  K={local_cfg.K} R={local_cfg.R}  mode={mode_normalized}  version={v}")
 
-        with SessionLocal() as session:
-            artifacts = perform_run(
-                session=session,
-                cfg=local_cfg,
-                mode=mode_normalized,
-                options=pipeline_options,
-                use_mock=mock,
-                user_id=None,
-                anon_token=None,
-            )
-            session.commit()
+            run_options = replace(pipeline_options, wel_model=model)
+            with SessionLocal() as session:
+                artifacts = perform_run(
+                    session=session,
+                    cfg=local_cfg,
+                    mode=mode_normalized,
+                    options=run_options,
+                    use_mock=mock,
+                    user_id=None,
+                    anon_token=None,
+                )
+                session.commit()
 
-        run_entry = _build_run_entry(local_cfg, mode_normalized, mock, artifacts)
-        runs_output.append(run_entry)
+            run_entry = _build_run_entry(local_cfg, mode_normalized, mock, artifacts)
+            runs_output.append(run_entry)
 
-        combined_block = run_entry.get("combined") or run_entry.get("prior")
-        ci = combined_block.get("ci95", [None, None]) or [None, None]
-        p_val = combined_block.get("p")
-        if p_val is not None:
-            ci_lo = f"{ci[0]:.3f}" if ci[0] is not None else "nan"
-            ci_hi = f"{ci[1]:.3f}" if ci[1] is not None else "nan"
-            typer.echo(f"  combined_p={p_val:.3f}  CI95=[{ci_lo},{ci_hi}]")
+            combined_block = run_entry.get("combined") or run_entry.get("prior")
+            ci = combined_block.get("ci95", [None, None]) or [None, None]
+            p_val = combined_block.get("p")
+            if p_val is not None:
+                ci_lo = f"{ci[0]:.3f}" if ci[0] is not None else "nan"
+                ci_hi = f"{ci[1]:.3f}" if ci[1] is not None else "nan"
+                typer.echo(f"  combined_p={p_val:.3f}  CI95=[{ci_lo},{ci_hi}]")
+            weight_block = run_entry.get("weights") or {}
+            w_web = weight_block.get("w_web")
+            if w_web is not None:
+                try:
+                    w_web_value = float(w_web)
+                except (TypeError, ValueError):
+                    w_web_value = 0.0
+                w_web_value = max(0.0, min(1.0, w_web_value))
+                typer.echo(f"  weights: web={w_web_value:.2f}  prior={(1.0 - w_web_value):.2f}")
 
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps({"mode": mode_normalized, "runs": runs_output}, indent=2))
+    payload = {"mode": mode_normalized, "requested_models": models_to_run, "runs": runs_output}
+    out.write_text(json.dumps(payload, indent=2))
     typer.echo(f"Wrote {out}")
 
 
 def _build_run_entry(cfg: RunConfig, mode: str, mock: bool, artifacts) -> dict:
     result = artifacts.result
+    provenance_payload = result.get("provenance") or {}
+    provenance_payload.setdefault(
+        "rpl",
+        {
+            "prompt_version": result.get("prompt_version", cfg.prompt_version),
+            "model": result.get("model", cfg.model),
+        },
+    )
     run_data: dict[str, Any] = {
         "execution_id": result.get("execution_id"),
         "run_id": result.get("run_id"),
         "claim": result.get("claim"),
         "model": result.get("model", cfg.model),
+        "logical_model": result.get("logical_model", cfg.logical_model or cfg.model),
+        "resolved_logical_model": result.get("resolved_logical_model", result.get("model", cfg.model)),
+        "provider": result.get("provider", cfg.provider or infer_provider_from_model(cfg.model) or "openai"),
+        "provider_model_id": result.get("provider_model_id"),
         "prompt_version": result.get("prompt_version", cfg.prompt_version),
         "mode": mode,
+        "schema_version": result.get("schema_version", SCHEMA_VERSION),
         "sampling": result.get("sampling", {}),
         "aggregation": result.get("aggregation", {}),
         "aggregates": result.get("aggregates", {}),
@@ -187,14 +298,13 @@ def _build_run_entry(cfg: RunConfig, mode: str, mock: bool, artifacts) -> dict:
         "combined": artifacts.combined_block,
         "weights": artifacts.weights,
         "mock": mock,
+        "tokens_in": result.get("tokens_in"),
+        "tokens_out": result.get("tokens_out"),
+        "cost_usd": result.get("cost_usd"),
+        "warning_counts": result.get("warning_counts"),
         "prompt_file": str(artifacts.prompt_file),
         "simple_expl": artifacts.simple_expl,
-        "provenance": {
-            "rpl": {
-                "prompt_version": result.get("prompt_version", cfg.prompt_version),
-                "model": result.get("model", cfg.model),
-            }
-        },
+        "provenance": provenance_payload,
     }
     if artifacts.wel_provenance:
         run_data["provenance"]["wel"] = artifacts.wel_provenance
@@ -223,6 +333,25 @@ def _load_local_gzip_json(path: str) -> list[dict]:
     if not p.exists():
         raise FileNotFoundError(f"Artifact file not found: {path}")
     return json.loads(gzip.decompress(p.read_bytes()).decode("utf-8"))
+
+
+def _normalize_model_list(values: Any) -> List[str]:
+    if not values:
+        return []
+    if isinstance(values, (list, tuple, set)):
+        candidates = list(values)
+    else:
+        candidates = [values]
+
+    normalized: List[str] = []
+    for candidate in candidates:
+        if candidate is None:
+            continue
+        text = str(candidate).strip()
+        if not text or text in normalized:
+            continue
+        normalized.append(text)
+    return normalized
 
 
 @app.command("artifact")
@@ -355,11 +484,7 @@ def cmd_describe(
     # Build template hashes for selected templates
     system_text = str(doc.get("system"))
     user_template = str(doc.get("user_template"))
-    schema_instructions = (
-        "Return ONLY valid JSON with exactly these fields:\n"
-        "{\n  \"prob_true\": number between 0 and 1,\n  \"confidence_self\": number between 0 and 1,\n  \"assumptions\": array of strings,\n  \"reasoning_bullets\": array of 3-6 strings,\n  \"contrary_considerations\": array of 2-4 strings,\n  \"ambiguity_flags\": array of strings\n}\n"
-        "Output ONLY the JSON object, no other text."
-    )
+    schema_instructions = RPL_SAMPLE_JSON_SCHEMA
     full_instructions = system_text + "\n\n" + schema_instructions
     tpl_hashes = []
     prompt_len_list = []
@@ -391,6 +516,7 @@ def cmd_describe(
         "config": {
             "claim": cfg.claim,
             "model": cfg.model,
+            "models": cfg.models,
             "prompt_version": cfg.prompt_version,
             "prompt_version_full": str(doc.get("version")),
             "K": cfg.K,

@@ -145,14 +145,14 @@ Here is a conceptual explanation of how WEL (Web-Informed Lens) works.
 
   Step 3: Prompting the Model and Getting Samples
 
-  For each prompt, the model is asked to return a JSON object containing its assessment of the claim, including:
+  For each prompt, the model returns a JSON object that validates against `RPLSampleV1`, which includes:
 
 
-   * prob_true: The probability that the claim is true.
-   * confidence_self: The model's confidence in its own assessment.
-   * assumptions: Any assumptions the model made.
-   * reasoning_bullets: The model's reasoning.
-   * contrary_considerations: Reasons why the model might be wrong.
+   * belief.prob_true (and belief.label): the estimated probability (0-1, two decimals) and qualitative label.
+   * reasons: 2-4 concise prior-based supporting points.
+   * assumptions: any explicit scope or definitional assumptions.
+   * uncertainties: factors that could move the estimate or missing evidence.
+   * flags: refusal/off-topic booleans indicating whether the sample should be excluded.
 
   The results of each of these prompts are called "samples."
 

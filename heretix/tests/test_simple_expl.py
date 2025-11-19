@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from heretix.simple_expl import compose_simple_expl, _sanitize
+from heretix.simple_expl import compose_simple_expl, compose_baseline_simple_expl, _sanitize
 
 
 class TestSanitize:
@@ -99,8 +99,8 @@ class TestComposeSimpleExpl:
         assert result["title"] == "Why the web‑informed verdict looks this way"
         assert isinstance(result["lines"], list)
         assert 1 <= len(result["lines"]) <= 3
-        assert result["summary"] == "Taken together, these points suggest the claim is uncertain."
-        # Should get 3 distinct lines
+        assert result["summary"].startswith("Taken together, these points suggest the claim is uncertain.")
+        assert "web resolver returned nothing new" in result["summary"].lower()
         assert len(result["lines"]) == 3
         assert result["lines"][0] == "First piece of evidence."
         assert result["lines"][1] == "Second piece of evidence."
@@ -124,6 +124,7 @@ class TestComposeSimpleExpl:
 
         assert len(result["lines"]) == 1
         assert result["lines"][0] == "Only one piece of evidence."
+        assert "web resolver returned nothing new" in result["summary"].lower()
 
     def test_ban_claim_pattern(self):
         """Ban claims should use pattern-aware narrative."""
@@ -145,8 +146,8 @@ class TestComposeSimpleExpl:
         assert "ban would require formal approval" in result["lines"][0]
         assert "in 2025" in result["lines"][0]
         assert "Recent reporting points to debate" in result["lines"][1]
-        assert "Earlier proposals were discussed or tabled" in result["lines"][2]
-        assert result["summary"] == "Taken together, these points suggest the claim is likely false."
+        assert "Earlier proposals" in result["lines"][2]
+        assert result["summary"].endswith("The web resolver returned nothing new, so this mirrors the model’s prior.")
 
     def test_domestic_percent_claim_pattern(self):
         """Domestic % claims should use pattern-aware narrative."""
@@ -167,8 +168,8 @@ class TestComposeSimpleExpl:
 
         assert len(result["lines"]) == 3
         assert "Reaching 50% by 2026" in result["lines"][0]
-        assert "Production capacity is limited" in result["lines"][1]
-        assert "Import dependency remains high" in result["lines"][2]
+        assert result["lines"][1] == "Production capacity is limited."
+        assert result["lines"][2] == "Import dependency remains high."
 
     def test_market_cap_claim_pattern(self):
         """Market cap claims should use pattern-aware narrative."""
@@ -189,7 +190,6 @@ class TestComposeSimpleExpl:
 
         assert len(result["lines"]) == 3
         assert "Hitting that milestone by 2025" in result["lines"][0]
-        # The pattern produces a standard message when it finds "crossed" in bullets
         assert "milestone has already been reached" in result["lines"][1]
         assert "Sustaining" in result["lines"][2]
 
@@ -211,9 +211,10 @@ class TestComposeSimpleExpl:
         )
 
         assert len(result["lines"]) == 3
+        joined = " ".join(result["lines"]).lower()
         assert "data center build‑outs" in result["lines"][0]
-        assert "capacity price" in result["lines"][1].lower()
-        assert "connection" in result["lines"][2].lower()
+        assert "capacity price" in joined
+        assert "connection" in joined
 
     def test_verdict_tie_in_likely_true(self):
         """Should produce 'likely true' verdict for p >= 0.6."""
@@ -256,8 +257,9 @@ class TestComposeSimpleExpl:
 
         assert result["title"] == "Why the web‑informed verdict looks this way"
         assert isinstance(result["lines"], list)
-        assert len(result["lines"]) == 0
-        assert result["summary"] == "Taken together, these points suggest the claim is uncertain."
+        assert len(result["lines"]) == 1
+        assert result["lines"][0].startswith("This web-informed request")
+        assert result["summary"].endswith("The web resolver returned nothing new, so this mirrors the model’s prior.")
 
     def test_none_replicates(self):
         """Should handle None replicates gracefully."""
@@ -270,7 +272,9 @@ class TestComposeSimpleExpl:
 
         assert result["title"] == "Why the web‑informed verdict looks this way"
         assert isinstance(result["lines"], list)
-        assert result["summary"] == "Taken together, these points suggest the claim is uncertain."
+        assert len(result["lines"]) == 1
+        assert result["lines"][0].startswith("This web-informed request")
+        assert result["summary"].endswith("The web resolver returned nothing new, so this mirrors the model’s prior.")
 
     def test_malformed_replicate_missing_bullets(self):
         """Should handle replicates without support_bullets key."""
@@ -314,6 +318,30 @@ class TestComposeSimpleExpl:
         assert "$500" not in result["lines"][2]
         assert "a high value" in result["lines"][2]
 
+    def test_web_block_with_docs_adds_context_line(self):
+        web_block = {"evidence": {"n_docs": 4, "n_domains": 2}}
+        result = compose_simple_expl(
+            claim="Claim with docs",
+            combined_p=0.7,
+            web_block=web_block,
+            replicates=[{"support_bullets": ["Supporting bullet."]}],
+        )
+
+        assert result["lines"][0] == "Supporting bullet."
+        assert result["summary"].endswith("Fresh web reporting fed into this verdict.")
+
+    def test_web_block_no_docs_uses_fallback_context(self):
+        web_block = {"evidence": {"n_docs": 0}}
+        result = compose_simple_expl(
+            claim="Claim with no docs",
+            combined_p=0.4,
+            web_block=web_block,
+            replicates=[],
+        )
+
+        assert result["lines"][0].startswith("The web lens did not surface usable articles")
+        assert result["summary"].endswith("No usable web articles cleared the filters, so this mirrors the baseline verdict.")
+
     def test_caps_lines_to_3_max(self):
         """Should cap content lines to 3 maximum."""
         replicates = [
@@ -335,7 +363,6 @@ class TestComposeSimpleExpl:
             replicates=replicates,
         )
 
-        # Should have exactly 3 content lines (capped)
         assert len(result["lines"]) == 3
 
     def test_stateful_grab_avoids_duplicates(self):
@@ -356,7 +383,6 @@ class TestComposeSimpleExpl:
             replicates=replicates,
         )
 
-        # All lines should be unique
         assert len(result["lines"]) == len(set(result["lines"]))
         assert result["lines"][0] != result["lines"][1]
         assert result["lines"][1] != result["lines"][2]
@@ -377,3 +403,50 @@ class TestComposeSimpleExpl:
         assert isinstance(result["title"], str)
         assert isinstance(result["lines"], list)
         assert isinstance(result["summary"], str)
+
+
+class TestComposeBaselineSimpleExpl:
+    def test_baseline_plain_language_has_context(self):
+        result = compose_baseline_simple_expl(
+            claim="Tariffs don't cause inflation",
+            prior_p=0.55,
+            prior_ci=(0.5, 0.6),
+            stability_score=0.8,
+            template_count=8,
+            imbalance_ratio=1.05,
+        )
+
+        assert result["lines"][0].startswith("This verdict reflects only the model’s internal knowledge")
+        banned = ["ci", "stability", "imbalance", "logit"]
+        for text in result["lines"]:
+            lower = text.lower()
+            for bad in banned:
+                assert bad not in lower
+
+    def test_baseline_template_mix_sentence(self):
+        result = compose_baseline_simple_expl(
+            claim="Generic claim",
+            prior_p=0.65,
+            prior_ci=(0.6, 0.7),
+            stability_score=0.9,
+            template_count=10,
+            imbalance_ratio=1.5,
+        )
+
+        joined = " ".join(result["lines"][1:])
+        assert "many phrasings" in joined
+        assert "wordings were louder" in joined
+
+    def test_baseline_generic_lines_fill_when_no_pattern(self):
+        result = compose_baseline_simple_expl(
+            claim="Unrecognized topic",
+            prior_p=0.45,
+            prior_ci=(0.4, 0.5),
+            stability_score=0.3,
+            template_count=2,
+            imbalance_ratio=None,
+        )
+
+        assert len(result["lines"]) == 3
+        assert "internal knowledge" in result["lines"][0]
+        assert "leave room for doubt" in " ".join(result["lines"])

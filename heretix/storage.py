@@ -33,7 +33,10 @@ def _ensure_db(path: Path | None = None) -> sqlite3.Connection:
             created_at INTEGER,
             claim TEXT,
             model TEXT,
+            provider TEXT,
+            logical_model TEXT,
             prompt_version TEXT,
+            schema_version TEXT,
             K INTEGER,
             R INTEGER,
             T INTEGER,
@@ -52,7 +55,10 @@ def _ensure_db(path: Path | None = None) -> sqlite3.Connection:
             config_json TEXT,
             sampler_json TEXT,
             counts_by_template_json TEXT,
-            artifact_json_path TEXT
+            artifact_json_path TEXT,
+            tokens_in INTEGER,
+            tokens_out INTEGER,
+            cost_usd REAL
         )
         """
     )
@@ -61,6 +67,18 @@ def _ensure_db(path: Path | None = None) -> sqlite3.Connection:
         conn.execute("ALTER TABLE runs ADD COLUMN prompt_char_len_max INTEGER")
     except Exception:
         pass
+    for sql in [
+        "ALTER TABLE runs ADD COLUMN provider TEXT",
+        "ALTER TABLE runs ADD COLUMN logical_model TEXT",
+        "ALTER TABLE runs ADD COLUMN schema_version TEXT",
+        "ALTER TABLE runs ADD COLUMN tokens_in INTEGER",
+        "ALTER TABLE runs ADD COLUMN tokens_out INTEGER",
+        "ALTER TABLE runs ADD COLUMN cost_usd REAL",
+    ]:
+        try:
+            conn.execute(sql)
+        except Exception:
+            pass
     # PQS and gate columns for runs
     for sql in [
         "ALTER TABLE runs ADD COLUMN pqs INTEGER",
@@ -89,11 +107,16 @@ def _ensure_db(path: Path | None = None) -> sqlite3.Connection:
             tokens_out INTEGER,
             latency_ms REAL,
             json_valid INTEGER,
+            warnings_json TEXT,
             PRIMARY KEY (cache_key),
             FOREIGN KEY (run_id) REFERENCES runs(run_id)
         )
         """
     )
+    try:
+        conn.execute("ALTER TABLE samples ADD COLUMN warnings_json TEXT")
+    except Exception:
+        pass
     # Executions: immutable per-invocation summaries
     conn.execute(
         """

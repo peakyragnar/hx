@@ -16,6 +16,9 @@ from heretix.db.models import Check
 from heretix_api.routes_checks import evaluate_web_informed
 import hashlib
 from heretix.artifacts import ArtifactRecord, get_artifact_store, write_web_artifact
+from heretix.verdicts import finalize_combined_block
+from heretix.provider.utils import infer_provider_from_model
+from heretix.constants import SCHEMA_VERSION
 
 
 @dataclass
@@ -50,9 +53,26 @@ class PipelineArtifacts:
     artifact_replicates_uri: Optional[str] = None
     artifact_docs_uri: Optional[str] = None
     simple_expl: Optional[Dict[str, Any]] = None
+    reasoning_text: Optional[str] = None
 
 
 logger = logging.getLogger(__name__)
+
+_CACHE_HIT_THRESHOLD = 0.999
+
+
+def _should_generate_llm_narration(
+    use_mock: bool,
+    combined_block: Optional[Dict[str, Any]],
+    cache_hit_rate: float,
+) -> bool:
+    """Return True if we should call live narration helpers."""
+
+    if use_mock:
+        return False
+    if combined_block is None:
+        return False
+    return cache_hit_rate < _CACHE_HIT_THRESHOLD
 
 
 def resolve_prompt_file(cfg: RunConfig, options: PipelineOptions) -> Path:
@@ -90,6 +110,13 @@ def perform_run(
     aggregates = dict(result.get("aggregates", {}))
     sampling = dict(result.get("sampling", {}))
 
+    provider_id = result.get("provider") or cfg.provider or infer_provider_from_model(cfg.model) or "openai"
+    logical_model_value = result.get("logical_model", result.get("model", cfg.model))
+    schema_version = result.get("schema_version", SCHEMA_VERSION)
+    tokens_in = result.get("tokens_in")
+    tokens_out = result.get("tokens_out")
+    cost_usd = result.get("cost_usd")
+
     ci95 = aggregates.get("ci95", [None, None])
     rpl_compliance_rate = float(aggregates.get("rpl_compliance_rate", 0.0))
     cache_hit_rate = float(aggregates.get("cache_hit_rate", 0.0))
@@ -110,8 +137,13 @@ def perform_run(
     }
 
     web_block_payload: Optional[Dict[str, Any]] = None
-    combined_block_payload: Dict[str, Any] = {"p": prior_p, "ci95": list(prior_ci), "resolved": False}
+    combined_block_payload: Dict[str, Any] = finalize_combined_block(
+        {"p": prior_p, "ci95": list(prior_ci), "resolved": False},
+        weight_web=0.0,
+    )
     weights_payload: Optional[Dict[str, Any]] = None
+    if mode != "web_informed":
+        weights_payload = {"w_web": 0.0, "recency": 0.0, "strength": 0.0}
     wel_provenance: Optional[Dict[str, Any]] = None
     raw_replicates: list[Any] = []
     debug_votes: Optional[list[Dict[str, Any]]] = None
@@ -140,8 +172,11 @@ def perform_run(
                 "contradict": None,
                 "domains": None,
             }
-            combined_block_payload = {"p": prior_p, "ci95": list(prior_ci), "resolved": False}
             weights_payload = {"w_web": 0.0, "recency": 0.0, "strength": 0.0}
+            combined_block_payload = finalize_combined_block(
+                {"p": prior_p, "ci95": list(prior_ci), "resolved": False},
+                weight_web=weights_payload["w_web"],
+            )
             wel_provenance = {
                 "provider": options.wel_provider,
                 "model": options.wel_model,
@@ -173,6 +208,11 @@ def perform_run(
                 sanitized_web_block.pop("resolved_debug_votes", None)
                 if debug_votes is not None:
                     sanitized_web_block["resolved_debug_votes"] = debug_votes
+
+    combined_block_payload = finalize_combined_block(
+        combined_block_payload,
+        weight_web=(weights_payload or {}).get("w_web"),
+    )
 
     aggregation_counts = aggregation.get("counts_by_template", {})
     config_json = json.dumps(
@@ -209,7 +249,10 @@ def perform_run(
         hashlib.sha256((cfg.claim or "").encode("utf-8")).hexdigest() if cfg.claim else None,
     )
     _assign(check, check_updates, "model", result.get("model", cfg.model))
+    _assign(check, check_updates, "provider", provider_id)
+    _assign(check, check_updates, "logical_model", cfg.logical_model or logical_model_value)
     _assign(check, check_updates, "prompt_version", result.get("prompt_version", cfg.prompt_version))
+    _assign(check, check_updates, "schema_version", schema_version)
     _assign(check, check_updates, "k", int(cfg.K))
     _assign(check, check_updates, "r", int(cfg.R))
     _assign(check, check_updates, "t", sampling.get("T"))
@@ -324,8 +367,12 @@ def perform_run(
         _assign(check, check_updates, "resolved_domains", None)
         _assign(check, check_updates, "resolved_citations", None)
 
-    _assign(check, check_updates, "was_cached", cache_hit_rate >= 0.999)
-    _assign(check, check_updates, "provider_model_id", result.get("model", cfg.model))
+    _assign(check, check_updates, "was_cached", cache_hit_rate >= _CACHE_HIT_THRESHOLD)
+    provider_model_value = result.get("provider_model_id") or result.get("model", cfg.model)
+    _assign(check, check_updates, "provider_model_id", provider_model_value)
+    _assign(check, check_updates, "tokens_in", int(tokens_in) if tokens_in is not None else None)
+    _assign(check, check_updates, "tokens_out", int(tokens_out) if tokens_out is not None else None)
+    _assign(check, check_updates, "cost_usd", float(cost_usd) if cost_usd is not None else None)
     _assign(check, check_updates, "anon_token", anon_token if user_id is None else None)
     _assign(check, check_updates, "created_at", now)
     _assign(check, check_updates, "finished_at", now)
@@ -353,39 +400,108 @@ def perform_run(
         _assign(check, check_updates, "artifact_json_path", artifact_record.manifest_uri)
 
     normalized_reps = [_normalize_replica(rep) for rep in raw_replicates]
+    reasoning_text: Optional[str] = None
+    reasoning_evidence = _collect_reasoning_evidence(normalized_reps)
 
     # Backend-owned Simple View explanation
     simple_expl: Optional[Dict[str, Any]] = None
-    if mode == "web_informed" and combined_block_payload is not None and (
-        sanitized_web_block is not None or normalized_reps
-    ):
+    narration_allowed = _should_generate_llm_narration(
+        use_mock,
+        combined_block_payload,
+        cache_hit_rate,
+    )
+    resolved_model_value = result.get("resolved_logical_model", logical_model_value)
+    run_warning_counts = result.get("warning_counts")
+    if narration_allowed:
         try:
-            from heretix.simple_expl import compose_simple_expl
+            from heretix.explanations_llm import generate_simple_expl_llm
 
-            simple_expl = compose_simple_expl(
+            llm_result = generate_simple_expl_llm(
                 claim=cfg.claim or "",
-                combined_p=float(combined_block_payload.get("p", prior_p)),
-                web_block=sanitized_web_block,
-                replicates=normalized_reps,
+                mode=mode,
+                prior_block=prior_block_payload,
+                combined_block=combined_block_payload,
+                web_block=sanitized_web_block if mode == "web_informed" else None,
+                warning_counts=run_warning_counts or (
+                    (sanitized_web_block or {}).get("warning_counts") if sanitized_web_block else None
+                ),
+                sampling=sampling,
+                weights=weights_payload,
+                model=resolved_model_value or cfg.model,
+                provider=provider_id,
             )
+            simple_expl = llm_result["simple_expl"]
         except Exception:  # pragma: no cover
-            logger.exception("Failed to compose Simple View for run %s", run_id)
+            logger.exception("Failed to generate LLM narration for run %s", run_id)
             simple_expl = None
-    elif mode == "baseline":
-        try:
-            from heretix.simple_expl import compose_baseline_simple_expl
 
-            simple_expl = compose_baseline_simple_expl(
-                claim=cfg.claim or "",
-                prior_p=prior_p,
-                prior_ci=(prior_ci[0], prior_ci[1]),
+    if narration_allowed:
+        try:
+            from heretix.reasoning_llm import generate_reasoning_paragraph
+
+            verdict_label = str(combined_block_payload.get("label") or "Uncertain")
+            combined_prob_value = float(combined_block_payload.get("p", prior_p))
+            probability_text = f"{int(round(max(0.0, min(1.0, combined_prob_value)) * 100))}%"
+            context_text = _build_reasoning_context(
+                mode=mode,
                 stability_score=stability_score,
-                template_count=sampling.get("T") or aggregation.get("n_templates"),
-                imbalance_ratio=aggregation.get("imbalance_ratio"),
+                ci_width=ci_width,
+                evidence_lines=reasoning_evidence,
             )
+            reasoning_result = generate_reasoning_paragraph(
+                claim=cfg.claim or "",
+                verdict=verdict_label,
+                probability_text=probability_text,
+                context=context_text,
+                model=resolved_model_value or cfg.model,
+                provider=provider_id,
+            )
+            reasoning_text = reasoning_result.get("reasoning")
         except Exception:  # pragma: no cover
-            logger.exception("Failed to compose baseline Simple View for run %s", run_id)
-            simple_expl = None
+            logger.exception("Failed to generate reasoning paragraph for run %s", run_id)
+            reasoning_text = None
+
+    if simple_expl is None:
+        if mode == "web_informed" and combined_block_payload is not None and (
+            sanitized_web_block is not None or normalized_reps
+        ):
+            try:
+                from heretix.simple_expl import compose_simple_expl
+
+                simple_expl = compose_simple_expl(
+                    claim=cfg.claim or "",
+                    combined_p=float(combined_block_payload.get("p", prior_p)),
+                    web_block=sanitized_web_block,
+                    replicates=normalized_reps,
+                )
+            except Exception:  # pragma: no cover
+                logger.exception("Failed to compose Simple View for run %s", run_id)
+                simple_expl = None
+        elif mode == "baseline":
+            try:
+                from heretix.simple_expl import compose_baseline_simple_expl
+
+                simple_expl = compose_baseline_simple_expl(
+                    claim=cfg.claim or "",
+                    prior_p=prior_p,
+                    prior_ci=(prior_ci[0], prior_ci[1]),
+                    stability_score=stability_score,
+                    template_count=sampling.get("T") or aggregation.get("n_templates"),
+                    imbalance_ratio=aggregation.get("imbalance_ratio"),
+                )
+            except Exception:  # pragma: no cover
+                logger.exception("Failed to compose baseline Simple View for run %s", run_id)
+                simple_expl = None
+
+    simple_expl = _normalize_simple_expl_payload(simple_expl)
+    if reasoning_text and simple_expl:
+        paragraphs = list(simple_expl.get("body_paragraphs", []))
+        if reasoning_text not in paragraphs:
+            paragraphs = [reasoning_text] + paragraphs
+        else:
+            paragraphs = [reasoning_text] + [p for p in paragraphs if p != reasoning_text]
+        simple_expl["body_paragraphs"] = paragraphs[:3]
+        simple_expl["reasoning"] = reasoning_text
 
     return PipelineArtifacts(
         result=result,
@@ -402,6 +518,7 @@ def perform_run(
         artifact_replicates_uri=artifact_record.verdicts_uri if artifact_record else None,
         artifact_docs_uri=artifact_record.docs_uri if artifact_record else None,
         simple_expl=simple_expl,
+        reasoning_text=reasoning_text,
     )
 
 
@@ -432,6 +549,109 @@ def _normalize_replica(rep: Any) -> Dict[str, Any]:
         "notes": [str(x) for x in notes],
         "json_valid": bool(json_valid) if json_valid is not None else None,
     }
+
+
+def _normalize_simple_expl_payload(payload: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not payload:
+        return None
+
+    def _clean_list(values: Any) -> list[str]:
+        cleaned: list[str] = []
+        if not isinstance(values, (list, tuple)):
+            return cleaned
+        for value in values:
+            if not isinstance(value, str):
+                value = str(value)
+            text = value.strip()
+            if text and text not in cleaned:
+                cleaned.append(text)
+        return cleaned
+
+    title = str(payload.get("title") or "Why this verdict looks this way").strip()
+    summary = str(payload.get("summary") or "").strip()
+    paragraphs = []
+    bullets = []
+
+    if "body_paragraphs" in payload or "bullets" in payload:
+        paragraphs = _clean_list(payload.get("body_paragraphs"))
+        bullets = _clean_list(payload.get("bullets"))
+    else:
+        legacy_lines = _clean_list(payload.get("lines"))
+        bullets = legacy_lines[:3]
+        if summary:
+            paragraphs = [summary]
+        elif legacy_lines:
+            paragraphs = [legacy_lines[0]]
+
+    if not paragraphs:
+        paragraphs = ["This verdict relies on the model's prior knowledge."]
+    normalized = {
+        "title": title or "Why this verdict looks this way",
+        "body_paragraphs": paragraphs[:3],
+        "bullets": bullets[:4],
+    }
+    normalized["summary"] = summary or paragraphs[0]
+    normalized["lines"] = bullets[:4] if bullets else paragraphs[:3]
+    return normalized
+
+
+def _collect_reasoning_evidence(reps: list[Dict[str, Any]], limit: int = 4) -> list[str]:
+    lines: list[str] = []
+
+    def _append(text: Any) -> None:
+        if not text:
+            return
+        cleaned = " ".join(str(text).split()).strip()
+        if not cleaned:
+            return
+        if cleaned not in lines:
+            lines.append(cleaned)
+
+    for rep in reps or []:
+        for field in ("support_bullets", "oppose_bullets", "notes"):
+            for item in rep.get(field, []) or []:
+                _append(item)
+                if len(lines) >= limit:
+                    return lines
+    return lines
+
+
+def _bucket_stability_label(score: float) -> str:
+    try:
+        val = float(score)
+    except (TypeError, ValueError):
+        val = 0.0
+    if val >= 0.65:
+        return "high"
+    if val >= 0.35:
+        return "medium"
+    return "low"
+
+
+def _bucket_precision_label(ci_width: float) -> str:
+    try:
+        width = float(ci_width)
+    except (TypeError, ValueError):
+        width = 0.0
+    if width <= 0.2:
+        return "narrow"
+    if width <= 0.35:
+        return "moderate"
+    return "wide"
+
+
+def _build_reasoning_context(*, mode: str, stability_score: float, ci_width: float, evidence_lines: list[str]) -> str:
+    lines = [
+        f"Stability level: {_bucket_stability_label(stability_score)}",
+        f"Precision band: {_bucket_precision_label(ci_width)}",
+    ]
+    if evidence_lines:
+        lines.append("Evidence snippets:")
+        for item in evidence_lines:
+            lines.append(f"- {item}")
+    else:
+        lines.append("Evidence snippets: (not available)")
+    return "\n".join(lines)
 def _get_or_create_check(session: Session, run_id: str, env: str) -> Check:
     check = session.scalar(select(Check).where(Check.run_id == run_id))
     if check is None:

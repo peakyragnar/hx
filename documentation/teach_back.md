@@ -124,7 +124,7 @@ Aggregation (the “best” default)
 
         9. List the required JSON fields each model response must include (names only).
 
-        prob_true, confidence_self, assumptions, reasoning_bullets, contrary_considerations, ambiguity_flags
+        belief.{prob_true,label}, reasons, assumptions, uncertainties, flags{refused, off_topic}
 
         10. What’s the difference between aggregate_clustered and aggregate_simple? Reply in 1–2 sentences.
 

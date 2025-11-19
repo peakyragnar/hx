@@ -13,7 +13,7 @@ from .date_extract import enrich_docs_with_publish_dates
 from .retriever import make_retriever
 from .timeliness import heuristic_is_timely
 from .resolved_engine import try_resolve_fact
-from .scoring import call_wel_once
+from .scoring import WELSchemaError, call_wel_once
 from .snippets import (
     cap_per_domain,
     dedupe_by_url,
@@ -54,6 +54,25 @@ def _chunk_docs(docs: List[Doc], replicates: int) -> List[List[Doc]]:
     return chunks
 
 
+def _merge_warning_counts(*sources: Optional[Dict[str, int]]) -> Dict[str, int]:
+    merged: Dict[str, int] = {}
+    for src in sources:
+        if not src:
+            continue
+        for key, value in src.items():
+            merged[key] = merged.get(key, 0) + int(value)
+    return merged
+
+
+def _merge_telemetry(*sources: Optional[List[Dict[str, object]]]) -> List[Dict[str, object]]:
+    merged: List[Dict[str, object]] = []
+    for src in sources:
+        if not src:
+            continue
+        merged.extend(dict(item) if isinstance(item, dict) else item for item in src)
+    return merged
+
+
 def evaluate_wel(
     claim: str,
     provider: str = "tavily",
@@ -84,6 +103,15 @@ def evaluate_wel(
         seed_val: int,
         outcome_hint: bool,
     ) -> Dict[str, object]:
+        warning_counts_local: Dict[str, int] = {}
+        telemetry_records: List[Dict[str, object]] = []
+
+        def _record(labels):
+            if not labels:
+                return
+            for label in labels:
+                warning_counts_local[label] = warning_counts_local.get(label, 0) + 1
+
         retriever = make_retriever(provider=provider)
         query = _build_query(claim, outcome_hint)
         _TAVILY_RATE_LIMITER.acquire()
@@ -143,6 +171,8 @@ def evaluate_wel(
                 "replicate_ps": [],
                 "docs": docs,
                 "metrics": metrics,
+                "warning_counts": warning_counts_local,
+                "telemetry": telemetry_records,
             }
 
         replicates_out: List[WELReplicate] = []
@@ -152,14 +182,20 @@ def evaluate_wel(
 
         for idx, chunk in enumerate(doc_chunks):
             bundle = pack_snippets_for_llm(claim, chunk, max_chars=max_chars)
+            stance_label: Optional[str] = None
             try:
-                payload, prompt_hash = call_wel_once(bundle, model=model)
-                p = float(payload.get("p_true"))
+                payload, warnings, prompt_hash, telemetry = call_wel_once(bundle, model=model)
+                _record(warnings)
+                if telemetry:
+                    telemetry_records.append(telemetry.model_dump())
+                p = float(payload.get("stance_prob_true"))
+                stance_label = str(payload.get("stance_label") or "").strip() or None
                 support = [str(x) for x in (payload.get("support_bullets") or [])][:4]
                 oppose = [str(x) for x in (payload.get("oppose_bullets") or [])][:4]
                 notes = [str(x) for x in (payload.get("notes") or [])][:3]
                 valid = True
             except Exception as exc:
+                _record(getattr(exc, "warnings", []))
                 p = 0.5
                 support = []
                 oppose = []
@@ -178,6 +214,7 @@ def evaluate_wel(
                     oppose_bullets=oppose,
                     notes=notes,
                     json_valid=valid,
+                    stance_label=stance_label,
                 )
             )
 
@@ -207,6 +244,8 @@ def evaluate_wel(
             "replicate_ps": replicate_ps,
             "docs": docs,
             "metrics": metrics,
+            "warning_counts": warning_counts_local,
+            "telemetry": telemetry_records,
         }
 
     # Decide first-pass recency (adaptive default)
@@ -226,21 +265,27 @@ def evaluate_wel(
 
     # If resolved or first pass was wide already, return
     if pass1.get("resolved") or recency_first is None:
+        telemetry_first = list(pass1.get("telemetry") or [])
+        provenance_payload = {
+            "provider": provider,
+            "model": model,
+            "k_docs": k_docs,
+            "replicates": (0 if pass1.get("resolved") else len(pass1.get("replicates", []))),
+            "recency_days": recency_first,
+            "passes": passes_used,
+            "seed": seed_val,
+            "resolved": bool(pass1.get("resolved")),
+        }
+        if telemetry_first:
+            provenance_payload["telemetry"] = telemetry_first
         return {
             "p": pass1.get("p", 0.5),
             "ci95": pass1.get("ci95", (0.5, 0.5)),
             "replicates": pass1.get("replicates", []),
             "metrics": pass1.get("metrics", {}),
-            "provenance": {
-                "provider": provider,
-                "model": model,
-                "k_docs": k_docs,
-                "replicates": (0 if pass1.get("resolved") else len(pass1.get("replicates", []))),
-                "recency_days": recency_first,
-                "passes": passes_used,
-                "seed": seed_val,
-                "resolved": bool(pass1.get("resolved")),
-            },
+            "warning_counts": dict(pass1.get("warning_counts") or {}),
+            "telemetry": telemetry_first,
+            "provenance": provenance_payload,
         }
 
     # Second pass with no recency cap (fallback)
@@ -250,21 +295,27 @@ def evaluate_wel(
 
     # If pass2 resolved, return that
     if pass2.get("resolved"):
+        telemetry_second = list(pass2.get("telemetry") or [])
+        provenance_payload = {
+            "provider": provider,
+            "model": model,
+            "k_docs": k_docs,
+            "replicates": 0,
+            "recency_days": recency_second,
+            "passes": passes_used,
+            "seed": seed_val,
+            "resolved": True,
+        }
+        if telemetry_second:
+            provenance_payload["telemetry"] = telemetry_second
         return {
             "p": pass2.get("p", 0.5),
             "ci95": pass2.get("ci95", (0.5, 0.5)),
             "replicates": pass2.get("replicates", []),
             "metrics": pass2.get("metrics", {}),
-            "provenance": {
-                "provider": provider,
-                "model": model,
-                "k_docs": k_docs,
-                "replicates": 0,
-                "recency_days": recency_second,
-                "passes": passes_used,
-                "seed": seed_val,
-                "resolved": True,
-            },
+            "warning_counts": dict(pass2.get("warning_counts") or {}),
+            "telemetry": telemetry_second,
+            "provenance": provenance_payload,
         }
 
     # Combine non-resolved passes: concatenate replicates and recompute
@@ -322,19 +373,27 @@ def evaluate_wel(
         "resolved_debug_votes": None,
     }
 
+    warning_counts_all = _merge_warning_counts(pass1.get("warning_counts"), pass2.get("warning_counts"))
+    telemetry_all = _merge_telemetry(pass1.get("telemetry"), pass2.get("telemetry"))
+    provenance_payload = {
+        "provider": provider,
+        "model": model,
+        "k_docs": k_docs,
+        "replicates": len(reps_all),
+        "recency_days": recency_second,
+        "passes": passes_used,
+        "seed": seed_val,
+        "resolved": False,
+    }
+    if telemetry_all:
+        provenance_payload["telemetry"] = telemetry_all
+
     return {
         "p": p_hat,
         "ci95": ci95,
         "replicates": reps_all,
         "metrics": metrics,
-        "provenance": {
-            "provider": provider,
-            "model": model,
-            "k_docs": k_docs,
-            "replicates": len(reps_all),
-            "recency_days": recency_second,
-            "passes": passes_used,
-            "seed": seed_val,
-            "resolved": False,
-        },
+        "warning_counts": warning_counts_all,
+        "telemetry": telemetry_all,
+        "provenance": provenance_payload,
     }

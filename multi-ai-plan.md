@@ -230,7 +230,7 @@ from pydantic import BaseModel
 from typing import Dict
 
 class ProviderCapabilities(BaseModel):
-    provider: str                # 'openai', 'xai', 'google', 'deepseek'
+    provider: str                # 'openai', 'xai', 'google'
     default_model: str           # logical model id, e.g. 'gpt5-default'
     api_model_map: Dict[str, str]  # logical -> concrete API model
     supports_json_schema: bool
@@ -249,7 +249,6 @@ Create YAML files, e.g.:
 heretix/provider/config_openai.yaml
 heretix/provider/config_grok.yaml
 heretix/provider/config_gemini.yaml
-heretix/provider/config_deepseek.yaml
 
 Example config_openai.yaml:
 
@@ -285,7 +284,6 @@ Use logical model IDs throughout the system (DB, API, UI):
 	•	gpt5-default
 	•	grok4-default
 	•	gemini25-default
-	•	deepseek-r1-default
 
 Concrete API model names live only in the provider configs. Updating to a new API model version should only require editing the YAML.
 
@@ -301,13 +299,11 @@ heretix/prompts/
     openai_v1.md
     grok_v1.md
     gemini_v1.md
-    deepseek_v1.md
   wel_doc/
     shared_v1.md
     openai_v1.md
     grok_v1.md
     gemini_v1.md
-    deepseek_v1.md
   simple_expl/
     shared_v1.md
     narrator_v1.md
@@ -662,7 +658,6 @@ In the existing UI:
 	•	“GPT‑5” → ("openai", "gpt5-default")
 	•	“Grok 4” → ("xai", "grok4-default")
 	•	“Gemini 2.5” → ("google", "gemini25-default")
-	•	“DeepSeek R1” → ("deepseek", "deepseek-r1-default")
 	•	Context mode selection remains: “Internal knowledge only” → mode="baseline", “Internet search” → mode="web_informed".
 
 11.2 Behavior
@@ -923,4 +918,3 @@ If present, verify-production.sh can be used as a stricter gate.
 ⸻
 
 This plan should give a clear, stable architecture for multi-model Heretix, while being explicit enough for automated agents (and humans) to modify safely and verify their changes through tests and evals.
-

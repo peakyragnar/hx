@@ -17,6 +17,7 @@ dependencies = [
     "email-validator>=2.2",
     "python-dotenv>=1.0",
     "typer>=0.12",
+    "rich>=13.7",
     "jsonschema>=4.22",
     "pyyaml>=6.0",
     "sqlalchemy>=2.0",
@@ -35,11 +36,13 @@ test = [
     "pytest>=8.0",
     "pytest-cov>=4.0",
     "hypothesis>=6.0,<7.0",
+    "responses>=0.24",
 ]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=4.0",
     "hypothesis>=6.0,<7.0",
+    "responses>=0.24",
     "pre-commit>=3.0",
 ]
 

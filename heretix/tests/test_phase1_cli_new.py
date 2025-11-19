@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 import json
 
+import pytest
+
 from typer.testing import CliRunner
 
 from heretix.cli import app
@@ -88,6 +90,7 @@ def test_cli_prompts_file_override(tmp_path: Path):
             "T: 6",
             "B: 5000",
             "max_output_tokens: 128",
+            "max_prompt_chars: 2000",
         ])
     )
     out_path = tmp_path / "out.json"
@@ -115,6 +118,7 @@ def test_cli_web_mode_emits_simple_expl(tmp_path: Path):
             "T: 8",
             "B: 5000",
             "max_output_tokens: 512",
+            "max_prompt_chars: 2000",
         ])
     )
     out_path = tmp_path / "web_out.json"
@@ -148,6 +152,7 @@ def test_cli_baseline_emits_simple_expl(tmp_path: Path):
             "T: 8",
             "B: 5000",
             "max_output_tokens: 512",
+            "max_prompt_chars: 2000",
         ])
     )
     out_path = tmp_path / "baseline_out.json"
@@ -167,3 +172,128 @@ def test_cli_baseline_emits_simple_expl(tmp_path: Path):
     assert isinstance(simple.get("lines"), list)
     assert len(simple["lines"]) >= 1
     assert isinstance(simple.get("summary"), str) and simple["summary"]
+
+
+def test_cli_run_multi_model_from_config(tmp_path: Path):
+    cfg_path = tmp_path / "cfg.yaml"
+    cfg_path.write_text(
+        "\n".join(
+            [
+                'claim: "Sample multi-model claim"',
+                "models:",
+                "  - gpt-5",
+                "  - grok-4",
+                "prompt_version: rpl_g5_v2",
+                "K: 4",
+                "R: 1",
+                "T: 4",
+                "B: 100",
+                "max_output_tokens: 256",
+                "max_prompt_chars: 2000",
+            ]
+        )
+    )
+    out_path = tmp_path / "multi.json"
+    env = {"DATABASE_URL": f"sqlite:///{tmp_path / 'multi.sqlite'}"}
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "--config",
+            str(cfg_path),
+            "--out",
+            str(out_path),
+            "--mock",
+        ],
+        env=env,
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(out_path.read_text())
+    assert payload.get("requested_models") == ["gpt-5", "grok-4"]
+    assert [run["model"] for run in payload["runs"]] == ["gpt-5", "grok-4"]
+    run_ids = [run["run_id"] for run in payload["runs"]]
+    assert len(set(run_ids)) == len(run_ids), "Each model run should produce a unique run_id"
+
+
+def test_cli_run_multi_model_override_flag(tmp_path: Path):
+    cfg_path = tmp_path / "cfg.yaml"
+    cfg_path.write_text(
+        "\n".join(
+            [
+                'claim: "Override flag claim"',
+                "model: gpt-5",
+                "prompt_version: rpl_g5_v2",
+                "K: 4",
+                "R: 1",
+                "T: 4",
+                "B: 100",
+                "max_output_tokens: 256",
+                "max_prompt_chars: 2000",
+            ]
+        )
+    )
+    out_path = tmp_path / "override.json"
+    env = {"DATABASE_URL": f"sqlite:///{tmp_path / 'override.sqlite'}"}
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "--config",
+            str(cfg_path),
+            "--out",
+            str(out_path),
+            "--mock",
+            "--model",
+            "grok-4",
+            "--model",
+            "gemini25-default",
+        ],
+        env=env,
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(out_path.read_text())
+    assert payload.get("requested_models") == ["grok-4", "gemini25-default"]
+    assert [run["model"] for run in payload["runs"]] == ["grok-4", "gemini25-default"]
+    run_ids = [run["run_id"] for run in payload["runs"]]
+    assert len(set(run_ids)) == len(run_ids), "Each override run should generate distinct run_ids"
+
+
+@pytest.mark.parametrize("mode", ["baseline", "web_informed"])
+@pytest.mark.parametrize("model_name", ["gpt-5", "grok-4", "gemini25-default"])
+def test_cli_simple_expl_plain_language_all_models(tmp_path: Path, mode: str, model_name: str):
+    cfg_path = tmp_path / f"{model_name}_{mode}.yaml"
+    cfg_path.write_text(
+        "\n".join([
+            'claim: "UK long-term outlook"',
+            f"model: {model_name}",
+            "prompt_version: rpl_g5_v2",
+            "K: 4",
+            "R: 1",
+            "T: 4",
+            "B: 200",
+            "max_output_tokens: 256",
+            "max_prompt_chars: 2000",
+        ])
+    )
+    out_path = tmp_path / f"{model_name}_{mode}.json"
+    env = {"DATABASE_URL": f"sqlite:///{tmp_path / f'{model_name}_{mode}.sqlite'}"}
+    args = [
+        "run",
+        "--config", str(cfg_path),
+        "--out", str(out_path),
+        "--mock",
+        "--mode", mode,
+    ]
+    result = runner.invoke(app, args, env=env)
+    assert result.exit_code == 0, result.output
+    payload = json.loads(out_path.read_text())
+    run = payload["runs"][0]
+    assert run["model"] == model_name
+    simple = run.get("simple_expl")
+    assert simple and isinstance(simple.get("lines"), list)
+    assert 1 <= len(simple["lines"]) <= 3
+    banned = ["ci", "stability", "imbalance", "logit", "template"]
+    for text in simple["lines"] + [simple.get("summary", "")]:
+        lowered = text.lower()
+        for token in banned:
+            assert token not in lowered
