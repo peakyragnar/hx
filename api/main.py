@@ -492,8 +492,13 @@ def _build_combined_block_v1(payload: Optional[Dict[str, object]]) -> Optional[C
     if not payload:
         return None
     prob_true = float(payload.get("p", 0.0))
-    ci_lo = float(payload.get("ci_lo", prob_true))
-    ci_hi = float(payload.get("ci_hi", prob_true))
+    ci_vals = payload.get("ci95")
+    if isinstance(ci_vals, (list, tuple)) and len(ci_vals) >= 2:
+        ci_lo = float(ci_vals[0])
+        ci_hi = float(ci_vals[1])
+    else:
+        ci_lo = float(payload.get("ci_lo", prob_true))
+        ci_hi = float(payload.get("ci_hi", prob_true))
     label = str(payload.get("label", "Uncertain"))
     weight_prior = float(payload.get("weight_prior", 1.0))
     weight_web = float(payload.get("weight_web", 0.0))
@@ -518,6 +523,7 @@ def _build_combined_block_v1(payload: Optional[Dict[str, object]]) -> Optional[C
         prob_true=prob_true,
         ci_lo=ci_lo,
         ci_hi=ci_hi,
+        ci95=[ci_lo, ci_hi],
         label=label,
         weight_prior=weight_prior,
         weight_web=weight_web,

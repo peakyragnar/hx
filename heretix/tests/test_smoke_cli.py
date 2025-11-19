@@ -73,10 +73,18 @@ def test_cli_mock_outputs_expected_structure(tmp_path: Path):
     assert 0.0 <= prior_model.prob_true <= 1.0
 
     combined_payload = run["combined"] or {}
+    combined_ci = list(combined_payload.get("ci95") or [])
+    fallback_prob = float(combined_payload.get("prob_true", combined_payload.get("p", 0.0)))
+    if len(combined_ci) < 2:
+        combined_ci = [
+            combined_payload.get("ci_lo", fallback_prob),
+            combined_payload.get("ci_hi", fallback_prob),
+        ]
     combined_model = CombinedBlockV1(
-        prob_true=float(combined_payload.get("prob_true", combined_payload.get("p", 0.0))),
-        ci_lo=float(combined_payload.get("ci_lo", combined_payload.get("prob_true", 0.0))),
-        ci_hi=float(combined_payload.get("ci_hi", combined_payload.get("prob_true", 0.0))),
+        prob_true=fallback_prob,
+        ci_lo=float(combined_ci[0]),
+        ci_hi=float(combined_ci[1]),
+        ci95=[float(combined_ci[0]), float(combined_ci[1])],
         label=str(combined_payload.get("label", "Uncertain")),
         weight_prior=float(combined_payload.get("weight_prior", 1.0)),
         weight_web=float(combined_payload.get("weight_web", 0.0)),

@@ -14,6 +14,7 @@ class CombinedBlockV1(BaseModel):
     prob_true: float = Field(..., ge=0.0, le=1.0)
     ci_lo: float = Field(..., ge=0.0, le=1.0)
     ci_hi: float = Field(..., ge=0.0, le=1.0)
+    ci95: List[float] = Field(default_factory=list)
     label: str
     weight_prior: float = Field(..., ge=0.0, le=1.0)
     weight_web: float = Field(..., ge=0.0, le=1.0)
@@ -33,6 +34,7 @@ class CombinedBlockV1(BaseModel):
             raise ValueError("prob_true must lie within [ci_lo, ci_hi]")
         if not math.isclose(self.weight_prior + self.weight_web, 1.0, rel_tol=1e-6, abs_tol=1e-6):
             raise ValueError("weight_prior + weight_web must sum to 1.0")
+        object.__setattr__(self, "ci95", [self.ci_lo, self.ci_hi])
         return self
 
 

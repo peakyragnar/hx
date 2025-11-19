@@ -77,6 +77,7 @@ def _canonical_cases():
                 "prob_true": 0.6,
                 "ci_lo": 0.5,
                 "ci_hi": 0.7,
+                "ci95": [0.5, 0.7],
                 "label": "Balanced",
                 "weight_prior": 0.55,
                 "weight_web": 0.45,
@@ -184,6 +185,8 @@ def test_extract_and_validate_accepts_canonical_payloads(schema_model, payload):
         assert parsed.resolved is True
         assert parsed.resolved_truth is False
         assert parsed.resolved_citations[0]["domain"] == "Example.com"
+        assert parsed.ci95[0] == pytest.approx(0.5)
+        assert parsed.ci95[1] == pytest.approx(0.7)
     elif schema_model is SimpleExplV1:
         assert parsed.body_paragraphs[0] == "Model prior clusters near fifty percent."
         assert parsed.bullets[-1] == "Second supporting detail"

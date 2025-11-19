@@ -1,3 +1,5 @@
+import pytest
+
 from api.main import build_web_explanation, _build_web_block_v1, _build_combined_block_v1
 
 
@@ -98,3 +100,4 @@ def test_build_combined_block_preserves_resolution_metadata():
     assert block.support == 3.5
     assert block.contradict == 0.15
     assert block.domains == 4
+    assert block.ci95 == [pytest.approx(0.75), pytest.approx(0.9)]
