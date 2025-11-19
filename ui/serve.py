@@ -292,6 +292,23 @@ class Handler(BaseHTTPRequestHandler):
 
         cfg = dict(cfg_base or {})
         cli_models = [m["cli_model"] for m in model_entries]
+        if len(cli_models) > 1:
+            original_K, original_T, original_B = K, T, B
+            K = max(4, min(K, 8))
+            T = max(1, min(T, K))
+            B = min(B, 2000)
+            logging.info(
+                "UI multi-model clamp: models=%d K %s→%s T %s→%s B %s→%s",
+                len(cli_models),
+                original_K,
+                K,
+                original_T,
+                T,
+                original_B,
+                B,
+            )
+        else:
+            T = max(1, T)
         cfg.update({
             "claim": claim,
             "model": cli_models[0],
@@ -537,7 +554,7 @@ class Handler(BaseHTTPRequestHandler):
             "--mode",
             mode_flag,
         ]
-        timeout = min(RUN_TIMEOUT_SEC, 600)
+        timeout = int(os.getenv("HERETIX_UI_RUN_TIMEOUT", str(RUN_TIMEOUT_SEC)))
         try:
             start = time.time()
             cp = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=timeout, check=True)
@@ -549,8 +566,12 @@ class Handler(BaseHTTPRequestHandler):
             logging.error("UI run failed: %s", msg)
             self._err("The run failed. Please try again.", headline="The run failed", as_json=wants_json)
             return
-        except subprocess.TimeoutExpired:
-            logging.error("UI run timed out after %ss", timeout)
+        except subprocess.TimeoutExpired as exc:
+            stdout_tail = (exc.stdout or "")[-2000:]
+            stderr_tail = (exc.stderr or "")[-2000:]
+            logging.error("UI run timed out after %ss; stdout tail=%s", timeout, stdout_tail)
+            if stderr_tail:
+                logging.error("stderr tail=%s", stderr_tail)
             self._err("The run exceeded our time limit.", headline="This took too long", as_json=wants_json)
             return
 
