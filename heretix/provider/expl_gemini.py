@@ -183,17 +183,23 @@ def write_simple_expl_gemini(
         # Partial parse to fix common schema hallucinations
         parsed = json.loads(clean_text)
         if isinstance(parsed, dict):
-            # Fix 1: Map 'reason' (common hallucination) to 'body_paragraphs' if missing
-            if "reason" in parsed and "body_paragraphs" not in parsed:
-                reason_val = parsed["reason"]
-                parsed["body_paragraphs"] = [str(reason_val)] if reason_val else []
-            
+            # Fix 1: Map 'reason' or 'explanation' to 'body_paragraphs' if missing
+            # (Gemini sometimes returns { "reason": "..." } instead of the schema)
+            content_source = parsed.pop("reason", None) or parsed.pop("explanation", None)
+            if content_source and "body_paragraphs" not in parsed:
+                parsed["body_paragraphs"] = [str(content_source)]
+
             # Fix 2: Ensure lists
             if "body_paragraphs" in parsed and isinstance(parsed["body_paragraphs"], str):
                 parsed["body_paragraphs"] = [parsed["body_paragraphs"]]
             if "bullets" in parsed and isinstance(parsed["bullets"], str):
                 parsed["bullets"] = [parsed["bullets"]]
             
+            # Fix 3: Ensure title exists if we have content (prevents validation failure)
+            if "title" not in parsed and "body_paragraphs" in parsed:
+                # Use a generic title so we don't lose the valid content
+                parsed["title"] = "Analysis of the verdict"
+
             # Re-serialize to ensure downstream validators see clean JSON
             text = json.dumps(parsed)
     except Exception:
