@@ -169,6 +169,38 @@ def write_simple_expl_gemini(
         snippet = json.dumps(data)[:400] if isinstance(data, dict) else str(data)[:400]
         raise RuntimeError(f"Gemini explanation returned no text payload: {snippet}")
 
+    # Attempt to normalize the JSON payload before returning
+    try:
+        clean_text = text.strip()
+        if clean_text.startswith("```json"):
+            clean_text = clean_text[7:]
+        elif clean_text.startswith("```"):
+            clean_text = clean_text[3:]
+        if clean_text.endswith("```"):
+            clean_text = clean_text[:-3]
+        clean_text = clean_text.strip()
+        
+        # Partial parse to fix common schema hallucinations
+        parsed = json.loads(clean_text)
+        if isinstance(parsed, dict):
+            # Fix 1: Map 'reason' (common hallucination) to 'body_paragraphs' if missing
+            if "reason" in parsed and "body_paragraphs" not in parsed:
+                reason_val = parsed["reason"]
+                parsed["body_paragraphs"] = [str(reason_val)] if reason_val else []
+            
+            # Fix 2: Ensure lists
+            if "body_paragraphs" in parsed and isinstance(parsed["body_paragraphs"], str):
+                parsed["body_paragraphs"] = [parsed["body_paragraphs"]]
+            if "bullets" in parsed and isinstance(parsed["bullets"], str):
+                parsed["bullets"] = [parsed["bullets"]]
+            
+            # Re-serialize to ensure downstream validators see clean JSON
+            text = json.dumps(parsed)
+    except Exception:
+        # If parsing fails here, we ignore it and let the downstream validator
+        # raise the standard error (preserving the original text for debugging).
+        pass
+
     tokens_in, tokens_out = _usage_counts(data)
     telemetry = LLMTelemetry(
         provider="google",
