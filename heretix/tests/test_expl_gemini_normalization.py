@@ -93,6 +93,62 @@ def test_gemini_expl_normalizes_nested_dict_in_body_paragraphs(monkeypatch: pyte
         assert not para.strip().startswith("{'")
 
 
+def test_gemini_expl_extracts_from_json_string_in_body_paragraphs(monkeypatch: pytest.MonkeyPatch):
+    """Test that Gemini adapter detects and parses JSON strings inside body_paragraphs."""
+
+    monkeypatch.setattr(expl_gemini, "_GEMINI_RATE_LIMITER", _FakeRateLimiter())
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    # Simulate Gemini returning a JSON string inside body_paragraphs
+    # This is the actual production issue
+    nested_json_string = json.dumps({
+        "body_paragraphs": ["The verdict leans towards likely true because Wayne Gretzky's historical performance in hockey is widely recognized."],
+        "title": "Analysis of the verdict"
+    })
+
+    problematic_response = {
+        "title": "Why this assessment leans toward Wayne Gretzky being the greatest hockey player",
+        "body_paragraphs": [
+            nested_json_string  # JSON as a string!
+        ],
+        "bullets": [
+            "The verdict reflects Gretzky's statistical dominance.",
+            "The assessment relies on prior knowledge.",
+        ],
+    }
+
+    def fake_post(url, params=None, json=None, timeout=None):
+        import json as json_module
+        return _FakeResponse(json_module.dumps(problematic_response))
+
+    monkeypatch.setattr("requests.post", fake_post)
+
+    result = expl_gemini.write_simple_expl_gemini(
+        instructions="Test instructions",
+        user_text="Test user text",
+        model="gemini25-default",
+        max_output_tokens=640,
+    )
+
+    # Parse the returned text
+    text = result["text"]
+    parsed = json.loads(text)
+
+    # Should extract the actual text from the nested JSON string
+    assert "body_paragraphs" in parsed
+    assert isinstance(parsed["body_paragraphs"], list)
+    assert len(parsed["body_paragraphs"]) >= 1
+
+    # The first paragraph should be the extracted text, not the JSON string
+    first_para = parsed["body_paragraphs"][0]
+    assert isinstance(first_para, str)
+    assert "Wayne Gretzky's historical performance" in first_para
+    # Should NOT contain the nested JSON structure
+    assert not first_para.startswith("{")
+    assert "body_paragraphs" not in first_para
+    assert "Analysis of the verdict" not in first_para
+
+
 def test_gemini_expl_handles_reason_field_fallback(monkeypatch: pytest.MonkeyPatch):
     """Test that Gemini adapter maps 'reason' field to body_paragraphs when schema is violated."""
 
