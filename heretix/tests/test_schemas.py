@@ -64,6 +64,28 @@ def test_combined_block_enforces_weight_sum():
         )
 
 
+def test_combined_block_accepts_resolution_metadata():
+    block = CombinedBlockV1(
+        prob_true=0.8,
+        ci_lo=0.7,
+        ci_hi=0.9,
+        label="Likely true",
+        weight_prior=0.25,
+        weight_web=0.75,
+        resolved=True,
+        resolved_truth=True,
+        resolved_reason="Consensus",
+        resolved_citations=[{"url": "https://example.com"}],
+        support=3.2,
+        contradict=0.4,
+        domains=3,
+    )
+    assert block.resolved is True
+    assert block.resolved_citations[0]["url"] == "https://example.com"
+    assert block.support == pytest.approx(3.2)
+    assert block.domains == 3
+
+
 def test_simple_expl_requires_body_paragraph():
     with pytest.raises(ValidationError):
         SimpleExplV1(title="Summary", body_paragraphs=[], bullets=["One"])

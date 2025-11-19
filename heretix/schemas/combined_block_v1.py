@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -16,6 +17,13 @@ class CombinedBlockV1(BaseModel):
     label: str
     weight_prior: float = Field(..., ge=0.0, le=1.0)
     weight_web: float = Field(..., ge=0.0, le=1.0)
+    resolved: Optional[bool] = None
+    resolved_truth: Optional[bool] = None
+    resolved_reason: Optional[str] = None
+    resolved_citations: List[Dict[str, Any]] = Field(default_factory=list)
+    support: Optional[float] = Field(default=None, ge=0.0)
+    contradict: Optional[float] = Field(default=None, ge=0.0)
+    domains: Optional[int] = Field(default=None, ge=0)
 
     @model_validator(mode="after")
     def _check_consistency(self) -> "CombinedBlockV1":

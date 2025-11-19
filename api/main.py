@@ -497,6 +497,23 @@ def _build_combined_block_v1(payload: Optional[Dict[str, object]]) -> Optional[C
     label = str(payload.get("label", "Uncertain"))
     weight_prior = float(payload.get("weight_prior", 1.0))
     weight_web = float(payload.get("weight_web", 0.0))
+    resolved_flag = payload.get("resolved")
+    if isinstance(resolved_flag, bool):
+        resolved_bool = resolved_flag
+    elif resolved_flag is None:
+        resolved_bool = None
+    else:
+        resolved_bool = None
+    resolved_truth_val = payload.get("resolved_truth")
+    resolved_truth = resolved_truth_val if isinstance(resolved_truth_val, bool) else None
+    raw_reason = payload.get("resolved_reason")
+    resolved_reason = None
+    if isinstance(raw_reason, str):
+        resolved_reason = raw_reason.strip() or None
+    resolved_citations = _sanitize_citations(payload.get("resolved_citations"))
+    support_value = _coerce_non_negative_float(payload.get("support"))
+    contradict_value = _coerce_non_negative_float(payload.get("contradict"))
+    domains_value = _coerce_non_negative_int(payload.get("domains"))
     return CombinedBlockV1(
         prob_true=prob_true,
         ci_lo=ci_lo,
@@ -504,6 +521,13 @@ def _build_combined_block_v1(payload: Optional[Dict[str, object]]) -> Optional[C
         label=label,
         weight_prior=weight_prior,
         weight_web=weight_web,
+        resolved=resolved_bool,
+        resolved_truth=resolved_truth,
+        resolved_reason=resolved_reason,
+        resolved_citations=resolved_citations,
+        support=support_value,
+        contradict=contradict_value,
+        domains=domains_value,
     )
 
 

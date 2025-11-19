@@ -1,4 +1,4 @@
-from api.main import build_web_explanation, _build_web_block_v1
+from api.main import build_web_explanation, _build_web_block_v1, _build_combined_block_v1
 
 
 def test_build_web_explanation_basic():
@@ -65,3 +65,36 @@ def test_build_web_block_preserves_resolution():
     assert block.resolved_citations[0]["domain"] == "Example.com"
     assert block.support == 4
     assert block.evidence and block.evidence.n_docs == 6
+
+
+def test_build_combined_block_preserves_resolution_metadata():
+    payload = {
+        "p": 0.82,
+        "ci_lo": 0.75,
+        "ci_hi": 0.9,
+        "label": "Likely true",
+        "weight_prior": 0.2,
+        "weight_web": 0.8,
+        "resolved": True,
+        "resolved_truth": True,
+        "resolved_reason": " Consensus verdict ",
+        "resolved_citations": [
+            {
+                "url": " https://example.com/fact ",
+                "domain": " Example.com ",
+                "quote": "Quoted text",
+            }
+        ],
+        "support": 3.5,
+        "contradict": 0.15,
+        "domains": 4,
+    }
+    block = _build_combined_block_v1(payload)
+    assert block is not None
+    assert block.resolved is True
+    assert block.resolved_truth is True
+    assert block.resolved_reason == "Consensus verdict"
+    assert block.resolved_citations and block.resolved_citations[0]["url"] == "https://example.com/fact"
+    assert block.support == 3.5
+    assert block.contradict == 0.15
+    assert block.domains == 4

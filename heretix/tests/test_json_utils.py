@@ -80,6 +80,15 @@ def _canonical_cases():
                 "label": "Balanced",
                 "weight_prior": 0.55,
                 "weight_web": 0.45,
+                "resolved": True,
+                "resolved_truth": False,
+                "resolved_reason": "Consensus reached",
+                "resolved_citations": [
+                    {"url": "https://example.com/source", "domain": "Example.com"},
+                ],
+                "support": 2.5,
+                "contradict": 0.3,
+                "domains": 3,
             },
         ),
         (
@@ -172,6 +181,9 @@ def test_extract_and_validate_accepts_canonical_payloads(schema_model, payload):
         assert parsed.ci_hi == pytest.approx(0.70)
     elif schema_model is CombinedBlockV1:
         assert parsed.weight_prior + parsed.weight_web == pytest.approx(1.0)
+        assert parsed.resolved is True
+        assert parsed.resolved_truth is False
+        assert parsed.resolved_citations[0]["domain"] == "Example.com"
     elif schema_model is SimpleExplV1:
         assert parsed.body_paragraphs[0] == "Model prior clusters near fifty percent."
         assert parsed.bullets[-1] == "Second supporting detail"
