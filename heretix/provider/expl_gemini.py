@@ -174,7 +174,7 @@ def write_simple_expl_gemini(
     try:
         # robustly extract the JSON substring (handles fences and preamble)
         clean_text = strip_markdown_json(text)
-        
+
         # Partial parse to fix common schema hallucinations
         parsed = json.loads(clean_text)
         if isinstance(parsed, dict):
@@ -184,19 +184,44 @@ def write_simple_expl_gemini(
             if content_source and "body_paragraphs" not in parsed:
                 parsed["body_paragraphs"] = [str(content_source)]
 
-            # Fix 2: Ensure lists
-            if "body_paragraphs" in parsed and isinstance(parsed["body_paragraphs"], str):
-                parsed["body_paragraphs"] = [parsed["body_paragraphs"]]
-            if "bullets" in parsed and isinstance(parsed["bullets"], str):
-                parsed["bullets"] = [parsed["bullets"]]
-            
+            # Fix 2: Ensure lists and extract strings from nested structures
+            if "body_paragraphs" in parsed:
+                if isinstance(parsed["body_paragraphs"], str):
+                    parsed["body_paragraphs"] = [parsed["body_paragraphs"]]
+                elif isinstance(parsed["body_paragraphs"], list):
+                    # Flatten any nested JSON or ensure all elements are strings
+                    cleaned_paras = []
+                    for item in parsed["body_paragraphs"]:
+                        if isinstance(item, str):
+                            cleaned_paras.append(item.strip())
+                        elif isinstance(item, dict):
+                            # Extract text from nested dict
+                            text_val = item.get("text") or item.get("content") or str(item)
+                            cleaned_paras.append(str(text_val).strip())
+                        else:
+                            cleaned_paras.append(str(item).strip())
+                    parsed["body_paragraphs"] = [p for p in cleaned_paras if p]
+
+            if "bullets" in parsed:
+                if isinstance(parsed["bullets"], str):
+                    parsed["bullets"] = [parsed["bullets"]]
+                elif isinstance(parsed["bullets"], list):
+                    # Ensure all bullets are strings
+                    cleaned_bullets = []
+                    for item in parsed["bullets"]:
+                        if isinstance(item, str):
+                            cleaned_bullets.append(item.strip())
+                        else:
+                            cleaned_bullets.append(str(item).strip())
+                    parsed["bullets"] = [b for b in cleaned_bullets if b]
+
             # Fix 3: Ensure title exists if we have content (prevents validation failure)
             if "title" not in parsed and "body_paragraphs" in parsed:
                 # Use a generic title so we don't lose the valid content
                 parsed["title"] = "Analysis of the verdict"
 
             # Re-serialize to ensure downstream validators see clean JSON
-            text = json.dumps(parsed)
+            text = json.dumps(parsed, ensure_ascii=False)
     except Exception:
         # If parsing fails here, we ignore it and let the downstream validator
         # raise the standard error (preserving the original text for debugging).
