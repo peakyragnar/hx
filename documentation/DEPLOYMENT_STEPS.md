@@ -1,11 +1,13 @@
 # Production Deployment Fix - Nov 11, 2024
 
+**2025 update:** The UI now ships from a Render Static Site (`heretix-ui.onrender.com` with `heretix.ai`/`www.heretix.ai`). Use the Render redeploy steps below; Vercel notes remain for historical context only.
+
 ## Issue
 Local changes (Simple View improvements) not appearing in production after standard redeploy.
 
 ## Root Cause
-Two-part deployment (Backend on Render + Frontend on Vercel) requires both to redeploy.
-Vercel may not have auto-deployed the UI changes in `ui/index.html`.
+Two-part deployment (Backend on Render + Frontend on Render static site) requires both to redeploy.
+The static site may not have auto-deployed the UI changes in `ui/index.html`.
 
 ## Fix Steps
 
@@ -23,27 +25,13 @@ Go to Render dashboard:
 
 ---
 
-### 2. Force Redeploy Frontend (Vercel) - FROM ui/ DIRECTORY
+### 2. Force Redeploy Frontend (Render Static Site)
 
-**Option A: Vercel Dashboard (Recommended)**
-1. Go to https://vercel.com/dashboard
-2. Find your project (should be "hx")
-3. Go to **Deployments** tab
-4. Click the **three dots (...)** on the latest deployment
-5. Select **"Redeploy"** → Check **"Use existing build cache: NO"**
-6. Wait for deployment (~1-2 minutes)
-
-**Option B: Vercel CLI (If dashboard doesn't work)**
-```bash
-# From your project root
-cd ui/
-vercel --prod --force
-
-# Or deploy with specific scope
-vercel --prod --force --scope team_gLiEIcZRGpBnE255gcV91UpS
-```
-
-**Why from ui/?** Your Vercel config has `"rootDirectory": "ui"`, so it deploys only that folder.
+1. Go to https://dashboard.render.com
+2. Open the static site that serves `heretix.ai` (`rootDirectory`/publish path: `ui`).
+3. Click **Manual Deploy** → **Clear build cache & deploy**.
+4. Confirm custom domains `heretix.ai` and `www.heretix.ai` are attached and validated.
+5. Wait for deployment (~1-2 minutes) and verify with `curl -I https://heretix.ai` (should return 200 or a Render 301, not a Vercel login).
 
 ---
 
@@ -90,7 +78,7 @@ git commit -m "Force production rebuild"
 git push origin main
 ```
 
-Both Render and Vercel should auto-deploy on push to main.
+Both Render services (API + static site) should auto-deploy on push to main.
 
 ---
 
@@ -101,7 +89,7 @@ Both Render and Vercel should auto-deploy on push to main.
 - `DATABASE_URL` or `DATABASE_URL_PROD` - should point to Neon
 - `TAVILY_API_KEY` - should be set for WEL
 
-**Vercel Environment (if applicable):**
+**Render Static Site Environment (if applicable for build-time vars):**
 - `NEXT_PUBLIC_API_URL` - should be `https://api.heretix.ai`
 
 ---
@@ -145,7 +133,7 @@ git push origin main  # Trigger redeploy
 ---
 
 ## Notes
-- Render deploys the entire repo (including `heretix/` backend code)
-- Vercel deploys only the `ui/` directory (frontend static files)
-- Both need to redeploy for the Simple View feature to work end-to-end
-- Browser cache: Users may need to hard refresh (Cmd+Shift+R / Ctrl+F5)
+- Render Web Service deploys the entire repo (including `heretix/` backend code).
+- Render Static Site deploys only the `ui/` directory (frontend static files).
+- Both need to redeploy for the Simple View feature to work end-to-end.
+- Browser cache: Users may need to hard refresh (Cmd+Shift+R / Ctrl+F5).

@@ -2,8 +2,8 @@
 
 This is the quick reference for what’s deployed, how we watch it, and how to verify live signals.
 
-## 1. Front Door (Vercel)
-- **Surface:** `https://heretix.ai`.
+## 1. Front Door (Render static site)
+- **Surface:** `https://heretix.ai` (and `https://www.heretix.ai`).
 - **Monitor:** UptimeRobot HTTP check (“Heretix Front Door”), 5-minute interval.
 - **Alert path:** email from UptimeRobot when HTTP check fails.
 - **Verification:** Check UptimeRobot dashboard or run `curl -I https://heretix.ai`.
@@ -67,5 +67,5 @@ This is the quick reference for what’s deployed, how we watch it, and how to v
 
 ## 8. Next Monitoring Upgrades (optional)
 - Add notifier (mail/Slack) when `scripts/run_monitor_checks.sh` exits non-zero.
-- Explore Vercel Observability or client-side error reporting for UI runtime exceptions.
+- Add client-side error reporting for UI runtime exceptions (Sentry/hotjar-style), since the static site is on Render.
 - Introduce queue/cache length checks when Redis/SQS is adopted.

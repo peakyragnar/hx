@@ -1,11 +1,11 @@
 # Staging Environment Plan
 
-Goal: mirror the production stack (Neon Postgres, Render API, Vercel UI) on an isolated branch so we can run migrations and deployments end-to-end before touching live traffic.
+Goal: mirror the production stack (Neon Postgres, Render API, Render Static Site UI) on an isolated branch so we can run migrations and deployments end-to-end before touching live traffic.
 
 ## Components
 - **Neon Postgres staging branch:** clone production (`fork` in Neon UI) into a branch named `staging`. Connection string saved as `DATABASE_URL_STAGING`.
 - **Render staging service:** duplicate the API web service (`heretix-api-staging`) that points at the staging branch. Build from the same repo/branch as prod.
-- **Vercel preview (optional):** use Vercel’s preview deployments or a separate project pointing at the staging API. For CLI/manual tests, direct access to the API is usually enough.
+- **Render preview (optional):** use a separate Render Static Site (staging domain) pointing at the staging API. For CLI/manual tests, direct access to the API is usually enough.
 
 ## Migration/Deploy Workflow
 1. **Local prep**
@@ -39,4 +39,3 @@ Goal: mirror the production stack (Neon Postgres, Render API, Vercel UI) on an i
 - Keep staging data fresh by periodically cloning prod to staging (Neon branch reset).
 - Use staging for any schema change, provider change, or API-level feature before prod.
 - Document the workflow in `production-database-migration.md` and DevOps runbooks.
-

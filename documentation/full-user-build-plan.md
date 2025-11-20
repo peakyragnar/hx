@@ -54,9 +54,9 @@ This document outlines the end-to-end rollout for converting the existing RPL ha
 - Database
   - Apply Alembic migrations to Neon production branch.
 - Frontend
-  - Deploy static assets to Vercel (or current host) with `NEXT_PUBLIC_API_URL` set to the Render endpoint.
+  - Deploy static assets as a Render Static Site (root `ui`) with `NEXT_PUBLIC_API_URL` set to the Render endpoint.
 - DNS & TLS
-  - Configure Cloudflare (or provider) to route `api.heretix.* → Render`, `app.heretix.* → Vercel`.
+  - Configure Cloudflare (or provider) to route `api.heretix.* → Render API` and `heretix.* / www.heretix.* → Render static site`.
 - Postmark
   - Verify sending domain, set live token.
 - Stripe

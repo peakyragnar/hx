@@ -4,8 +4,8 @@ We keep the Elon-style bias for minimal tooling: smallest surface that still tel
 
 ## Core Signals to Watch
 
-- **Edge uptime** — Ping both front door (Vercel) and API (Render) and alert if either stays down >3 minutes.
-- **Failure rates** — Track 4xx/5xx spikes from Render logs/metrics and Vercel error dashboard; page only on sustained 5xx.
+- **Edge uptime** — Ping both front door (Render static site) and API (Render) and alert if either stays down >3 minutes.
+- **Failure rates** — Track 4xx/5xx spikes from Render logs/metrics and client-side error reporting; page only on sustained 5xx.
 - **Database health** — Let Neon warn on storage/connection thresholds; run a tiny script that checks `SELECT count(*) FROM runs;` and replication lag (if replicas).
 - **Cache/queue** — For now, confirm the local SQLite file exists and is growing; when moving to Redis/SQS, add a single backlog length alert.
 - **Backups & recovery** — Monthly Neon PITR restore smoke test + nightly SQLite snapshot with failure alerts.
@@ -15,12 +15,12 @@ We keep the Elon-style bias for minimal tooling: smallest surface that still tel
 
 1. **Uptime checks**
    - Pick a service (Pingdom, UptimeRobot, or Render native).
-   - Add two monitors: Vercel URL and Render API health endpoint.
+   - Add two monitors: Render UI URL and Render API health endpoint.
    - Set notification target (email/Slack) for >3 minute downtime.
 
 2. **Error-rate visibility**
    - Enable Render metrics for HTTP status distribution; configure alert on 5xx >2% over 5 minutes.
-   - Turn on Vercel error dashboard notifications for client-side failures.
+   - Add client-side error reporting (e.g., Sentry) for UI runtime failures.
    - Pipe alerts to same notification channel for consistency.
 
 3. **Database guardrails**
@@ -68,7 +68,7 @@ We keep the Elon-style bias for minimal tooling: smallest surface that still tel
 ## Operating Cadence
 
 - **Daily** — Review any uptime or error alerts; scan Run database count from automated report.
-- **Weekly** — Verify no backlog alerts; skim Render/Vercel dashboards.
+- **Weekly** — Verify no backlog alerts; skim Render dashboards.
 - **Monthly** — Check Neon restore log; confirm backups succeeded.
 - **Quarterly** — Rotate keys, review audit logs, sanity-check monitoring coverage.
 

@@ -32,14 +32,14 @@ This checklist covers the remaining operational steps to take the Heretix servic
 5. Trigger the initial deploy from the dashboard and wait for the health check to pass (`/healthz`).
 
 ## 4. Deploy Frontend
-- [ ] Configure your static host (e.g. Vercel) to point at `NEXT_PUBLIC_API_URL=https://api.heretix.<domain>`
-- [ ] Deploy the existing UI (or import the repo if using Vercel)
+- [ ] Create a Render Static Site (root `ui`) and set `NEXT_PUBLIC_API_URL=https://api.heretix.<domain>` (or configure the existing meta tag).
+- [ ] Attach `heretix.<domain>` / `www.heretix.<domain>` custom domains to the site and deploy.
 
 ## 5. DNS & TLS
 - [ ] Add records via Cloudflare (or DNS provider):
-  - `api.heretix.<domain>` → Render (CNAME to the service hostname)
-  - `app.heretix.<domain>` → frontend host (CNAME)
-- [ ] Verify certificates (Render/Vercel will auto-provision once DNS resolves)
+  - `api.heretix.<domain>` → Render API (CNAME to the service hostname)
+  - `heretix.<domain>` → ALIAS/ANAME to the Render static site; `www.heretix.<domain>` → CNAME to the static site
+- [ ] Verify certificates (Render will auto-provision once DNS resolves)
 
 ## 6. Email & Webhook Verification
 - [ ] Postmark: verify sending domain, ensure production server is active

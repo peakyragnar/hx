@@ -112,7 +112,7 @@ Legacy CLI is available under `legacy/` for reference but is not installed by de
 ### 1. Provision infrastructure
 - **Database:** Create a Neon Postgres project (production branch). Keep the connection string handy (`DATABASE_URL_PROD`).
 - **API host:** Create a Render Web Service from this repository, select the Dockerfile, and use at least the 1 GB instance size. Set the start command to `/app/.venv/bin/python -m uvicorn api.main:app --host 0.0.0.0 --port 8080`.
-- **Frontend:** Deploy `ui/` to your static host (e.g., Vercel). Set `NEXT_PUBLIC_API_URL` (or equivalent) to the Render service URL (update to your custom domain once DNS is in place).
+- **Frontend (current prod):** Deploy `ui/` as a Render Static Site (root `ui/`). Add custom domains `heretix.ai` and `www.heretix.ai` in Render. Set the API base (`NEXT_PUBLIC_API_URL` or meta tag) to the Render API URL.
 
 ### 2. Apply migrations to Neon
 ```bash
@@ -148,8 +148,9 @@ API_URL=https://<your-api>.onrender.com
 - `/healthz` remains available for platform checks.
 
 ### 5. Wire DNS/TLS
-- Point `api.heretix.<domain>` to the Render service (CNAME) and `app.heretix.<domain>` to the frontend host.
-- Render/Vercel issue TLS certificates automatically once DNS is active.
+- Point `api.heretix.<domain>` to the Render service (`<api>.onrender.com` CNAME).
+- Point `heretix.<domain>` (ALIAS/ANAME) and `www.heretix.<domain>` (CNAME) to the Render static site (`<ui>.onrender.com`).
+- Render issues TLS certificates automatically once DNS is active and the domains are added to the service.
 
 ### 6. Verify production
 - Request a magic link (should deliver via Postmark) and complete the callback.

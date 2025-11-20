@@ -45,23 +45,23 @@ This document captures the current architecture after adding the Postgres schema
   - RPL defaults (`RPL_MODEL`, `RPL_PROMPT_VERSION`, `RPL_K`, etc.).
   - Stripe credentials (`STRIPE_SECRET`, `STRIPE_PRICE_*`, `STRIPE_WEBHOOK_SECRET`).
   - URLs for cross-service coordination (`API_URL`, `APP_URL`).
-- FastAPI installs `CORSMiddleware` so the browser UI at `https://heretix.ai` (and previews on `vercel.app`) can call the API with cookies.
+- FastAPI installs `CORSMiddleware` so the browser UI at `https://heretix.ai` (and Render preview domains) can call the API with cookies.
 - `/healthz` is Render's readiness probe before shifting traffic to a new deploy.
 
-### Frontend (Vercel)
-- Deployed from the `ui/` directory with the "Other" preset and root path `ui`.
-- Production domain: `https://heretix.ai`; preview domain: `https://heretix-ui.vercel.app`.
+### Frontend (Render)
+- Deployed as a Render Static Site with root path `ui`.
+- Production domains: `https://heretix.ai` and `https://www.heretix.ai` (CNAME/ALIAS to `heretix-ui.onrender.com`).
 - The HTML embeds `<meta name="heretix-api-base" content="https://api.heretix.ai">` and JS fallbacks for local development and preview hosts.
 - Client-side JS handles claim submission, magic-link sign-in, usage meter updates, and redirects to Stripe Checkout.
  - The landing page exposes a multi-select model block (checkboxes named `ui_model`) so users can compare GPT‑5, Grok, and Gemini simultaneously. `renderMultiResults` renders a card per model using the same neon-styled layout as the single-card results page, keeping the design consistent across desktop/tablet/mobile breakpoints.
 
 ### Networking & DNS
 - `api.heretix.ai` → CNAME to Render (`heretix-api.onrender.com`).
-- `heretix.ai` → A record `76.76.21.21` (Vercel) and `www.heretix.ai` → CNAME `cname.vercel-dns.com`.
-- Vercel and Render automatically issue TLS certificates once records resolve.
+- `heretix.ai` (ALIAS/ANAME) and `www.heretix.ai` (CNAME) → `heretix-ui.onrender.com` (Render static site).
+- Render automatically issues TLS certificates once records resolve and domains are attached to the service.
 
 ### Secrets & Configuration
-- Local `.env` is for development; production secrets live in Render/Vercel dashboards.
+- Local `.env` is for development; production secrets live in Render dashboards.
 - Render environment changes require a redeploy to take effect.
 - Stripe webhook signing secret is stored in `STRIPE_WEBHOOK_SECRET` so events are verified.
 
@@ -143,7 +143,7 @@ This document captures the current architecture after adding the Postgres schema
 ## 4. End-to-End Flows
 
 ### Claim Evaluation
-1. A visitor loads `https://heretix.ai` (Vercel) and submits a claim through the form.
+1. A visitor loads `https://heretix.ai` (Render static site) and submits a claim through the form.
 2. JS posts to `https://api.heretix.ai/api/checks/run` with cookies (if signed in) and optional mock flag.
 3. FastAPI executes the RPL harness, stores the result in Neon (`checks`, `usage_ledger`), and returns aggregates (probability, CI, stability).
 4. The UI renders the response and updates the usage meter by calling `/api/me`.
@@ -163,12 +163,12 @@ This document captures the current architecture after adding the Postgres schema
 ### Deployment Workflow
 1. Changes land on `full-feature` (includes Dockerfile, uv.lock, API/UI updates).
 2. Render builds the Docker image and health-checks `/healthz` before routing traffic.
-3. Vercel builds the `ui/` directory and publishes to `heretix.ai`.
+3. Render rebuilds the static site from `ui/` and publishes to `heretix.ai`/`www.heretix.ai`.
 4. After verification, merge `full-feature` → `main` to sync the default branch.
 
 ---
 
 ## 5. Summary
 - SQLite remains the research/store for CLI experiments; Neon Postgres is the authoritative production database for users, runs, and ledgers.
-- Render hosts the FastAPI service (CORS-enabled, Stripe-integrated) while Vercel serves the static UI that calls the API.
-- DNS (`heretix.ai`, `api.heretix.ai`), Stripe Checkout, and webhooks glue the experience together so subscription plans automatically align with usage limits.
+- Render hosts both the FastAPI service (CORS-enabled, Stripe-integrated) and the static UI that calls the API.
+- DNS (`heretix.ai`, `www.heretix.ai`, `api.heretix.ai`), Stripe Checkout, and webhooks glue the experience together so subscription plans automatically align with usage limits.

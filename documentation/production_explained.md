@@ -9,14 +9,11 @@
 
   Here is a detailed breakdown of each component:
 
-  1. Frontend Hosting: Vercel
+ 1. Frontend Hosting: Render Static Site
 
-   * What it is: Vercel is a platform for hosting static websites and serverless functions.
-   * How it's used: The frontend of the application, which is located in the ui/ directory, is deployed as a
-     static site to Vercel. This means that all the HTML, CSS, and JavaScript files are served directly from
-     Vercel's global Content Delivery Network (CDN).
-   * Why it's used: Using Vercel for the frontend provides very fast page load times for users all over the
-     world, and it simplifies the deployment process for the frontend developers.
+   * What it is: Render can host static sites (HTML/CSS/JS) on its CDN with custom domains.
+   * How it's used: The frontend in the `ui/` directory is deployed as a Render Static Site with `heretix.ai`/`www.heretix.ai` pointing at `heretix-ui.onrender.com`.
+   * Why it's used: Using Render for the frontend keeps hosting in one platform, provides fast global delivery, and simplifies deploys alongside the API.
 
   2. Backend API Hosting: Render
 

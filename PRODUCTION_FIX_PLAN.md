@@ -1,5 +1,7 @@
 # Production Fix Plan - Simple View Not Working
 
+> 2025 update: The UI now ships from a Render Static Site (`heretix-ui.onrender.com` with `heretix.ai`/`www.heretix.ai`). Use Render to redeploy the frontend; Vercel notes below are legacy for historical context.
+
 ## Problem Summary
 
 **Local (Working):**
@@ -90,9 +92,11 @@ curl -X POST https://api.heretix.ai/api/run \
 # If null or missing: Backend still doesn't have the code
 ```
 
-### Step 4: Force Redeploy Frontend (Vercel) - NO CACHE
+### Step 4: Force Redeploy Frontend (Vercel, legacy) - NO CACHE
 
-Even though the UI code should work, let's ensure Vercel has the latest too.
+> Current prod uses a Render Static Site (`heretix-ui.onrender.com`). If you're on that stack, redeploy the Render static site with cache clear; the Vercel steps below are kept only for historical parity.
+
+Even though the UI code should work, let's ensure Vercel has the latest too (legacy path).
 
 **Via Vercel Dashboard:**
 1. Go to https://vercel.com/dashboard
@@ -142,7 +146,7 @@ git commit -m "Force production rebuild - trigger Render/Vercel"
 git push origin main
 ```
 
-Both Render and Vercel should auto-deploy on push to `main`. Wait 5 minutes and test again.
+Both Render services should auto-deploy on push to `main`. Wait 5 minutes and test again.
 
 ---
 
@@ -235,9 +239,9 @@ This will restore the old behavior (fallback composer only).
 
 ## Notes
 
-- Render deploys entire repo → includes `heretix/` backend code
-- Vercel deploys only `ui/` directory → static frontend files
-- Both must be updated for Simple View to work end-to-end
+- Render Web Service deploys entire repo → includes `heretix/` backend code
+- Render Static Site (current) or Vercel (legacy) deploys only `ui/` directory → static frontend files
+- Both services must be updated for Simple View to work end-to-end
 - Cache clearing is CRITICAL - standard redeploy may not pick up new files
 - Local `ui/serve.py` works because it directly imports from `heretix/` module
 - Production API is separate service, must be redeployed independently
