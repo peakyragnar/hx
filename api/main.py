@@ -235,6 +235,7 @@ def run_check(
             user_id=getattr(user, "id", None),
             anon_token=anon_token,
             request_id=str(req.id) if req else None,
+            cache_hit=False,
         )
         result = artifacts.result
     except HTTPException:
