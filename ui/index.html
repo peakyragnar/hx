@@ -899,6 +899,22 @@
         return condensed;
       }
 
+      function parseSimpleExplFromText(rawText) {
+        if (typeof rawText !== 'string') return null;
+        var trimmed = rawText.trim();
+        if (!trimmed) return null;
+        if (trimmed[0] !== '{' && trimmed[0] !== '[') return null;
+        try {
+          var parsed = JSON.parse(trimmed);
+          if (parsed && typeof parsed === 'object') {
+            return parsed;
+          }
+        } catch (err) {
+          return null;
+        }
+        return null;
+      }
+
       function collectSimpleLines(simpleBlock, runData) {
         var lines = [];
         var seen = new Set();
@@ -918,6 +934,14 @@
         append(simpleBlock && simpleBlock.body_paragraphs);
         if (!lines.length) {
           append(runData && runData.explanation_reasons);
+        }
+        if (!lines.length) {
+          var parsed = parseSimpleExplFromText(runData && runData.explanation_text);
+          if (parsed) {
+            append(parsed.lines);
+            append(parsed.bullets);
+            append(parsed.body_paragraphs);
+          }
         }
         if (!lines.length) {
           var fallback = cleanLine(getSimpleSummary(simpleBlock, runData) || runData.explanation_text);
@@ -953,8 +977,24 @@
         if (legacy) {
           return legacy;
         }
-        var text = (runData && typeof runData.explanation_text === 'string') ? runData.explanation_text.trim() : '';
-        return text;
+        if (runData && typeof runData.explanation_text === 'string') {
+          var parsed = parseSimpleExplFromText(runData.explanation_text);
+          if (parsed) {
+            if (typeof parsed.summary === 'string' && parsed.summary.trim()) {
+              return parsed.summary.trim();
+            }
+            if (Array.isArray(parsed.body_paragraphs)) {
+              for (var i = 0; i < parsed.body_paragraphs.length; i++) {
+                var val = typeof parsed.body_paragraphs[i] === 'string' ? parsed.body_paragraphs[i].trim() : '';
+                if (val) {
+                  return val;
+                }
+              }
+            }
+          }
+          return runData.explanation_text.trim();
+        }
+        return '';
       }
 
 
