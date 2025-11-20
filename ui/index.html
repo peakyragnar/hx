@@ -921,7 +921,17 @@
         function append(items) {
           if (!Array.isArray(items)) return;
           for (var i = 0; i < items.length; i++) {
-            var cleaned = cleanLine(items[i]);
+            var item = items[i];
+            if (typeof item === 'string') {
+              var parsed = parseSimpleExplFromText(item);
+              if (parsed) {
+                append(parsed.lines);
+                append(parsed.bullets);
+                append(parsed.body_paragraphs);
+                continue;
+              }
+            }
+            var cleaned = cleanLine(item);
             if (cleaned && !seen.has(cleaned)) {
               seen.add(cleaned);
               lines.push(cleaned);
@@ -967,9 +977,28 @@
         var paragraphs = simpleBlock && simpleBlock.body_paragraphs;
         if (Array.isArray(paragraphs)) {
           for (var i = 0; i < paragraphs.length; i++) {
-            var para = typeof paragraphs[i] === 'string' ? paragraphs[i].trim() : '';
-            if (para) {
-              return para;
+            var raw = paragraphs[i];
+            if (typeof raw === 'string') {
+              var parsedPara = parseSimpleExplFromText(raw);
+              if (parsedPara) {
+                if (typeof parsedPara.summary === 'string' && parsedPara.summary.trim()) {
+                  return parsedPara.summary.trim();
+                }
+                if (Array.isArray(parsedPara.body_paragraphs)) {
+                  for (var j = 0; j < parsedPara.body_paragraphs.length; j++) {
+                    var inner = typeof parsedPara.body_paragraphs[j] === 'string'
+                      ? parsedPara.body_paragraphs[j].trim()
+                      : '';
+                    if (inner) {
+                      return inner;
+                    }
+                  }
+                }
+              }
+              var para = raw.trim();
+              if (para) {
+                return para;
+              }
             }
           }
         }
