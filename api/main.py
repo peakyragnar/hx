@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
-from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi import Depends, FastAPI, HTTPException, Request as StarletteRequest, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 from sqlalchemy.exc import ProgrammingError
@@ -42,7 +42,7 @@ from .schemas import (
     WeightInfo,
     WebArtifactPointer,
 )
-from heretix.db.models import Check, Request, User
+from heretix.db.models import Check, Request as RequestModel, User
 from .usage import ANON_PLAN, get_usage_state, increment_usage
 from .billing import (
     create_checkout_session,
@@ -80,7 +80,7 @@ app.add_middleware(
 ANON_COOKIE_MAX_AGE = 365 * 24 * 60 * 60
 
 
-def ensure_anon_token(request: Request, response: Response) -> str:
+def ensure_anon_token(request: StarletteRequest, response: Response) -> str:
     token = request.cookies.get(settings.anon_cookie_name)
     if token:
         return token
@@ -112,7 +112,7 @@ def get_or_create_request(
     anon_token: Optional[str],
     user_agent: Optional[str],
     client_ip: Optional[str],
-) -> Request:
+) -> RequestModel:
     req_uuid = None
     if request_id:
         try:
@@ -120,13 +120,13 @@ def get_or_create_request(
         except Exception:
             req_uuid = None
     if req_uuid:
-        req = session.get(Request, req_uuid)
+        req = session.get(RequestModel, req_uuid)
         if req:
             return req
     else:
         req_uuid = uuid.uuid4()
 
-    req = Request(
+    req = RequestModel(
         id=req_uuid,
         claim=claim,
         mode=mode,
@@ -149,7 +149,7 @@ def healthz() -> dict[str, str]:
 @app.post("/api/checks/run", response_model=RunResponse)
 def run_check(
     payload: RunRequest,
-    request: Request,
+    request: StarletteRequest,
     response: Response,
     session: Session = Depends(get_session),
     user: User | None = Depends(get_current_user),
@@ -259,6 +259,7 @@ def run_check(
     cache_hit_rate = float(aggregates.get("cache_hit_rate", 0.0))
     ci_width = float(aggregates.get("ci_width", (ci95[1] or 0.0) - (ci95[0] or 0.0)))
     stability_score = float(aggregates.get("stability_score", 0.0))
+    cache_flag = bool(result.get("cache_hit") or result.get("_cache_hit"))
 
     gate_compliance_ok = rpl_compliance_rate >= 0.98
     gate_stability_ok = stability_score >= 0.25
@@ -369,6 +370,19 @@ def run_check(
         )
 
     simple_expl_model = _build_simple_expl_v1(artifacts.simple_expl)
+
+    logger.info(
+        "run_check",
+        extra={
+            "request_id": str(req.id) if req else None,
+            "run_id": run_id,
+            "logical_model": logical_model_requested,
+            "provider": provider_id,
+            "cache_hit": cache_flag,
+            "status": "ok",
+            "mode": mode,
+        },
+    )
 
     return RunResponse(
         execution_id=result.get("execution_id"),

@@ -109,6 +109,18 @@ def perform_run(
     prompt_file = resolve_prompt_file(cfg, options)
     result = run_single_version(cfg, prompt_file=str(prompt_file), mock=use_mock)
 
+    # If we hit the run cache, mint fresh IDs so this invocation can persist its own Check row.
+    if result.get("_cached_run_key"):
+        cached = dict(result)
+        cached.pop("_cache_hit", None)
+        cached.pop("_cached_run_key", None)
+        new_run_id = f"{cached.get('run_id', 'cached')}-{uuid.uuid4().hex[:6]}"
+        new_exec_id = f"exec-{uuid.uuid4().hex[:12]}"
+        cached["run_id"] = new_run_id
+        cached["execution_id"] = new_exec_id
+        cached["cache_hit"] = True
+        result = cached
+
     aggregation = result.get("aggregation", {})
     aggregates = dict(result.get("aggregates", {}))
     sampling = dict(result.get("sampling", {}))

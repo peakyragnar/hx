@@ -227,10 +227,13 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
                 db_path=db_path,
                 ttl_seconds=runtime.cache_ttl_seconds,
             )
-           if cached_run:
-               cached_run = annotate_cache_hit(cached_run)
-               log.info(
-                   "run_summary",
+            if cached_run:
+                cached_run = annotate_cache_hit(cached_run)
+                cached_run["cache_hit"] = True
+                cached_run["_cache_hit"] = True  # transient marker for persistence path
+                cached_run["_cached_run_key"] = run_cache_key
+                log.info(
+                    "run_summary",
                     extra={
                         "claim": (cfg.claim or "")[:80],
                         "run_id": cached_run.get("run_id"),
@@ -244,7 +247,6 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
                         "ms_total": 0,
                     },
                 )
-                cached_run["cache_hit"] = True
                 return cached_run
 
     # sampling loop
