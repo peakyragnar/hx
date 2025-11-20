@@ -228,15 +228,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
                 ttl_seconds=runtime.cache_ttl_seconds,
             )
             if cached_run:
-                cached_run.setdefault(
-                    "ci_status",
-                    {"phase": "final", "B_used": final_B, "job_id": None},
-                )
-                cached_run["tokens_in"] = 0
-                cached_run["tokens_out"] = 0
-                cached_run["cost_usd"] = 0.0
-                cached_run["aggregates"] = dict(cached_run.get("aggregates") or {})
-                cached_run["aggregates"]["cache_hit_rate"] = 1.0
+                cached_run = annotate_cache_hit(cached_run)
                 log.info(
                     "run_summary",
                     extra={

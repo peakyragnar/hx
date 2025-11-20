@@ -101,6 +101,7 @@ def perform_run(
     user_id: Optional[str],
     anon_token: Optional[str],
     request_id: Optional[str],
+    cache_hit: bool = False,
 ) -> PipelineArtifacts:
     """
     Execute a single run (RPL baseline plus optional WEL) and persist results into `checks`.

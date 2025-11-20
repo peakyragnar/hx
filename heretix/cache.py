@@ -134,3 +134,19 @@ def run_cache_get(key: str, db_path: Path = DEFAULT_DB_PATH, ttl_seconds: int = 
 def run_cache_set(key: str, payload: Dict[str, Any], db_path: Path = DEFAULT_DB_PATH, ttl_seconds: int = 259200):
     _RUN_CACHE.set(key, dict(payload))
     _set_cached_run(key, payload, ttl_seconds, db_path=db_path)
+
+
+def annotate_cache_hit(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Mark a run payload as a cache hit and zero cost/tokens for clarity."""
+    updated = dict(payload)
+    aggregates = dict(updated.get("aggregates") or {})
+    aggregates["cache_hit_rate"] = 1.0
+    updated["aggregates"] = aggregates
+    updated["tokens_in"] = 0
+    updated["tokens_out"] = 0
+    updated["cost_usd"] = 0.0
+    updated.setdefault(
+        "ci_status",
+        {"phase": "final", "B_used": aggregates.get("B", updated.get("aggregation", {}).get("B")), "job_id": None},
+    )
+    return updated

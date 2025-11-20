@@ -36,6 +36,7 @@ def ensure_schema(database_url: str) -> None:
                     CREATE TABLE IF NOT EXISTS checks (
                         id TEXT PRIMARY KEY,
                         run_id TEXT UNIQUE,
+                        request_id TEXT,
                         env TEXT NOT NULL,
                         user_id TEXT,
                         claim TEXT,
@@ -116,6 +117,7 @@ def ensure_schema(database_url: str) -> None:
                 }
 
                 column_defs = [
+                    ("request_id", "TEXT"),
                     ("env", "TEXT"),
                     ("user_id", "TEXT"),
                     ("claim_hash", "TEXT"),
