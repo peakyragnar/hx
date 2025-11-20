@@ -556,15 +556,72 @@ def _normalize_simple_expl_payload(payload: Optional[Dict[str, Any]]) -> Optiona
         return None
 
     def _clean_list(values: Any) -> list[str]:
+        """Normalize paragraphs/bullets into a flat list of strings.
+
+        Handles nested dicts and JSON-encoded strings so providers like Gemini
+        cannot leak raw JSON blobs into the Simple View.
+        """
+
         cleaned: list[str] = []
-        if not isinstance(values, (list, tuple)):
-            return cleaned
-        for value in values:
-            if not isinstance(value, str):
-                value = str(value)
-            text = value.strip()
-            if text and text not in cleaned:
-                cleaned.append(text)
+
+        def _append_unique(text: str) -> None:
+            t = text.strip()
+            if t and t not in cleaned:
+                cleaned.append(t)
+
+        def _from_any(value: Any) -> None:
+            if value is None:
+                return
+            # Strings: trim and, if they look like JSON, try to parse and recurse.
+            if isinstance(value, str):
+                s = value.strip()
+                if not s:
+                    return
+                if s[0] in "{[":
+                    try:
+                        parsed = json.loads(s)
+                    except Exception:
+                        _append_unique(s)
+                        return
+                    _from_any(parsed)
+                    return
+                _append_unique(s)
+                return
+            # Dicts: look for common text-bearing keys or nested body_paragraphs.
+            if isinstance(value, dict):
+                bp = value.get("body_paragraphs")
+                if isinstance(bp, (list, tuple)):
+                    for item in bp:
+                        _from_any(item)
+                    return
+                if isinstance(bp, str):
+                    _from_any(bp)
+                    return
+                for key in ("summary", "title", "text", "content", "reason"):
+                    candidate = value.get(key)
+                    if isinstance(candidate, str) and candidate.strip():
+                        _append_unique(candidate)
+                        return
+                # Fallback: walk all values.
+                for v in value.values():
+                    _from_any(v)
+                return
+            # Lists/tuples: recurse into elements.
+            if isinstance(value, (list, tuple)):
+                for item in value:
+                    _from_any(item)
+                return
+            # Anything else: best-effort string.
+            text = str(value).strip()
+            if text:
+                _append_unique(text)
+
+        if isinstance(values, (list, tuple)):
+            for v in values:
+                _from_any(v)
+        elif isinstance(values, str):
+            _from_any(values)
+
         return cleaned
 
     title = str(payload.get("title") or "Why this verdict looks this way").strip()
