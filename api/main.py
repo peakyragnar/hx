@@ -545,19 +545,65 @@ def _build_simple_expl_v1(simple_block: Optional[Dict[str, object]]) -> Optional
     body_paragraphs_raw = simple_block.get("body_paragraphs")
     bullets_raw = simple_block.get("bullets")
     if isinstance(body_paragraphs_raw, list) and isinstance(bullets_raw, list):
-        # Extract text from body_paragraphs, handling dicts/objects
+        # Extract text from body_paragraphs, handling dicts/objects and nested JSON strings
         body_paragraphs = []
+
+        def _append_para(text: str) -> None:
+            cleaned = (text or "").strip()
+            if cleaned:
+                body_paragraphs.append(cleaned)
+
+        def _extend_from_any(value: object) -> None:
+            if value is None:
+                return
+            # Strings: trim and, if they look like JSON, try to parse and recurse.
+            if isinstance(value, str):
+                s = value.strip()
+                if not s:
+                    return
+                if s[0] in "{[":
+                    try:
+                        parsed = json.loads(s)
+                    except Exception:
+                        _append_para(s)
+                        return
+                    _extend_from_any(parsed)
+                    return
+                _append_para(s)
+                return
+            # Dicts: look for nested body_paragraphs or common text keys.
+            if isinstance(value, dict):
+                bp = value.get("body_paragraphs")
+                if isinstance(bp, list):
+                    for item in bp:
+                        _extend_from_any(item)
+                    return
+                if isinstance(bp, str):
+                    _extend_from_any(bp)
+                    return
+                for key in ("summary", "text", "content", "body", "reason", "title"):
+                    candidate = value.get(key)
+                    if isinstance(candidate, str) and candidate.strip():
+                        _append_para(candidate)
+                        return
+                # Fallback: walk values
+                for v in value.values():
+                    _extend_from_any(v)
+                return
+            # Lists/tuples: recurse into elements.
+            if isinstance(value, (list, tuple)):
+                for item in value:
+                    _extend_from_any(item)
+                return
+            # Anything else: best-effort string conversion.
+            _append_para(str(value))
+
         for p in body_paragraphs_raw:
             if isinstance(p, str):
-                text = p.strip()
-                if text:
-                    body_paragraphs.append(text)
+                _extend_from_any(p)
             elif isinstance(p, dict):
-                # Extract text from common keys
-                text = p.get("text") or p.get("content") or p.get("body") or ""
-                if text and isinstance(text, str):
-                    body_paragraphs.append(str(text).strip())
-            # Skip non-string, non-dict items
+                _extend_from_any(p)
+            # Skip other non-string, non-dict items
 
         bullets = [str(b).strip() for b in bullets_raw if isinstance(b, str) and str(b).strip()]
         if not body_paragraphs:

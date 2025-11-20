@@ -1,7 +1,13 @@
 from pathlib import Path
 import pytest
 
-from api.main import build_web_explanation, _build_web_block_v1, _build_combined_block_v1, build_explanation
+from api.main import (
+    build_web_explanation,
+    _build_web_block_v1,
+    _build_combined_block_v1,
+    build_explanation,
+    _build_simple_expl_v1,
+)
 
 
 def test_build_web_explanation_basic():
@@ -162,3 +168,28 @@ def test_build_combined_block_preserves_resolution_metadata():
     assert block.contradict == 0.15
     assert block.domains == 4
     assert block.ci95 == [pytest.approx(0.75), pytest.approx(0.9)]
+
+
+def test_build_simple_expl_sanitizes_json_paragraph_string():
+    simple_block = {
+        "title": "Why the Verdict on Bill Belichick's Coaching Legacy Is Uncertain",
+        "body_paragraphs": [
+            '{"body_paragraphs": ["It is difficult to definitively say Bill Belichick is the greatest NFL head coach of all time. While no evidence was provided, his success points toward that conclusion, but without supporting facts, the claim remains uncertain."], "title": "Analysis of the verdict"}',
+            "The claim assesses Bill Belichick's status as the greatest NFL head coach. The model's uncertainty reflects the complexities in comparing coaches across different eras and teams.",
+            "Without web evidence, the verdict relies on the model's pre-existing knowledge.",
+        ],
+        "bullets": [
+            "Defining 'greatest' involves subjective factors beyond wins and losses.",
+            "The model's prior knowledge contains arguments for and against the claim.",
+        ],
+    }
+
+    model = _build_simple_expl_v1(simple_block)
+    assert model is not None
+    # All paragraphs should be plain strings without embedded JSON blobs
+    for para in model.body_paragraphs:
+        assert isinstance(para, str)
+        assert not para.strip().startswith("{")
+        assert "body_paragraphs" not in para
+    # The first paragraph should contain the inner explanation text
+    assert "Bill Belichick is the greatest NFL head coach of all time" in model.body_paragraphs[0]
