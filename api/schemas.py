@@ -21,6 +21,7 @@ class RunRequest(BaseModel):
     seed: Optional[int] = None
     no_cache: Optional[bool] = None
     mock: Optional[bool] = Field(None, description="Force mock provider for this run")
+    request_id: Optional[str] = Field(None, description="Client-supplied request grouping id (UUID)")
 
     @field_validator("mode", mode="before")
     @classmethod
@@ -89,6 +90,7 @@ class WebArtifactPointer(BaseModel):
 class RunResponse(BaseModel):
     execution_id: str
     run_id: str
+    request_id: Optional[str] = None
     claim: Optional[str]
     model: str
     logical_model: str

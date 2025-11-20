@@ -77,6 +77,7 @@ def make_run_cache_key(
     *,
     claim: str,
     model: str,
+    provider: str,
     prompt_version: str,
     K: int,
     R: int,
@@ -87,7 +88,7 @@ def make_run_cache_key(
     seed_marker: str,
 ) -> str:
     s = (
-        f"{claim}|{model}|{prompt_version}|K={K}|R={R}|T={T}|"
+        f"{claim}|{model}|{provider}|{prompt_version}|K={K}|R={R}|T={T}|"
         f"max_out={max_output_tokens}|{provider_mode}|B={target_B}|seed={seed_marker}"
     )
     return hashlib.sha256(s.encode("utf-8")).hexdigest()

@@ -1347,13 +1347,14 @@
         return entries;
       }
 
-      async function runModelRequest(meta, claimValue, modeNormalized, useMock) {
+      async function runModelRequest(meta, claimValue, modeNormalized, useMock, requestId) {
         var payload = {
           claim: claimValue,
           mode: modeNormalized,
           logical_model: meta.logical_model,
           provider: meta.provider,
           model: meta.logical_model,
+          request_id: requestId || null,
         };
         if (useMock) {
           payload.mock = true;
@@ -1495,6 +1496,7 @@
           var modeNormalized = modeValue === 'internet-search' ? 'web_informed' : 'baseline';
           var modeLabel = MODE_LABELS[modeValue] || 'Internal knowledge only';
           var isWebMode = modeValue === 'internet-search';
+          var requestId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : ('req-' + Date.now() + '-' + Math.random().toString(16).slice(2));
           var originalBtnText = submitBtn ? submitBtn.textContent : '';
           if (submitBtn) {
             submitBtn.disabled = true;
@@ -1516,7 +1518,7 @@
             } else {
               var useMock = params.get('mock') === '1';
               var runPromises = selectedEntries.map(function(entry){
-                return runModelRequest(entry, value, modeNormalized, useMock).then(function(data){
+                return runModelRequest(entry, value, modeNormalized, useMock, requestId).then(function(data){
                   return { meta: entry, data: data };
                 });
               });

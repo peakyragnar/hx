@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
+import hashlib
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-import logging
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -14,7 +16,6 @@ from heretix.config import RunConfig
 from heretix.rpl import run_single_version
 from heretix.db.models import Check
 from heretix_api.routes_checks import evaluate_web_informed
-import hashlib
 from heretix.artifacts import ArtifactRecord, get_artifact_store, write_web_artifact
 from heretix.verdicts import finalize_combined_block
 from heretix.provider.utils import infer_provider_from_model
@@ -99,6 +100,7 @@ def perform_run(
     use_mock: bool,
     user_id: Optional[str],
     anon_token: Optional[str],
+    request_id: Optional[str],
 ) -> PipelineArtifacts:
     """
     Execute a single run (RPL baseline plus optional WEL) and persist results into `checks`.
@@ -236,7 +238,7 @@ def perform_run(
     if not run_id:
         raise RuntimeError("run_id missing from RPL result")
 
-    check = _get_or_create_check(session, run_id, options.app_env)
+    check = _get_or_create_check(session, run_id, options.app_env, request_id)
     check_updates: Dict[str, Any] = {}
 
     _assign(check, check_updates, "env", options.app_env)
@@ -709,11 +711,16 @@ def _build_reasoning_context(*, mode: str, stability_score: float, ci_width: flo
     else:
         lines.append("Evidence snippets: (not available)")
     return "\n".join(lines)
-def _get_or_create_check(session: Session, run_id: str, env: str) -> Check:
+def _get_or_create_check(session: Session, run_id: str, env: str, request_id: Optional[str]) -> Check:
     check = session.scalar(select(Check).where(Check.run_id == run_id))
     if check is None:
         check = Check(run_id=run_id, env=env)
         session.add(check)
+    if request_id:
+        try:
+            check.request_id = uuid.UUID(str(request_id))
+        except Exception:
+            check.request_id = None
     return check
 
 
