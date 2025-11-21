@@ -38,6 +38,7 @@ def _extract_usage(resp: Any) -> tuple[int, int]:
 
 
 def _extract_output_text(resp: Any) -> Optional[str]:
+    # Responses API shape
     if hasattr(resp, "output_text") and resp.output_text:
         return str(resp.output_text)
     try:
@@ -48,6 +49,22 @@ def _extract_output_text(resp: Any) -> Optional[str]:
             for part in parts:
                 if getattr(part, "type", None) == "output_text" and getattr(part, "text", None):
                     return str(part.text)
+    except Exception:
+        pass
+    # Chat Completions shape
+    try:
+        choices = getattr(resp, "choices", None) or []
+        if choices:
+            content = getattr(choices[0], "message", None) or getattr(choices[0], "delta", None)
+            if content:
+                text = getattr(content, "content", None)
+                if isinstance(text, list):
+                    # Newer SDK returns content parts
+                    for part in text:
+                        if isinstance(part, dict) and part.get("type") == "text" and part.get("text"):
+                            return str(part["text"])
+                if text:
+                    return str(text)
     except Exception:
         pass
     return None
