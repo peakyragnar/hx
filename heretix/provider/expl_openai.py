@@ -58,13 +58,21 @@ def write_simple_expl(
     _OPENAI_EXPL_RATE_LIMITER.acquire()
     client = OpenAI()
     t0 = time.time()
-    resp = client.responses.create(
-        model=model,
-        instructions=instructions,
-        input=[{"role": "user", "content": [{"type": "input_text", "text": user_text}]}],
-        max_output_tokens=max_output_tokens,
-        response_format={"type": "json_object"},
-    )
+    try:
+        resp = client.responses.create(
+            model=model,
+            instructions=instructions,
+            input=[{"role": "user", "content": [{"type": "input_text", "text": user_text}]}],
+            max_output_tokens=max_output_tokens,
+            response_format={"type": "json_object"},
+        )
+    except TypeError:
+        resp = client.responses.create(
+            model=model,
+            instructions=instructions,
+            input=[{"role": "user", "content": [{"type": "input_text", "text": user_text}]}],
+            max_output_tokens=max_output_tokens,
+        )
     latency_ms = int((time.time() - t0) * 1000)
 
     payload = _extract_output_text(resp)
