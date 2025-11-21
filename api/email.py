@@ -48,5 +48,33 @@ class EmailSender:
             logger.warning("Postmark send failed (%s): %s", recipient, exc)
             logger.info("Magic link for %s: %s", recipient, link)
 
+    def send_alert(self, recipient: str, subject: str, text: str) -> None:
+        if not recipient:
+            return
+        if not self.token:
+            logger.info("Alert email (dry-run) to=%s subject=%s body=%s", recipient, subject, text)
+            return
+        try:
+            import httpx
+
+            with httpx.Client(timeout=10.0) as client:
+                resp = client.post(
+                    "https://api.postmarkapp.com/email",
+                    headers={
+                        "Accept": "application/json",
+                        "X-Postmark-Server-Token": self.token,
+                    },
+                    json={
+                        "From": self.sender,
+                        "To": recipient,
+                        "Subject": subject,
+                        "TextBody": text,
+                    },
+                )
+                resp.raise_for_status()
+        except Exception as exc:  # pragma: no cover - network failures logged
+            logger.warning("Postmark alert send failed (%s): %s", recipient, exc)
+            logger.info("Alert email to=%s subject=%s body=%s", recipient, subject, text)
+
 
 email_sender = EmailSender(settings.postmark_token, settings.email_sender_address)

@@ -58,6 +58,8 @@ class Settings(BaseSettings):
     database_url_prod: Optional[str] = Field(None, alias="DATABASE_URL_PROD")
     kalshi_api_key: Optional[str] = Field(None, alias="KALSHI_API_KEY")
     kalshi_private_key: Optional[str] = Field(None, alias="KALSHI_PRIVATE_KEY")
+    alert_email: Optional[str] = Field(None, alias="ALERT_EMAIL")
+    alert_cooldown_seconds: int = Field(300, alias="ALERT_COOLDOWN_SECONDS")
 
     def prompt_file(self) -> Path:
         """Return resolved prompt file path for the configured prompt version."""

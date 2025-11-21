@@ -6,6 +6,8 @@ import secrets
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+import threading
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
@@ -28,6 +30,7 @@ from heretix.schemas import CombinedBlockV1, PriorBlockV1, SimpleExplV1, WebBloc
 from .auth import complete_magic_link, get_current_user, handle_magic_link, sign_out
 from .config import settings
 from .database import get_session
+from .email import email_sender
 from .schemas import (
     AggregationInfo,
     Aggregates,
@@ -78,6 +81,55 @@ app.add_middleware(
 
 
 ANON_COOKIE_MAX_AGE = 365 * 24 * 60 * 60
+_alert_lock = threading.Lock()
+_alert_last_sent: dict[str, float] = {}
+
+
+@app.middleware("http")
+async def error_alert_middleware(request: Request, call_next):
+    try:
+        response = await call_next(request)
+    except Exception:
+        response = Response(status_code=500)
+        _maybe_send_alert(request, response.status_code, error_hint="handler exception")
+        raise
+    _maybe_send_alert(request, response.status_code, error_hint=None)
+    return response
+
+
+def _maybe_send_alert(request: Request, status_code: int, error_hint: Optional[str]) -> None:
+    if status_code < 500 or not settings.alert_email:
+        return
+    now = time.monotonic()
+    key = f"{request.url.path}:{status_code // 100}"
+    should_send = False
+    with _alert_lock:
+        last = _alert_last_sent.get(key, 0.0)
+        if now - last >= settings.alert_cooldown_seconds:
+            _alert_last_sent[key] = now
+            should_send = True
+    if not should_send:
+        return
+    ua = request.headers.get("user-agent") or ""
+    rid = request.headers.get("x-request-id") or ""
+    client_ip = request.client.host if request.client else "unknown"
+    subject = f"[Heretix API] {status_code} on {request.url.path}"
+    body_lines = [
+        f"Status: {status_code}",
+        f"Path: {request.url.path}",
+        f"Method: {request.method}",
+        f"Client IP: {client_ip}",
+        f"User-Agent: {ua}",
+    ]
+    if rid:
+        body_lines.append(f"Request-ID: {rid}")
+    if error_hint:
+        body_lines.append(f"Error: {error_hint}")
+    body = "\n".join(body_lines)
+    try:
+        email_sender.send_alert(settings.alert_email, subject, body)
+    except Exception:
+        logger.warning("Failed to send alert email for %s %s", request.method, request.url.path)
 
 
 def ensure_anon_token(request: Request, response: Response) -> str:
