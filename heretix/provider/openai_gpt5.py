@@ -147,28 +147,34 @@ def score_claim(
     _OPENAI_RATE_LIMITER.acquire()
     # Create a fresh client per call for thread-safety under concurrency
     client = _get_openai_client()
-    def _responses_call(with_format: bool):
-        kwargs: dict[str, object] = {
-            "model": api_model,
-            "instructions": full_instructions,
-            "input": [{"role": "user", "content": [{"type": "input_text", "text": user_text}]}],
-            "max_output_tokens": max_output_tokens,
-        }
-        if with_format:
-            kwargs["response_format"] = {"type": "json_object"}
-        return client.responses.create(**kwargs)
+def _responses_call(with_format: bool):
+    kwargs: dict[str, object] = {
+        "model": api_model,
+        "instructions": full_instructions,
+        "input": [{"role": "user", "content": [{"type": "input_text", "text": user_text}]}],
+        "max_output_tokens": max_output_tokens,
+        "temperature": 0,
+        "top_p": 1,
+        "parallel_tool_calls": False,
+    }
+    if with_format:
+        kwargs["response_format"] = {"type": "json_schema", "json_schema": _RPL_JSON_SCHEMA}
+    return client.responses.create(**kwargs)
 
-    def _chat_call():
-        kwargs: dict[str, object] = {
-            "model": api_model,
-            "messages": [
-                {"role": "system", "content": full_instructions},
-                {"role": "user", "content": user_text},
-            ],
-            "max_output_tokens": max_output_tokens,
-            "response_format": {"type": "json_schema", "json_schema": _RPL_JSON_SCHEMA},
-        }
-        return client.chat.completions.create(**kwargs)
+def _chat_call():
+    kwargs: dict[str, object] = {
+        "model": api_model,
+        "messages": [
+            {"role": "system", "content": full_instructions},
+            {"role": "user", "content": user_text},
+        ],
+        "max_output_tokens": max_output_tokens,
+        "response_format": {"type": "json_schema", "json_schema": _RPL_JSON_SCHEMA},
+        "temperature": 0,
+        "top_p": 1,
+        "parallel_tool_calls": False,
+    }
+    return client.chat.completions.create(**kwargs)
 
     # Prefer chat with JSON schema; fall back to Responses
     try:
@@ -187,7 +193,6 @@ def score_claim(
         resp_id = getattr(resp, "id", None) or getattr(resp, "response_id", None)
         _raw_debug = (raw_text or "")[:4000]
         logger.warning("openai_gpt5: responses parse failed (resp_id=%s) raw=%s", resp_id, _raw_debug)
-    if not sample_payload:
         try:
             resp = _chat_call()
             raw_text = _extract_output_text(resp)
