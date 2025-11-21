@@ -3,12 +3,13 @@ from __future__ import annotations
 import json
 import logging
 import secrets
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
-from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi import Depends, FastAPI, HTTPException, Request as StarletteRequest, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 from sqlalchemy.exc import ProgrammingError
@@ -41,7 +42,7 @@ from .schemas import (
     WeightInfo,
     WebArtifactPointer,
 )
-from heretix.db.models import Check, User
+from heretix.db.models import Check, Request as RequestModel, User
 from .usage import ANON_PLAN, get_usage_state, increment_usage
 from .billing import (
     create_checkout_session,
@@ -79,7 +80,7 @@ app.add_middleware(
 ANON_COOKIE_MAX_AGE = 365 * 24 * 60 * 60
 
 
-def ensure_anon_token(request: Request, response: Response) -> str:
+def ensure_anon_token(request: StarletteRequest, response: Response) -> str:
     token = request.cookies.get(settings.anon_cookie_name)
     if token:
         return token
@@ -100,6 +101,46 @@ def ensure_anon_token(request: Request, response: Response) -> str:
     return token
 
 
+def get_or_create_request(
+    session: Session,
+    *,
+    request_id: Optional[str],
+    claim: str,
+    mode: str,
+    env: str,
+    user: Optional[User],
+    anon_token: Optional[str],
+    user_agent: Optional[str],
+    client_ip: Optional[str],
+) -> RequestModel:
+    req_uuid = None
+    if request_id:
+        try:
+            req_uuid = uuid.UUID(str(request_id))
+        except Exception:
+            req_uuid = None
+    if req_uuid:
+        req = session.get(RequestModel, req_uuid)
+        if req:
+            return req
+    else:
+        req_uuid = uuid.uuid4()
+
+    req = RequestModel(
+        id=req_uuid,
+        claim=claim,
+        mode=mode,
+        env=env,
+        user_id=getattr(user, "id", None),
+        anon_token=anon_token,
+        user_agent=user_agent,
+        client_ip=client_ip,
+    )
+    session.add(req)
+    session.flush()
+    return req
+
+
 @app.api_route("/healthz", methods=["GET", "HEAD"], tags=["system"])
 def healthz() -> dict[str, str]:
     return {"status": "ok"}
@@ -108,7 +149,7 @@ def healthz() -> dict[str, str]:
 @app.post("/api/checks/run", response_model=RunResponse)
 def run_check(
     payload: RunRequest,
-    request: Request,
+    request: StarletteRequest,
     response: Response,
     session: Session = Depends(get_session),
     user: User | None = Depends(get_current_user),
@@ -172,6 +213,18 @@ def run_check(
         prompt_root=prompt_root,
     )
 
+    req = get_or_create_request(
+        session,
+        request_id=payload.request_id,
+        claim=claim,
+        mode=mode,
+        env=settings.app_env,
+        user=user,
+        anon_token=anon_token,
+        user_agent=request.headers.get("user-agent"),
+        client_ip=request.client.host if request.client else None,
+    )
+
     try:
         artifacts = perform_run(
             session=session,
@@ -181,6 +234,8 @@ def run_check(
             use_mock=use_mock,
             user_id=getattr(user, "id", None),
             anon_token=anon_token,
+            request_id=str(req.id) if req else None,
+            cache_hit=False,
         )
         result = artifacts.result
     except HTTPException:
@@ -204,6 +259,7 @@ def run_check(
     cache_hit_rate = float(aggregates.get("cache_hit_rate", 0.0))
     ci_width = float(aggregates.get("ci_width", (ci95[1] or 0.0) - (ci95[0] or 0.0)))
     stability_score = float(aggregates.get("stability_score", 0.0))
+    cache_flag = bool(result.get("cache_hit") or result.get("_cache_hit"))
 
     gate_compliance_ok = rpl_compliance_rate >= 0.98
     gate_stability_ok = stability_score >= 0.25
@@ -315,9 +371,23 @@ def run_check(
 
     simple_expl_model = _build_simple_expl_v1(artifacts.simple_expl)
 
+    logger.info(
+        "run_check",
+        extra={
+            "request_id": str(req.id) if req else None,
+            "run_id": run_id,
+            "logical_model": logical_model_requested,
+            "provider": provider_id,
+            "cache_hit": cache_flag,
+            "status": "ok",
+            "mode": mode,
+        },
+    )
+
     return RunResponse(
         execution_id=result.get("execution_id"),
         run_id=run_id,
+        request_id=str(req.id) if req else None,
         claim=result.get("claim"),
         model=result.get("model", cfg.model),
         logical_model=logical_model_requested,

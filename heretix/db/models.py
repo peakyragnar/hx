@@ -104,6 +104,7 @@ class Check(Base):  # noqa: D401 - simple data container
 
     id: Mapped[uuid.UUID] = mapped_column(UUID_TYPE, primary_key=True, default=uuid.uuid4)
     run_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    request_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID_TYPE, ForeignKey("requests.id", ondelete="SET NULL"), nullable=True)
     env: Mapped[str] = mapped_column(String(16), nullable=False)
     user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID_TYPE, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
@@ -189,12 +190,41 @@ class Check(Base):  # noqa: D401 - simple data container
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped[Optional[User]] = relationship(back_populates="checks")
+    request: Mapped[Optional["Request"]] = relationship(back_populates="checks")
 
     __table_args__ = (
         Index("ix_checks_user_id", "user_id"),
         Index("ix_checks_env", "env"),
         Index("ix_checks_claim_hash", "claim_hash"),
         Index("ix_checks_env_anon_token", "env", "anon_token"),
+    )
+
+
+class Request(Base):  # noqa: D401 - simple data container
+    """A multi-model request grouping child runs."""
+
+    __tablename__ = "requests"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID_TYPE, primary_key=True, default=uuid.uuid4)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    claim: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    mode: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    env: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID_TYPE, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    anon_token: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    client_ip: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+
+    user: Mapped[Optional[User]] = relationship()
+    checks: Mapped[List[Check]] = relationship(back_populates="request")
+
+    __table_args__ = (
+        Index("ix_requests_user_id", "user_id"),
+        Index("ix_requests_anon_env", "env", "anon_token"),
     )
 
 

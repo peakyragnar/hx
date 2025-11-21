@@ -42,6 +42,7 @@ def _run_pipeline(tmp_path: Path):
             use_mock=True,
             user_id=None,
             anon_token=None,
+            request_id=None,
         )
         session.commit()
 

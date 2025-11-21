@@ -239,6 +239,7 @@ def cmd_run(
                     use_mock=mock,
                     user_id=None,
                     anon_token=None,
+                    request_id=None,
                 )
                 session.commit()
 

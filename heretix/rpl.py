@@ -198,6 +198,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
     final_B = max(1, int(cfg.B))
     fast_B = final_B if not runtime.fast_then_final else max(1, min(final_B, runtime.fast_ci_B))
 
+    provider_for_cache = cfg.provider or infer_provider_from_model(cfg.model) or "openai"
     run_cache_key: Optional[str] = None
     if runtime.cache_ttl_seconds > 0:
         if cfg.seed is not None:
@@ -209,6 +210,7 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
         run_cache_key = make_run_cache_key(
             claim=cfg.claim,
             model=cfg.model,
+            provider=provider_for_cache,
             prompt_version=prompt_version_full,
             K=cfg.K,
             R=cfg.R,
@@ -226,15 +228,10 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
                 ttl_seconds=runtime.cache_ttl_seconds,
             )
             if cached_run:
-                cached_run.setdefault(
-                    "ci_status",
-                    {"phase": "final", "B_used": final_B, "job_id": None},
-                )
-                cached_run["tokens_in"] = 0
-                cached_run["tokens_out"] = 0
-                cached_run["cost_usd"] = 0.0
-                cached_run["aggregates"] = dict(cached_run.get("aggregates") or {})
-                cached_run["aggregates"]["cache_hit_rate"] = 1.0
+                cached_run = annotate_cache_hit(cached_run)
+                cached_run["cache_hit"] = True
+                cached_run["_cache_hit"] = True  # transient marker for persistence path
+                cached_run["_cached_run_key"] = run_cache_key
                 log.info(
                     "run_summary",
                     extra={
