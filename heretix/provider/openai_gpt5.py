@@ -22,6 +22,40 @@ from .schema_text import RPL_SAMPLE_JSON_SCHEMA
 from .telemetry import LLMTelemetry
 from heretix.schemas import RPLSampleV1
 
+# JSON schema for chat.completions enforcement
+_RPL_JSON_SCHEMA = {
+    "name": "rpl_sample",
+    "schema": {
+        "type": "object",
+        "properties": {
+            "belief": {
+                "type": "object",
+                "properties": {
+                    "prob_true": {"type": "number"},
+                    "ci95": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "minItems": 2,
+                        "maxItems": 2,
+                    },
+                    "rationale": {"type": "string"},
+                },
+                "required": ["prob_true"],
+            },
+            "meta": {
+                "type": "object",
+                "properties": {
+                    "model": {"type": "string"},
+                    "prompt_sha256": {"type": "string"},
+                },
+                "required": ["prompt_sha256"],
+            },
+        },
+        "required": ["belief", "meta"],
+        "additionalProperties": True,
+    },
+}
+
 
 def _extract_usage(resp: Any) -> tuple[int, int]:
     tokens_in = 0
@@ -127,14 +161,18 @@ def score_claim(
                 {"role": "user", "content": user_text},
             ],
             "max_output_tokens": max_output_tokens,
-            "response_format": {"type": "json_object"},
+            "response_format": {"type": "json_schema", "json_schema": _RPL_JSON_SCHEMA},
         }
         return client.chat.completions.create(**kwargs)
 
+    # Prefer chat with JSON schema; fall back to Responses
     try:
-        resp = _responses_call(with_format=True)
-    except TypeError:
-        resp = _responses_call(with_format=False)
+        resp = _chat_call()
+    except Exception:
+        try:
+            resp = _responses_call(with_format=True)
+        except TypeError:
+            resp = _responses_call(with_format=False)
     latency_ms = int((time.time() - t0) * 1000)
 
     # Parse JSON from response object
