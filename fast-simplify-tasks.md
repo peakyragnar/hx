@@ -138,6 +138,7 @@ Use this block as the “what & how” summary for Task 1 when resuming work in 
     - [x] Sample counts obey the profile budget.
     - [x] Latency is within the 20s target.
     - [x] Stored rows include `profile`, `models`, and `result_json` as expected.
+    - [x] Updated UI defaults to bias_fast (K=4, R=1, T=6, B=0, max_output_tokens=192) with multi-model clamps to keep the fast path; validated live CLI bias_fast run with these settings.
 
 ---
 
@@ -147,3 +148,4 @@ Use this block as the “what & how” summary for Task 1 when resuming work in 
 - [2025-11-22] Added sampling planner and profile-aware harness orchestrator (RunResult/ModelBiasResult plumbing) with deterministic explanation stubs; measurement vs explanation split still open.
 - [2025-11-23] Completed measurement/explanation split within the harness (profile token caps, explanation_mode-aware stub explainer, per-model timing) and marked Task 2 checklist items accordingly.
 - [2025-11-21] Added `profile`/`models`/`result_json` columns to `checks`, applied migration locally and on Neon, and validated a prod mock multi-model bias_fast run is stored with the new fields.
+- [2025-11-21] Aligned UI defaults with bias_fast (K=4/R=1/T=6/B=0/max_out=192) and multi-model clamp to stay on the fast path; verified live CLI run under the same settings for timing.

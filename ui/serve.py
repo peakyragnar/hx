@@ -200,11 +200,12 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 return default
 
-        K = get_int("K", 16)
-        R = get_int("R", 2)
-        T = get_int("T", 8)
-        B = get_int("B", 5000)
-        max_out = get_int("max_output_tokens", 1024)
+        # Default to the fast bias profile (low sample counts, no CI) for UI flows
+        K = get_int("K", 4)
+        R = get_int("R", 1)
+        T = get_int("T", 6)
+        B = get_int("B", 0)
+        max_out = get_int("max_output_tokens", 192)
 
         # UI selections (front-end only; for display on results page)
         raw_models = form_multi.get("ui_model") or []
@@ -293,10 +294,11 @@ class Handler(BaseHTTPRequestHandler):
         cfg = dict(cfg_base or {})
         cli_models = [m["cli_model"] for m in model_entries]
         if len(cli_models) > 1:
+            # Keep multi-model fast by enforcing bias_fast-like caps
             original_K, original_T, original_B = K, T, B
-            K = max(4, min(K, 8))
-            T = max(1, min(T, K))
-            B = min(B, 2000)
+            K = max(1, min(K, 4))
+            T = max(1, min(T, 6))
+            B = 0
             logging.info(
                 "UI multi-model clamp: models=%d K %s→%s T %s→%s B %s→%s",
                 len(cli_models),

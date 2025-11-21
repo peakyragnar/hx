@@ -100,6 +100,7 @@ RPL_RESEARCH = RPLProfile(
 Wiring:
 	•	CLI config can continue to specify K/R/T/B directly, or accept a profile field and populate defaults from RPLProfile.
 	•	API will always use BIAS_FAST (unless you later add an override).
+		•	UI default profile: bias_fast (K=4, R=1, T=6, B=0, max_output_tokens=192), with multi-model submissions clamped to those ceilings so the UI stays on the fast path.
 
 2.2. Multi-model sampling planner
 
