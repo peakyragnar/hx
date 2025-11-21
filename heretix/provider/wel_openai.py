@@ -63,6 +63,7 @@ def score_wel_bundle(
         instructions=instructions,
         input=[{"role": "user", "content": [{"type": "input_text", "text": bundle_text}]}],
         max_output_tokens=max_output_tokens,
+        response_format={"type": "json_object"},
     )
     latency_ms = int((time.time() - t0) * 1000)
 

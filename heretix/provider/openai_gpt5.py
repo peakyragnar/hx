@@ -96,6 +96,7 @@ def score_claim(
         instructions=full_instructions,
         input=[{"role": "user", "content": [{"type": "input_text", "text": user_text}]}],
         max_output_tokens=max_output_tokens,
+        response_format={"type": "json_object"},
     )
     latency_ms = int((time.time() - t0) * 1000)
 
