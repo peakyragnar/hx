@@ -20,8 +20,8 @@ from heretix.verdicts import verdict_label
 
 ROOT = Path(__file__).parent
 TMP_DIR = Path("runs/ui_tmp")
-CFG_PATH_DEFAULT = Path("runs/rpl_example.yaml")
-PROMPT_VERSION_DEFAULT = "rpl_g5_v5"  # keep in sync with examples
+CFG_PATH_DEFAULT = Path("runs/rpl_bias_fast.yaml")
+PROMPT_VERSION_DEFAULT = "rpl_g5_v2"  # keep aligned with bias_fast profile defaults
 
 # Tunables (avoid magic numbers)
 MAX_CLAIM_CHARS = 280
@@ -295,24 +295,31 @@ class Handler(BaseHTTPRequestHandler):
         cli_models = [m["cli_model"] for m in model_entries]
         if len(cli_models) > 1:
             # Keep multi-model fast by enforcing bias_fast-like caps
-            original_K, original_T, original_B = K, T, B
+            original_K, original_R, original_T, original_B, original_out = K, R, T, B, max_out
             K = max(1, min(K, 4))
+            R = 1
             T = max(1, min(T, 6))
             B = 0
+            max_out = min(max_out, 192)
             logging.info(
-                "UI multi-model clamp: models=%d K %s→%s T %s→%s B %s→%s",
+                "UI multi-model clamp: models=%d K %s→%s R %s→%s T %s→%s B %s→%s max_out %s→%s",
                 len(cli_models),
                 original_K,
                 K,
+                original_R,
+                R,
                 original_T,
                 T,
                 original_B,
                 B,
+                original_out,
+                max_out,
             )
         else:
             T = max(1, T)
         cfg.update({
             "claim": claim,
+            "profile": "bias_fast",
             "model": cli_models[0],
             "models": cli_models,
             "prompt_version": prompt_version,
@@ -551,6 +558,8 @@ class Handler(BaseHTTPRequestHandler):
             "run",
             "--config",
             str(cfg_path),
+            "--profile",
+            "bias_fast",
             "--out",
             str(out_path),
             "--mode",
@@ -582,9 +591,104 @@ class Handler(BaseHTTPRequestHandler):
                 self._err("The output was larger than expected.", as_json=wants_json)
                 return
             doc = json.loads(out_path.read_text(encoding="utf-8"))
-            runs_section = doc.get("runs")
-            if not isinstance(runs_section, list) or not runs_section:
-                raise ValueError("missing runs section")
+            runs_section = doc.get("runs") if isinstance(doc, dict) else None
+            profile_mode = (
+                isinstance(doc, dict)
+                and doc.get("mode") == "profile"
+                and str(doc.get("profile") or "").strip().lower() == "bias_fast"
+            )
+            if profile_mode and isinstance(doc.get("results"), list) and doc["results"]:
+                # capture profile plan metadata for telemetry/debug (e.g., sample counts)
+                plan_obj = doc["results"][0].get("result", {}).get("raw_rpl_output", {}).get("plan")
+                if isinstance(plan_obj, dict):
+                    profile_plan = plan_obj
+            if profile_mode:
+                # Convert bias_fast profile output into run-like entries for rendering.
+                simple_map = {}
+                try:
+                    simple_map = doc["results"][0]["result"]["raw_rpl_output"].get("simple_expl") or {}
+                except Exception:
+                    simple_map = {}
+                model_payloads: Dict[str, Dict[str, Any]] = {}
+                for result_entry in doc.get("results") or []:
+                    if not isinstance(result_entry, dict):
+                        continue
+                    res_obj = result_entry.get("result") or {}
+                    if not isinstance(res_obj, dict):
+                        continue
+                    for m in res_obj.get("models") or []:
+                        if not isinstance(m, dict):
+                            continue
+                        key = str(m.get("model") or "").strip()
+                        if key:
+                            model_payloads[key] = m
+                    runs_section = []
+                    for meta in model_entries:
+                        key = meta.get("cli_model") or meta.get("code") or ""
+                        payload = model_payloads.get(key)
+                        if not payload:
+                            continue
+                        p_val = payload.get("p_rpl")
+                        label_val = payload.get("label") or verdict_label(p_val)
+                        extras = payload.get("extras") or {}
+                        ci95 = extras.get("ci95")
+                        explanation_text = payload.get("explanation") or ""
+                        stability = extras.get("stability_score")
+                        override_simple = simple_map.get(key) if isinstance(simple_map, dict) else None
+                        simple_block = override_simple if isinstance(override_simple, dict) else None
+                        # Fallback derivation only if no pre-built simple_expl
+                        if not simple_block:
+                            def _human_label(text: str) -> str:
+                                clean = text.replace("_", " ").strip()
+                                return clean.title() if clean else "Verdict"
+
+                            label_clean = _human_label(label_val) if isinstance(label_val, str) else "Verdict"
+                            headline = f"Why this looks {label_clean.lower()}."
+                            summary = explanation_text or headline
+                            bullets: List[str] = []
+                            simple_block = {
+                                "title": headline,
+                                "summary": summary,
+                                "lines": bullets,
+                            }
+                        runs_section.append({
+                            "model": key,
+                            "combined": {"p": p_val, "label": label_val, "ci95": ci95},
+                            "aggregates": {"prob_true_rpl": p_val, "ci95": ci95},
+                            "simple_expl": simple_block,
+                        })
+                # Fallback: if nothing matched (e.g., model names differ), build from payloads directly.
+                if not runs_section and model_payloads:
+                    for key, payload in model_payloads.items():
+                        p_val = payload.get("p_rpl")
+                        label_val = payload.get("label") or verdict_label(p_val)
+                        extras = payload.get("extras") or {}
+                        ci95 = extras.get("ci95")
+                        stability = extras.get("stability_score")
+                        explanation_text = payload.get("explanation") or ""
+                        override_simple = simple_map.get(key) if isinstance(simple_map, dict) else None
+                        simple_block = override_simple if isinstance(override_simple, dict) else None
+                        if not simple_block:
+                            def _human_label(text: str) -> str:
+                                clean = text.replace("_", " ").strip()
+                                return clean.title() if clean else "Verdict"
+                            label_clean = _human_label(label_val) if isinstance(label_val, str) else "Verdict"
+                            headline = f"Why this looks {label_clean.lower()}."
+                            summary = explanation_text or headline
+                            bullets: List[str] = []
+                            simple_block = {
+                                "title": headline,
+                                "summary": summary,
+                                "lines": bullets,
+                            }
+                        runs_section.append({
+                            "model": key,
+                            "combined": {"p": p_val, "label": label_val, "ci95": ci95},
+                            "aggregates": {"prob_true_rpl": p_val, "ci95": ci95},
+                            "simple_expl": simple_block,
+                        })
+                if not isinstance(runs_section, list) or not runs_section:
+                    raise ValueError("missing runs section")
         except Exception as e:
             logging.error("UI parse error: %s", e)
             self._err("We couldn’t read the run output.", as_json=wants_json)
