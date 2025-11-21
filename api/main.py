@@ -3,12 +3,12 @@ from __future__ import annotations
 import json
 import logging
 import secrets
+import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-import threading
-import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import yaml
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
@@ -26,6 +26,7 @@ from heretix.pipeline import PipelineOptions, perform_run
 from heretix.constants import SCHEMA_VERSION
 from heretix.rpl import ProviderResolutionError
 from heretix.schemas import CombinedBlockV1, PriorBlockV1, SimpleExplV1, WebBlockV1, WebEvidenceStats
+from heretix.types import RunResult
 
 from .auth import complete_magic_link, get_current_user, handle_magic_link, sign_out
 from .config import settings
@@ -34,6 +35,7 @@ from .email import email_sender
 from .schemas import (
     AggregationInfo,
     Aggregates,
+    BiasRunResponse,
     MagicLinkPayload,
     MeResponse,
     CheckoutRequest,
@@ -54,6 +56,7 @@ from .billing import (
     handle_subscription_deleted,
     handle_subscription_updated,
 )
+from heretix_api.bias_fast import run_bias_fast
 from heretix_api.routes_checks import evaluate_web_informed
 
 logger = logging.getLogger(__name__)
@@ -132,6 +135,27 @@ def _maybe_send_alert(request: Request, status_code: int, error_hint: Optional[s
         logger.warning("Failed to send alert email for %s %s", request.method, request.url.path)
 
 
+def _coerce_int(value: object) -> Optional[int]:
+    try:
+        return int(value)
+    except Exception:
+        return None
+
+
+def _coerce_float(value: object) -> Optional[float]:
+    try:
+        return float(value)
+    except Exception:
+        return None
+
+
+def _set_if_has(obj: object, attr: str, value: object) -> None:
+    if value is None:
+        return
+    if hasattr(obj, attr):
+        setattr(obj, attr, value)
+
+
 def ensure_anon_token(request: Request, response: Response) -> str:
     token = request.cookies.get(settings.anon_cookie_name)
     if token:
@@ -201,12 +225,99 @@ def get_or_create_request(
     return req
 
 
+def _persist_bias_fast_checks(
+    session: Session,
+    *,
+    run_result: RunResult,
+    env: str,
+    user_id: Optional[uuid.UUID],
+    anon_token: Optional[str],
+    request_id: Optional[uuid.UUID],
+) -> None:
+    """Best-effort persistence of bias_fast runs into Postgres."""
+
+    runs_block = run_result.raw_rpl_output.get("runs") if isinstance(run_result.raw_rpl_output, dict) else None
+    if not isinstance(runs_block, dict):
+        logger.warning("bias_fast persistence skipped: runs block missing or not a dict")
+        return
+
+    for model_name, payload in runs_block.items():
+        if not isinstance(payload, dict):
+            continue
+        run_id = payload.get("run_id")
+        prompt_version = payload.get("prompt_version")
+        sampling = payload.get("sampling") or {}
+        aggregation = payload.get("aggregation") or {}
+        aggregates = payload.get("aggregates") or {}
+
+        k_val = _coerce_int(sampling.get("K"))
+        r_val = _coerce_int(sampling.get("R"))
+        if not run_id or not prompt_version or k_val is None or r_val is None:
+            logger.warning("bias_fast persistence skipped for model %s due to missing required fields", model_name)
+            continue
+
+        exists = session.execute(select(Check).where(Check.run_id == run_id)).scalar_one_or_none()
+        if exists:
+            continue
+
+        counts_json = aggregation.get("counts_by_template") or {}
+        sampler_meta = {
+            "warning_counts": sampling.get("warning_counts"),
+            "warning_total": sampling.get("warning_total"),
+        }
+
+        check = Check(
+            run_id=run_id,
+            request_id=request_id,
+            env=env,
+            user_id=user_id,
+            anon_token=anon_token,
+            claim=payload.get("claim"),
+            model=payload.get("model") or model_name,
+            provider=payload.get("provider"),
+            logical_model=payload.get("logical_model") or payload.get("resolved_logical_model"),
+            schema_version=payload.get("schema_version"),
+            prompt_version=prompt_version,
+            k=k_val,
+            r=r_val,
+            t=_coerce_int(sampling.get("T")),
+            b=_coerce_int(aggregation.get("B")),
+            seed=_coerce_int(payload.get("seed")),
+            bootstrap_seed=_coerce_int(aggregation.get("bootstrap_seed")),
+            max_output_tokens=_coerce_int(payload.get("max_output_tokens")),
+            prob_true_rpl=_coerce_float(aggregates.get("prob_true_rpl")),
+            ci_lo=_coerce_float((aggregates.get("ci95") or [None, None])[0]),
+            ci_hi=_coerce_float((aggregates.get("ci95") or [None, None])[1]),
+            ci_width=_coerce_float(aggregates.get("ci_width")),
+            template_iqr_logit=_coerce_float(aggregation.get("template_iqr_logit")),
+            stability_score=_coerce_float(aggregates.get("stability_score")),
+            imbalance_ratio=_coerce_float(aggregation.get("imbalance_ratio")),
+            rpl_compliance_rate=_coerce_float(aggregates.get("rpl_compliance_rate")),
+            cache_hit_rate=_coerce_float(aggregates.get("cache_hit_rate")),
+            sampler_json=json.dumps({k: v for k, v in sampler_meta.items() if v is not None}),
+            counts_by_template_json=json.dumps(counts_json),
+            prompt_char_len_max=_coerce_int(aggregation.get("prompt_char_len_max")),
+            was_cached=bool(payload.get("cache_hit") or payload.get("_cache_hit")),
+            provider_model_id=payload.get("provider_model_id"),
+            tokens_in=_coerce_int(payload.get("tokens_in")),
+            tokens_out=_coerce_int(payload.get("tokens_out")),
+            cost_usd=_coerce_float(payload.get("cost_usd")),
+            mode="baseline",
+        )
+
+        _set_if_has(check, "profile", run_result.profile)
+        _set_if_has(check, "models", list(run_result.raw_rpl_output.get("plan", {}).get("models", {}).keys()))
+        _set_if_has(check, "result_json", run_result.raw_rpl_output)
+
+        session.add(check)
+
+
 @app.api_route("/healthz", methods=["GET", "HEAD"], tags=["system"])
 def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/api/checks/run", response_model=RunResponse)
+@app.post("/api/checks/run", response_model=Union[RunResponse, BiasRunResponse])
 def run_check(
     payload: RunRequest,
     request: Request,
@@ -232,6 +343,12 @@ def run_check(
         raise HTTPException(status_code=402, detail={"reason": reason, "plan": usage_state.plan.name})
 
     logical_model = payload.logical_model or payload.model or settings.rpl_model
+    profile_name = payload.profile.strip().lower() if payload.profile else None
+    models_requested = payload.models or None
+    use_bias_fast = bool(profile_name == "bias_fast" or models_requested)
+    if use_bias_fast and mode != "baseline":
+        raise HTTPException(status_code=400, detail="bias_fast profile supports baseline mode only")
+
     requested_provider = getattr(payload, "provider", None)
     default_provider = getattr(settings, "rpl_provider", None)
     inferred_provider = infer_provider_from_model(logical_model)
@@ -284,6 +401,105 @@ def run_check(
         user_agent=request.headers.get("user-agent"),
         client_ip=request.client.host if request.client else None,
     )
+
+    if use_bias_fast:
+        models_for_run = models_requested or [logical_model]
+        if not models_for_run:
+            raise HTTPException(status_code=422, detail="models must be provided for bias_fast runs")
+        try:
+            run_result = run_bias_fast(
+                claim=claim,
+                models=models_for_run,
+                persist_to_sqlite=False,
+                mock=use_mock,
+                base_config=cfg,
+                prompt_root=prompt_root,
+            )
+        except HTTPException:
+            raise
+        except ValueError as exc:
+            logger.warning("bias_fast request failed validation for claim %s: %s", claim, exc)
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception:
+            logger.exception("bias_fast run failed for claim %s", claim)
+            raise HTTPException(status_code=500, detail="internal server error")
+
+        checks_allowed = usage_state.checks_allowed
+        used_after = usage_state.checks_used
+        remaining_after = max(checks_allowed - used_after, 0) if checks_allowed else None
+        try:
+            _persist_bias_fast_checks(
+                session,
+                run_result=run_result,
+                env=settings.app_env,
+                user_id=getattr(user, "id", None),
+                anon_token=anon_token,
+                request_id=req.id if req else None,
+            )
+            used_after = increment_usage(session, user, usage_state)
+            remaining_after = max(checks_allowed - used_after, 0) if checks_allowed else None
+            session.commit()
+        except ProgrammingError as exc:
+            session.rollback()
+            logging.warning("Skipping DB persistence for bias_fast run %s due to schema mismatch: %s", run_result.run_id, exc)
+            try:
+                refreshed_state = get_usage_state(session, user, anon_token=anon_token)
+                used_after = increment_usage(session, user, refreshed_state)
+                remaining_after = (
+                    max(refreshed_state.checks_allowed - used_after, 0)
+                    if refreshed_state.checks_allowed
+                    else None
+                )
+                session.commit()
+            except Exception:  # pragma: no cover - best-effort fallback when schema is stale
+                session.rollback()
+                used_after = usage_state.checks_used
+                remaining_after = max(checks_allowed - used_after, 0) if checks_allowed else None
+        except Exception:
+            session.rollback()
+            raise
+
+        response_models: List[Dict[str, Any]] = []
+        for model_entry in run_result.models:
+            extras = model_entry.extras or None
+            try:
+                p_val = float(model_entry.p_rpl)
+            except Exception:
+                p_val = float("nan")
+            response_models.append(
+                {
+                    "name": model_entry.model,
+                    "p_rpl": p_val,
+                    "label": model_entry.label,
+                    "explanation": model_entry.explanation,
+                    "extras": extras,
+                }
+            )
+
+        logger.info(
+            "run_check_bias_fast",
+            extra={
+                "request_id": str(req.id) if req else None,
+                "run_id": run_result.run_id,
+                "models": models_for_run,
+                "profile": run_result.profile,
+                "status": "ok",
+                "mode": mode,
+            },
+        )
+
+        return BiasRunResponse(
+            run_id=run_result.run_id,
+            profile=run_result.profile,
+            claim=run_result.claim,
+            models=response_models,  # type: ignore[arg-type]
+            timings=run_result.timings or None,
+            raw=run_result.raw_rpl_output,
+            usage_plan=usage_state.plan.name if usage_state.plan else None,
+            checks_allowed=checks_allowed,
+            checks_used=used_after,
+            remaining=remaining_after,
+        )
 
     try:
         artifacts = perform_run(

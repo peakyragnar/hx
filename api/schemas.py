@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
@@ -13,6 +13,8 @@ class RunRequest(BaseModel):
     provider: Optional[str] = Field(None, description="Provider id (e.g., openai, xai, google)")
     logical_model: Optional[str] = Field(None, description="Logical model id (e.g., gpt5-default)")
     model: Optional[str] = Field(None, description="Override model id (legacy alias)")
+    models: Optional[List[str]] = Field(None, description="List of logical models for bias_fast runs")
+    profile: Optional[str] = Field(None, description="Harness profile to apply (e.g., bias_fast)")
     prompt_version: Optional[str] = Field(None, description="Override prompt version")
     K: Optional[int] = Field(None, ge=1)
     R: Optional[int] = Field(None, ge=1)
@@ -85,6 +87,27 @@ class WebArtifactPointer(BaseModel):
     manifest: str
     replicates_uri: Optional[str] = None
     docs_uri: Optional[str] = None
+
+
+class BiasModelResult(BaseModel):
+    name: str
+    p_rpl: float
+    label: str
+    explanation: str
+    extras: Optional[Dict[str, Any]] = None
+
+
+class BiasRunResponse(BaseModel):
+    run_id: str
+    profile: str
+    claim: str
+    models: List[BiasModelResult]
+    timings: Optional[Dict[str, float]] = None
+    raw: Optional[Dict[str, Any]] = None
+    usage_plan: Optional[str] = None
+    checks_allowed: Optional[int] = None
+    checks_used: Optional[int] = None
+    remaining: Optional[int] = None
 
 
 class RunResponse(BaseModel):

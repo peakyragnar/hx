@@ -115,16 +115,13 @@ Use this block as the “what & how” summary for Task 1 when resuming work in 
 
 ### 4. heretix_api adapter and FastAPI endpoint
 
-- [ ] Implement `run_bias_fast(claim, models, persist_to_sqlite=False) -> RunResult` in `heretix_api/` (new module or `routes_checks.py`).
-  - [ ] Use `BIAS_FAST` profile and `derive_sampling_plan`.
-  - [ ] Delegate to the harness entrypoint with `persist=persist_to_sqlite`.
-- [ ] Extend API request/response:
-  - [ ] Update `api/schemas.py` to add a `models: list[str] | None` field (and optional `profile`) on `RunRequest`.
-  - [ ] Decide response shape for multi-model bias runs (either a new response model or reuse `RunResponse` with a `models` array).
-- [ ] Update `/api/checks/run` handler in `api/main.py`:
-  - [ ] If `models` is provided (or a default set is chosen), call `run_bias_fast` instead of single-model `perform_run` for the fast path.
-  - [ ] Persist run(s) to Postgres using the new `profile`/`models` fields on `Check`.
-  - [ ] Return per-model `{name, p_rpl, label, explanation}` along with timing info from `RunResult.timings`.
+- [x] Implement `run_bias_fast(claim, models, persist_to_sqlite=False) -> RunResult` in `heretix_api/bias_fast.py`.
+  - [x] Uses `BIAS_FAST` profile, normalizes models, threads mock/base_config/prompt_root through to `run_profiled_models`; `persist_to_sqlite` is surfaced but harness still writes SQLite today.
+- [x] Extend API request/response:
+  - [x] `api/schemas.py` now accepts `models` and optional `profile` on `RunRequest`; added `BiasRunResponse`/`BiasModelResult` for multi-model bias payloads.
+- [x] Update `/api/checks/run` handler in `api/main.py`:
+  - [x] Branches to `run_bias_fast` when `profile=bias_fast` or any `models` provided; enforces baseline mode, usage gating, and returns `BiasRunResponse` with per-model `{name, p_rpl, label, explanation, extras}` and timings + raw payload.
+  - [x] Best-effort Postgres persistence in handler: writes per-model `Check` rows from harness run payloads and conditionally sets `profile`/`models`/`result_json` if columns exist; on schema mismatch, falls back to usage-only commit without failing the request.
 
 ### 5. Postgres migration and verification
 
