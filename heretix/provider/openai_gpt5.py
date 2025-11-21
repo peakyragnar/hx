@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 import hashlib
+import logging
 from typing import Any, Dict, Optional
 
 import os
@@ -21,6 +22,8 @@ from .json_utils import parse_schema_from_text
 from .schema_text import RPL_SAMPLE_JSON_SCHEMA
 from .telemetry import LLMTelemetry
 from heretix.schemas import RPLSampleV1
+
+logger = logging.getLogger(__name__)
 
 # JSON schema for chat.completions enforcement
 _RPL_JSON_SCHEMA = {
