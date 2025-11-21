@@ -91,26 +91,45 @@ def score_claim(
     _OPENAI_RATE_LIMITER.acquire()
     # Create a fresh client per call for thread-safety under concurrency
     client = _get_openai_client()
+    def _responses_call(with_format: bool):
+        kwargs: dict[str, object] = {
+            "model": api_model,
+            "instructions": full_instructions,
+            "input": [{"role": "user", "content": [{"type": "input_text", "text": user_text}]}],
+            "max_output_tokens": max_output_tokens,
+        }
+        if with_format:
+            kwargs["response_format"] = {"type": "json_object"}
+        return client.responses.create(**kwargs)
+
+    def _chat_call():
+        kwargs: dict[str, object] = {
+            "model": api_model,
+            "messages": [
+                {"role": "system", "content": full_instructions},
+                {"role": "user", "content": user_text},
+            ],
+            "max_output_tokens": max_output_tokens,
+            "response_format": {"type": "json_object"},
+        }
+        return client.chat.completions.create(**kwargs)
+
     try:
-        resp = client.responses.create(
-            model=api_model,
-            instructions=full_instructions,
-            input=[{"role": "user", "content": [{"type": "input_text", "text": user_text}]}],
-            max_output_tokens=max_output_tokens,
-            response_format={"type": "json_object"},
-        )
+        resp = _responses_call(with_format=True)
     except TypeError:
-        resp = client.responses.create(
-            model=api_model,
-            instructions=full_instructions,
-            input=[{"role": "user", "content": [{"type": "input_text", "text": user_text}]}],
-            max_output_tokens=max_output_tokens,
-        )
+        resp = _responses_call(with_format=False)
     latency_ms = int((time.time() - t0) * 1000)
 
     # Parse JSON from response object
     raw_text = _extract_output_text(resp)
     raw_obj, sample_payload, warnings = parse_schema_from_text(raw_text, RPLSampleV1)
+    if not sample_payload:
+        try:
+            resp = _chat_call()
+            raw_text = _extract_output_text(resp)
+            raw_obj, sample_payload, warnings = parse_schema_from_text(raw_text, RPLSampleV1)
+        except Exception:
+            pass
 
     provider_model_id = getattr(resp, "model", api_model)
     response_id = getattr(resp, "id", None) or getattr(resp, "response_id", None)

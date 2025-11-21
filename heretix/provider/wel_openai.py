@@ -58,24 +58,43 @@ def score_wel_bundle(
     _OPENAI_WEL_RATE_LIMITER.acquire()
     client = OpenAI()
     t0 = time.time()
+    def _responses_call(with_format: bool):
+        kwargs: dict[str, object] = {
+            "model": model,
+            "instructions": instructions,
+            "input": [{"role": "user", "content": [{"type": "input_text", "text": bundle_text}]}],
+            "max_output_tokens": max_output_tokens,
+        }
+        if with_format:
+            kwargs["response_format"] = {"type": "json_object"}
+        return client.responses.create(**kwargs)
+
+    def _chat_call():
+        kwargs: dict[str, object] = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": instructions},
+                {"role": "user", "content": bundle_text},
+            ],
+            "max_output_tokens": max_output_tokens,
+            "response_format": {"type": "json_object"},
+        }
+        return client.chat.completions.create(**kwargs)
+
     try:
-        resp = client.responses.create(
-            model=model,
-            instructions=instructions,
-            input=[{"role": "user", "content": [{"type": "input_text", "text": bundle_text}]}],
-            max_output_tokens=max_output_tokens,
-            response_format={"type": "json_object"},
-        )
+        resp = _responses_call(with_format=True)
     except TypeError:
-        resp = client.responses.create(
-            model=model,
-            instructions=instructions,
-            input=[{"role": "user", "content": [{"type": "input_text", "text": bundle_text}]}],
-            max_output_tokens=max_output_tokens,
-        )
+        resp = _responses_call(with_format=False)
     latency_ms = int((time.time() - t0) * 1000)
 
     payload = _extract_output_text(resp)
+    if payload is None:
+        try:
+            resp = _chat_call()
+            payload = _extract_output_text(resp)
+        except Exception:
+            payload = None
+
     if payload is None:
         raise RuntimeError("No response payload received from GPT-5")
 
