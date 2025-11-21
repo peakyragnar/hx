@@ -7,6 +7,7 @@ import json
 import os
 import hashlib
 import gzip
+import math
 
 import typer
 from dotenv import load_dotenv
@@ -23,6 +24,9 @@ from heretix.provider.utils import infer_provider_from_model
 from heretix.provider.schema_text import RPL_SAMPLE_JSON_SCHEMA
 from heretix.constants import SCHEMA_VERSION
 from heretix.provider import registry
+from heretix.bias import run_profiled_models
+from heretix.profiles import RPLProfile, derive_sampling_plan, get_profile_by_name
+from heretix.types import RunResult
 
 _PROVIDER_ENV_REQUIREMENTS = {
     "openai": ("OPENAI_API_KEY",),
@@ -48,6 +52,74 @@ def _require_provider_credentials(providers: List[str]) -> None:
             err=True,
         )
         raise typer.Exit(1)
+
+
+def _load_config_data(path: Path) -> dict:
+    """Load raw config data for detecting explicit overrides."""
+    if path.suffix in {".yaml", ".yml"}:
+        data = yaml.safe_load(path.read_text()) or {}
+    else:
+        data = json.loads(path.read_text())
+    return data if isinstance(data, dict) else {}
+
+
+def _apply_profile_defaults(cfg: RunConfig, profile: RPLProfile, explicit: dict | None = None) -> RunConfig:
+    """Seed config fields from the profile, then re-apply explicit overrides."""
+    cfg.profile = profile.name
+    cfg.K = profile.K
+    cfg.R = profile.R
+    cfg.T = profile.T
+    if profile.B is not None:
+        cfg.B = profile.B
+    cfg.max_output_tokens = profile.max_output_tokens
+    if explicit:
+        for key in ("K", "R", "T", "B", "max_output_tokens"):
+            if key in explicit and explicit[key] is not None:
+                setattr(cfg, key, explicit[key])
+    return cfg
+
+
+def _profile_with_overrides(profile: RPLProfile, cfg: RunConfig) -> RPLProfile:
+    """Return a profile instance that reflects explicit K/R/T/B/token overrides."""
+    t_value = profile.T if cfg.T is None else int(cfg.T)
+    b_value = profile.B if cfg.B is None else int(cfg.B)
+    return replace(
+        profile,
+        K=int(cfg.K),
+        R=int(cfg.R),
+        T=int(t_value),
+        B=b_value,
+        max_output_tokens=int(cfg.max_output_tokens),
+    )
+
+
+def _safe_float(value: Any) -> Optional[float]:
+    try:
+        val = float(value)
+    except Exception:
+        return None
+    return val if math.isfinite(val) else None
+
+
+def _serialize_run_result(result: RunResult) -> dict:
+    """Convert RunResult to a JSON-friendly dict."""
+    return {
+        "run_id": result.run_id,
+        "claim": result.claim,
+        "profile": result.profile,
+        "models": [
+            {
+                "model": m.model,
+                "p_rpl": _safe_float(m.p_rpl),
+                "label": m.label,
+                "explanation": m.explanation,
+                "extras": m.extras,
+            }
+            for m in result.models
+        ],
+        "raw_rpl_output": result.raw_rpl_output,
+        "timings": result.timings,
+    }
 
 
 app = typer.Typer(help="Heretix (new) RPL harness")
@@ -99,6 +171,7 @@ def cmd_run(
     config: Path = typer.Option(..., exists=True, dir_okay=False, help="Path to run config YAML/JSON"),
     prompt_version: List[str] = typer.Option(None, help="Override prompt versions to run (one or many)"),
     model_name: List[str] = typer.Option(None, "--model", "-m", help="Override models to run (repeatable)"),
+    profile: Optional[str] = typer.Option(None, help="Profile to apply (e.g., bias_fast)"),
     out: Path = typer.Option(Path("runs/rpl_run.json"), help="Output JSON file (A/B summary)"),
     mock: bool = typer.Option(False, help="Use deterministic mock provider (no network) for smoke tests"),
     dry_run: bool = typer.Option(False, help="Preview effective plan without running or writing to DB"),
@@ -112,7 +185,20 @@ def cmd_run(
         typer.echo("ERROR: mode must be 'baseline' or 'web_informed'", err=True)
         raise typer.Exit(1)
 
+    raw_config_data = _load_config_data(config)
     cfg = load_run_config(str(config))
+    profile_configured = raw_config_data.get("profile") if raw_config_data else None
+    profile_name = profile or profile_configured or cfg.profile
+    profile_obj = get_profile_by_name(profile_name)
+    if profile_name and profile_obj is None:
+        typer.echo(f"ERROR: Unknown profile '{profile_name}'", err=True)
+        raise typer.Exit(1)
+    explicit_overrides = raw_config_data if isinstance(raw_config_data, dict) else {}
+    profile_effective = None
+    if profile_obj:
+        cfg = _apply_profile_defaults(cfg, profile_obj, explicit_overrides)
+        profile_effective = _profile_with_overrides(profile_obj, cfg)
+
     override_models = _normalize_model_list(model_name)
     models_to_run = override_models or (cfg.models or [cfg.model])
     models_to_run = _normalize_model_list(models_to_run)
@@ -161,25 +247,81 @@ def cmd_run(
     versions = prompt_version if prompt_version else [cfg.prompt_version]
 
     if dry_run:
-        plans: List[dict[str, Any]] = []
-        for model in models_to_run:
-            for v in versions:
-                local_cfg = RunConfig(**{**cfg.__dict__})
-                local_cfg.model = model
-                local_cfg.logical_model = model
-                if not local_cfg.provider_locked:
-                    local_cfg.provider = infer_provider_from_model(model) or "openai"
-                local_cfg.prompt_version = v
-                prompt_file = (
-                    Path(local_cfg.prompt_file_path)
-                    if local_cfg.prompts_file
-                    else Path(__file__).parent / "prompts" / f"{v}.yaml"
-                )
-                plans.append(_plan_summary(local_cfg, prompt_file))
-        if len(plans) == 1:
-            typer.echo(json.dumps({"mode": "single", "plan": plans[0]}, indent=2))
+        if profile_effective:
+            plan_raw = derive_sampling_plan(models_to_run, profile_effective)
+            plan_serializable = {
+                m: {"K": k, "R": r, "T": t} for m, (k, r, t) in plan_raw.items()
+            }
+            payload = {
+                "mode": "profile",
+                "profile": profile_effective.name,
+                "prompt_versions": versions,
+                "requested_models": models_to_run,
+                "plan": plan_serializable,
+                "B": profile_effective.B,
+                "max_output_tokens": profile_effective.max_output_tokens,
+                "total_sample_budget": profile_effective.total_sample_budget,
+            }
+            typer.echo(json.dumps(payload, indent=2))
         else:
-            typer.echo(json.dumps({"mode": "multi", "plans": plans}, indent=2))
+            plans: List[dict[str, Any]] = []
+            for model in models_to_run:
+                for v in versions:
+                    local_cfg = RunConfig(**{**cfg.__dict__})
+                    local_cfg.model = model
+                    local_cfg.logical_model = model
+                    if not local_cfg.provider_locked:
+                        local_cfg.provider = infer_provider_from_model(model) or "openai"
+                    local_cfg.prompt_version = v
+                    prompt_file = (
+                        Path(local_cfg.prompt_file_path)
+                        if local_cfg.prompts_file
+                        else Path(__file__).parent / "prompts" / f"{v}.yaml"
+                    )
+                    plans.append(_plan_summary(local_cfg, prompt_file))
+            if len(plans) == 1:
+                typer.echo(json.dumps({"mode": "single", "plan": plans[0]}, indent=2))
+            else:
+                typer.echo(json.dumps({"mode": "multi", "plans": plans}, indent=2))
+        return
+
+    prompt_root_env = os.getenv("RPL_PROMPTS_DIR")
+    prompt_root = Path(prompt_root_env) if prompt_root_env else None
+
+    if profile_effective:
+        results_payload: list[dict[str, Any]] = []
+        for v in versions:
+            base_cfg = RunConfig(**{**cfg.__dict__})
+            base_cfg.prompt_version = v
+            base_cfg.profile = profile_effective.name
+            base_cfg.models = models_to_run
+            run_result = run_profiled_models(
+                claim=cfg.claim or "",
+                models=models_to_run,
+                profile=profile_effective,
+                base_config=base_cfg,
+                prompt_root=prompt_root,
+                mock=mock,
+            )
+            results_payload.append({"prompt_version": v, "result": _serialize_run_result(run_result)})
+            typer.echo(
+                f"Profile {profile_effective.name}  prompt={v}  models={', '.join(models_to_run)}"
+            )
+            for m in run_result.models:
+                p_val = _safe_float(m.p_rpl)
+                p_display = f"{p_val:.3f}" if p_val is not None else "nan"
+                typer.echo(f"  {m.model}: p_rpl={p_display}  label={m.label}")
+
+        out.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "mode": "profile",
+            "profile": profile_effective.name,
+            "prompt_versions": versions,
+            "requested_models": models_to_run,
+            "results": results_payload,
+        }
+        out.write_text(json.dumps(payload, indent=2))
+        typer.echo(f"Wrote {out}")
         return
 
     effective_db_url = database_url or os.getenv("DATABASE_URL", "sqlite:///runs/heretix.sqlite")
@@ -192,8 +334,6 @@ def cmd_run(
     engine = create_engine(effective_db_url, future=True)
     SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
-    prompt_root_env = os.getenv("RPL_PROMPTS_DIR")
-    prompt_root = Path(prompt_root_env) if prompt_root_env else None
     recency_env = os.getenv("WEL_RECENCY_DAYS")
     if recency_env and recency_env.lower() == "none":
         wel_recency = None

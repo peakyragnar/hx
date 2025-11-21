@@ -96,16 +96,22 @@ Use this block as the “what & how” summary for Task 1 when resuming work in 
 
 ### 3. CLI wiring and SQLite behavior
 
-- [ ] Add `runs/rpl_bias_fast.yaml` config for the CLI fast profile.
-  - [ ] Include `claim`, `models` (or `model`), and `profile: bias_fast` plus explicit K/R/T/B fields mirroring `BIAS_FAST`.
-- [ ] Extend `heretix/cli.py`:
-  - [ ] Allow `profile` in the loaded config and add a `--profile` flag.
-  - [ ] When a profile is set, hydrate default K/R/T/B/max_output_tokens from `RPLProfile`, allowing explicit overrides.
-  - [ ] Ensure multi-model CLI runs respect `derive_sampling_plan` (sample budget) when `models` has length >1.
-- [ ] Verify SQLite behavior:
-  - [ ] Confirm `heretix/storage.py` schema remains unchanged (no new tables/columns).
-  - [ ] Confirm the richer `RunResult.raw_rpl_output` can be stored as JSON in existing `config_json`/related fields where needed.
-  - [ ] Run a mock CLI fast-bias run (`uv run heretix run --config runs/rpl_bias_fast.yaml --mock`) and note outputs.
+- [x] Add `runs/rpl_bias_fast.yaml` config for the CLI fast profile.
+  - [x] Include `claim`, `models` (or `model`), and `profile: bias_fast` plus explicit K/R/T/B fields mirroring `BIAS_FAST`.
+- [x] Extend `heretix/cli.py`:
+  - [x] Allow `profile` in the loaded config and add a `--profile` flag.
+  - [x] When a profile is set, hydrate default K/R/T/B/max_output_tokens from `RPLProfile`, allowing explicit overrides.
+  - [x] Ensure multi-model CLI runs respect `derive_sampling_plan` (sample budget) when `models` has length >1.
+- [x] Verify SQLite behavior:
+  - [x] Confirm `heretix/storage.py` schema remains unchanged (no new tables/columns).
+  - [x] Confirm the richer `RunResult.raw_rpl_output` can be stored as JSON in existing `config_json`/related fields where needed.
+  - [x] Run a mock CLI fast-bias run (`uv run heretix run --config runs/rpl_bias_fast.yaml --mock`) and note outputs (writes `runs/rpl_run.json` with profile-mode payload).
+
+#### Task 3 completion notes
+- CLI now accepts `profile` (config or `--profile`), applies profile defaults with explicit overrides, and routes profile runs through `derive_sampling_plan` + `run_profiled_models`, emitting a RunResult payload to `runs/rpl_run.json`.
+- Added `runs/rpl_bias_fast.yaml` starter config (bias_fast, K/R/T/B matching BIAS_FAST, max_output_tokens=192).
+- Multi-model profile smoke (live): `uv run heretix run --config runs/rpl_bias_fast.yaml --profile bias_fast --model gpt-5 --model gemini-2.5 --model grok-4` produced per-model p_rpl (gpt-5≈0.28, gemini-2.5≈0.05, grok-4≈0.16) with B=1 after clamping and gpt-5 showing schema_validation warnings.
+- Tests: `uv run pytest -q` passes.
 
 ### 4. heretix_api adapter and FastAPI endpoint
 

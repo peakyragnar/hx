@@ -114,3 +114,18 @@ def derive_sampling_plan(models: Sequence[str], profile: RPLProfile) -> Dict[str
         K_scaled = max(1, min(K_scaled, K_cap))
 
     return {m: (K_scaled, base_R, T_scaled) for m in unique_models}
+
+
+PROFILE_REGISTRY: Dict[str, RPLProfile] = {
+    profile.name: profile for profile in (BIAS_FAST, RPL_RESEARCH)
+}
+
+
+def get_profile_by_name(name: Optional[str]) -> Optional[RPLProfile]:
+    """Return a profile by name (case-insensitive)."""
+    if not name:
+        return None
+    key = str(name).strip().lower()
+    if not key:
+        return None
+    return PROFILE_REGISTRY.get(key)

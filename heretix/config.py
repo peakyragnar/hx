@@ -18,6 +18,7 @@ class RunConfig:
     provider: Optional[str] = None
     provider_locked: bool = False
     models: Optional[List[str]] = None
+    profile: Optional[str] = None
     prompt_version: str = "rpl_g5_v2"
     K: int = 8
     R: int = 2
@@ -59,6 +60,8 @@ def load_run_config(path: str | Path) -> RunConfig:
         cfg.model = cfg.models[0]
     if cfg.logical_model is None:
         cfg.logical_model = cfg.model
+    if cfg.profile:
+        cfg.profile = str(cfg.profile).strip().lower() or None
     cfg.model = cfg.logical_model
     if not cfg.provider_locked:
         cfg.provider = infer_provider_from_model(cfg.logical_model) or cfg.provider or "openai"
