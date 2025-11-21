@@ -143,47 +143,69 @@ def score_claim(
     prompt_sha256 = hashlib.sha256((full_instructions + "\n\n" + user_text).encode("utf-8")).hexdigest()
 
     api_model = _resolve_api_model(model)
+    call_max_tokens = min(max_output_tokens or 512, 256)
     t0 = time.time()
     _OPENAI_RATE_LIMITER.acquire()
     # Create a fresh client per call for thread-safety under concurrency
     client = _get_openai_client()
-def _responses_call(with_format: bool):
-    kwargs: dict[str, object] = {
-        "model": api_model,
-        "instructions": full_instructions,
-        "input": [{"role": "user", "content": [{"type": "input_text", "text": user_text}]}],
-        "max_output_tokens": max_output_tokens,
-        "temperature": 0,
-        "top_p": 1,
-        "parallel_tool_calls": False,
-    }
-    if with_format:
-        kwargs["response_format"] = {"type": "json_schema", "json_schema": _RPL_JSON_SCHEMA}
-    return client.responses.create(**kwargs)
 
-def _chat_call():
-    kwargs: dict[str, object] = {
-        "model": api_model,
-        "messages": [
-            {"role": "system", "content": full_instructions},
-            {"role": "user", "content": user_text},
-        ],
-        "max_output_tokens": max_output_tokens,
-        "response_format": {"type": "json_schema", "json_schema": _RPL_JSON_SCHEMA},
-        "temperature": 0,
-        "top_p": 1,
-        "parallel_tool_calls": False,
-    }
-    return client.chat.completions.create(**kwargs)
+    def _responses_call(with_format: bool):
+        kwargs: dict[str, object] = {
+            "model": api_model,
+            "instructions": full_instructions,
+            "input": [{"role": "user", "content": [{"type": "input_text", "text": user_text}]}],
+            "max_output_tokens": call_max_tokens,
+            "temperature": 0,
+            "top_p": 1,
+            "parallel_tool_calls": False,
+        }
+        if with_format:
+            kwargs["response_format"] = {"type": "json_schema", "json_schema": _RPL_JSON_SCHEMA}
+        return client.responses.create(**kwargs)
 
-    # Prefer chat with JSON schema; fall back to Responses
+    def _chat_call(with_format: bool):
+        kwargs: dict[str, object] = {
+            "model": api_model,
+            "messages": [
+                {"role": "system", "content": full_instructions},
+                {"role": "user", "content": user_text},
+            ],
+            "max_output_tokens": call_max_tokens,
+            "temperature": 0,
+            "top_p": 1,
+            "parallel_tool_calls": False,
+        }
+        if with_format:
+            kwargs["response_format"] = {"type": "json_schema", "json_schema": _RPL_JSON_SCHEMA}
+        return client.chat.completions.create(**kwargs)
+
+    def _fallback_text_chat():
+        # Plain chat without response_format; rely on prompt to enforce JSON
+        return client.chat.completions.create(
+            model=api_model,
+            messages=[
+                {"role": "system", "content": full_instructions},
+                {"role": "user", "content": user_text + "\nReturn ONLY JSON."},
+            ],
+            max_output_tokens=call_max_tokens,
+            temperature=0,
+            top_p=1,
+            parallel_tool_calls=False,
+        )
+
+    resp = None
     try:
-        resp = _chat_call()
-    except Exception:
+        resp = _chat_call(with_format=True)
+    except Exception as exc:
+        logger.warning("openai_gpt5: chat(JSON schema) call failed: %s", exc)
         try:
             resp = _responses_call(with_format=True)
         except TypeError:
             resp = _responses_call(with_format=False)
+        except Exception as exc2:
+            logger.warning("openai_gpt5: responses call failed: %s", exc2)
+            resp = _fallback_text_chat()
+
     latency_ms = int((time.time() - t0) * 1000)
 
     # Parse JSON from response object
@@ -192,17 +214,13 @@ def _chat_call():
     if not sample_payload:
         resp_id = getattr(resp, "id", None) or getattr(resp, "response_id", None)
         _raw_debug = (raw_text or "")[:4000]
-        logger.warning("openai_gpt5: responses parse failed (resp_id=%s) raw=%s", resp_id, _raw_debug)
+        logger.warning("openai_gpt5: responses/chat parse failed (resp_id=%s) raw=%s", resp_id, _raw_debug)
         try:
-            resp = _chat_call()
+            resp = _fallback_text_chat()
             raw_text = _extract_output_text(resp)
             raw_obj, sample_payload, warnings = parse_schema_from_text(raw_text, RPLSampleV1)
-        except Exception:
-            pass
-    if not sample_payload:
-        resp_id = getattr(resp, "id", None) or getattr(resp, "response_id", None)
-        _raw_debug = (raw_text or "")[:4000]
-        logger.warning("openai_gpt5: chat parse failed (resp_id=%s) raw=%s", resp_id, _raw_debug)
+        except Exception as exc:
+            logger.warning("openai_gpt5: fallback text chat failed: %s", exc)
 
     provider_model_id = getattr(resp, "model", api_model)
     response_id = getattr(resp, "id", None) or getattr(resp, "response_id", None)

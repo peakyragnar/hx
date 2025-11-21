@@ -390,6 +390,8 @@ def run_single_version(cfg: RunConfig, *, prompt_file: str, mock: bool = False) 
             },
         ):
             out = _once()
+        if out is None:
+            out = {"warnings": ["provider_returned_none"], "raw": {}, "sample": None, "meta": {}}
         adapter_warnings = list(out.get("warnings") or [])
         _record_warnings(adapter_warnings)
         raw = out.get("raw", {})
