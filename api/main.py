@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
-from fastapi import Depends, FastAPI, HTTPException, Request as StarletteRequest, Response, status
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, ProgrammingError
@@ -80,7 +80,7 @@ app.add_middleware(
 ANON_COOKIE_MAX_AGE = 365 * 24 * 60 * 60
 
 
-def ensure_anon_token(request: StarletteRequest, response: Response) -> str:
+def ensure_anon_token(request: Request, response: Response) -> str:
     token = request.cookies.get(settings.anon_cookie_name)
     if token:
         return token
@@ -157,7 +157,7 @@ def healthz() -> dict[str, str]:
 @app.post("/api/checks/run", response_model=RunResponse)
 def run_check(
     payload: RunRequest,
-    request: StarletteRequest,
+    request: Request,
     response: Response,
     session: Session = Depends(get_session),
     user: User | None = Depends(get_current_user),
