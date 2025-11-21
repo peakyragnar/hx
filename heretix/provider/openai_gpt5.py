@@ -143,7 +143,8 @@ def score_claim(
     prompt_sha256 = hashlib.sha256((full_instructions + "\n\n" + user_text).encode("utf-8")).hexdigest()
 
     api_model = _resolve_api_model(model)
-    call_max_tokens = min(max_output_tokens or 512, 256)
+    # Let configs control the cap; avoid over‑shrinking which can truncate JSON
+    call_max_tokens = max_output_tokens or 512
     t0 = time.time()
     _OPENAI_RATE_LIMITER.acquire()
     # Create a fresh client per call for thread-safety under concurrency
@@ -155,9 +156,6 @@ def score_claim(
             "instructions": full_instructions,
             "input": [{"role": "user", "content": [{"type": "input_text", "text": user_text}]}],
             "max_output_tokens": call_max_tokens,
-            "temperature": 0,
-            "top_p": 1,
-            "parallel_tool_calls": False,
         }
         if with_format:
             kwargs["response_format"] = {"type": "json_schema", "json_schema": _RPL_JSON_SCHEMA}
@@ -170,10 +168,7 @@ def score_claim(
                 {"role": "system", "content": full_instructions},
                 {"role": "user", "content": user_text},
             ],
-            "max_output_tokens": call_max_tokens,
-            "temperature": 0,
-            "top_p": 1,
-            "parallel_tool_calls": False,
+            "max_tokens": call_max_tokens,
         }
         if with_format:
             kwargs["response_format"] = {"type": "json_schema", "json_schema": _RPL_JSON_SCHEMA}
@@ -187,10 +182,7 @@ def score_claim(
                 {"role": "system", "content": full_instructions},
                 {"role": "user", "content": user_text + "\nReturn ONLY JSON."},
             ],
-            max_output_tokens=call_max_tokens,
-            temperature=0,
-            top_p=1,
-            parallel_tool_calls=False,
+            max_tokens=call_max_tokens,
         )
 
     resp = None
