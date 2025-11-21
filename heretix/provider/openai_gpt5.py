@@ -97,6 +97,8 @@ def _extract_output_text(resp: Any) -> Optional[str]:
                     for part in text:
                         if isinstance(part, dict) and part.get("type") == "text" and part.get("text"):
                             return str(part["text"])
+                        if hasattr(part, "type") and getattr(part, "type") == "text" and getattr(part, "text", None):
+                            return str(getattr(part, "text"))
                 if text:
                     return str(text)
     except Exception:
@@ -179,12 +181,20 @@ def score_claim(
     raw_text = _extract_output_text(resp)
     raw_obj, sample_payload, warnings = parse_schema_from_text(raw_text, RPLSampleV1)
     if not sample_payload:
+        resp_id = getattr(resp, "id", None) or getattr(resp, "response_id", None)
+        _raw_debug = (raw_text or "")[:4000]
+        logger.warning("openai_gpt5: responses parse failed (resp_id=%s) raw=%s", resp_id, _raw_debug)
+    if not sample_payload:
         try:
             resp = _chat_call()
             raw_text = _extract_output_text(resp)
             raw_obj, sample_payload, warnings = parse_schema_from_text(raw_text, RPLSampleV1)
         except Exception:
             pass
+    if not sample_payload:
+        resp_id = getattr(resp, "id", None) or getattr(resp, "response_id", None)
+        _raw_debug = (raw_text or "")[:4000]
+        logger.warning("openai_gpt5: chat parse failed (resp_id=%s) raw=%s", resp_id, _raw_debug)
 
     provider_model_id = getattr(resp, "model", api_model)
     response_id = getattr(resp, "id", None) or getattr(resp, "response_id", None)
