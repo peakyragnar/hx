@@ -1,0 +1,26 @@
+openai:
+  defaults:
+    rps: 5
+    burst: 10
+  models:
+    gpt-5:
+      rps: 5
+      burst: 10
+
+xai:
+  defaults:
+    rps: 3
+    burst: 6
+  models:
+    grok-4:
+      rps: 3
+      burst: 6
+
+google:
+  defaults:
+    rps: 3
+    burst: 6
+  models:
+    gemini-2.5:
+      rps: 3
+      burst: 6

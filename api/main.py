@@ -252,6 +252,7 @@ def run_check(
         prompt_version=payload.prompt_version or settings.rpl_prompt_version,
         K=payload.K or settings.rpl_k,
         R=payload.R or settings.rpl_r,
+        T=payload.T if payload.T is not None else settings.rpl_t,
         B=payload.B or settings.rpl_b,
         max_output_tokens=payload.max_output_tokens or settings.rpl_max_output_tokens,
         max_prompt_chars=settings.rpl_max_prompt_chars,

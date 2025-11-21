@@ -490,6 +490,10 @@
       }
       var currentUserEmail = '';
       var latestPlanName = 'trial';
+      var UI_K = 4;
+      var UI_R = 1;
+      var UI_T = 4;
+      var UI_B = 200;
       var MODEL_MAP = {
         "gpt-5": { code: "gpt-5", label: "GPT‑5", provider: "openai", logical_model: "gpt-5" },
         "grok-4": { code: "grok-4", label: "Grok 4", provider: "xai", logical_model: "grok-4" },
@@ -1355,6 +1359,10 @@
           provider: meta.provider,
           model: meta.logical_model,
           request_id: requestId || null,
+          K: UI_K,
+          R: UI_R,
+          T: Math.max(1, Math.min(UI_T, UI_K)),
+          B: UI_B,
         };
         if (useMock) {
           payload.mock = true;

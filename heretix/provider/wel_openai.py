@@ -58,24 +58,12 @@ def score_wel_bundle(
     _OPENAI_WEL_RATE_LIMITER.acquire()
     client = OpenAI()
     t0 = time.time()
-    try:
-        resp = client.responses.create(
-            model=model,
-            instructions=instructions,
-            input=[{"role": "user", "content": [{"type": "input_text", "text": bundle_text}]}],
-            max_output_tokens=max_output_tokens,
-            reasoning={"effort": "minimal"},
-        )
-    except Exception as exc:
-        if "reasoning" in str(exc).lower():
-            resp = client.responses.create(
-                model=model,
-                instructions=instructions,
-                input=[{"role": "user", "content": [{"type": "input_text", "text": bundle_text}]}],
-                max_output_tokens=max_output_tokens,
-            )
-        else:
-            raise
+    resp = client.responses.create(
+        model=model,
+        instructions=instructions,
+        input=[{"role": "user", "content": [{"type": "input_text", "text": bundle_text}]}],
+        max_output_tokens=max_output_tokens,
+    )
     latency_ms = int((time.time() - t0) * 1000)
 
     payload = _extract_output_text(resp)

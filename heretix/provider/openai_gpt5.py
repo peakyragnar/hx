@@ -91,24 +91,12 @@ def score_claim(
     _OPENAI_RATE_LIMITER.acquire()
     # Create a fresh client per call for thread-safety under concurrency
     client = _get_openai_client()
-    try:
-        resp = client.responses.create(
-            model=api_model,
-            instructions=full_instructions,
-            input=[{"role": "user", "content": [{"type": "input_text", "text": user_text}]}],
-            max_output_tokens=max_output_tokens,
-            reasoning={"effort": "minimal"},
-        )
-    except Exception as e:
-        if "reasoning" in str(e):
-            resp = client.responses.create(
-                model=api_model,
-                instructions=full_instructions,
-                input=[{"role": "user", "content": [{"type": "input_text", "text": user_text}]}],
-                max_output_tokens=max_output_tokens,
-            )
-        else:
-            raise
+    resp = client.responses.create(
+        model=api_model,
+        instructions=full_instructions,
+        input=[{"role": "user", "content": [{"type": "input_text", "text": user_text}]}],
+        max_output_tokens=max_output_tokens,
+    )
     latency_ms = int((time.time() - t0) * 1000)
 
     # Parse JSON from response object

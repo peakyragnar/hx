@@ -37,6 +37,12 @@ def _load_config() -> dict[str, Any]:
 
         path = os.getenv("HERETIX_PROVIDER_CONFIG")
         if not path:
+            # Fallback to repository default if available
+            repo_root = Path(__file__).resolve().parents[2]
+            default_cfg = repo_root / "configs" / "providers.yaml"
+            if default_cfg.exists():
+                path = str(default_cfg)
+        if not path:
             _RATE_LIMIT_CACHE = {}
             return _RATE_LIMIT_CACHE
 
