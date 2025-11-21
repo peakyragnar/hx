@@ -12,7 +12,7 @@ import yaml
 from fastapi import Depends, FastAPI, HTTPException, Request as StarletteRequest, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
-from sqlalchemy.exc import ProgrammingError
+from sqlalchemy.exc import IntegrityError, ProgrammingError
 from sqlalchemy.orm import Session
 
 from heretix.config import RunConfig
@@ -137,7 +137,15 @@ def get_or_create_request(
         client_ip=client_ip,
     )
     session.add(req)
-    session.flush()
+    try:
+        session.flush()
+    except IntegrityError:
+        # Another request concurrently created this id; reuse the existing row.
+        session.rollback()
+        existing = session.get(RequestModel, req_uuid)
+        if existing:
+            return existing
+        raise
     return req
 
 

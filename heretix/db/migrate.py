@@ -33,6 +33,58 @@ def ensure_schema(database_url: str) -> None:
             with engine.begin() as conn:
                 conn.exec_driver_sql(
                     """
+                    CREATE TABLE IF NOT EXISTS requests (
+                        id TEXT PRIMARY KEY,
+                        created_at TEXT,
+                        claim TEXT,
+                        mode TEXT,
+                        env TEXT,
+                        user_id TEXT,
+                        anon_token TEXT,
+                        user_agent TEXT,
+                        client_ip TEXT
+                    )
+                    """
+                )
+                req_cols = {
+                    row[1]
+                    for row in conn.exec_driver_sql("PRAGMA table_info(requests)").fetchall()
+                }
+                req_column_defs = [
+                    ("created_at", "TEXT"),
+                    ("claim", "TEXT"),
+                    ("mode", "TEXT"),
+                    ("env", "TEXT"),
+                    ("user_id", "TEXT"),
+                    ("anon_token", "TEXT"),
+                    ("user_agent", "TEXT"),
+                    ("client_ip", "TEXT"),
+                ]
+                _valid_ident = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+                _valid_types = {"TEXT", "INTEGER", "REAL"}
+                for column, ddl in req_column_defs:
+                    if column not in req_cols:
+                        if not _valid_ident.match(column):
+                            raise ValueError(f"Invalid column identifier {column}")
+                        if ddl.upper() not in _valid_types:
+                            raise ValueError(f"Unsupported column type {ddl}")
+                        conn.exec_driver_sql(
+                            'ALTER TABLE requests ADD COLUMN "{}" {}'.format(column, ddl)
+                        )
+                        req_cols.add(column)
+                req_index_defs = {
+                    "ix_requests_user_id": ("user_id",),
+                    "ix_requests_anon_env": ("env", "anon_token"),
+                }
+                for index_name, cols in req_index_defs.items():
+                    if all(col in req_cols for col in cols):
+                        column_list = ", ".join(f'"{col}"' for col in cols)
+                        conn.exec_driver_sql(
+                            f"CREATE INDEX IF NOT EXISTS {index_name} ON requests({column_list})"
+                        )
+
+                conn.exec_driver_sql(
+                    """
                     CREATE TABLE IF NOT EXISTS checks (
                         id TEXT PRIMARY KEY,
                         run_id TEXT UNIQUE,

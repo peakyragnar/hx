@@ -1,9 +1,11 @@
 import sys
+import uuid
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from pytest import MonkeyPatch
+from sqlalchemy.exc import IntegrityError
 
 TEST_DB_PATH = Path("runs/api_test.sqlite").resolve()
 TEST_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -42,8 +44,10 @@ from api import usage
 from api import main as api_main
 
 from api.config import settings  # noqa: E402
+from api.database import session_scope  # noqa: E402
 from api.main import app  # noqa: E402
 from api.schemas import RunResponse  # noqa: E402
+from heretix.db.models import Request as RequestModel  # noqa: E402
 
 settings.rpl_max_prompt_chars = 2000
 
@@ -221,3 +225,49 @@ def test_run_check_invalid_provider_returns_400():
     assert resp.status_code == 400
     detail = resp.json().get("detail")
     assert "unknown-provider" in detail
+
+
+def test_get_or_create_request_retries_on_duplicate(monkeypatch: pytest.MonkeyPatch):
+    request_id = uuid.uuid4()
+
+    with session_scope() as session:
+        real_flush = session.flush
+
+        def fake_flush(*args, **kwargs):
+            # Simulate another worker inserting the same request record first.
+            with session_scope() as other_session:
+                other_session.add(
+                    RequestModel(
+                        id=request_id,
+                        claim="concurrent insert",
+                        mode="baseline",
+                        env=settings.app_env,
+                        anon_token=None,
+                        user_agent=None,
+                        client_ip=None,
+                    )
+                )
+            raise IntegrityError("duplicate key", params=None, orig=Exception("duplicate"))
+
+        monkeypatch.setattr(session, "flush", fake_flush)
+
+        req = api_main.get_or_create_request(
+            session,
+            request_id=str(request_id),
+            claim="primary request",
+            mode="baseline",
+            env=settings.app_env,
+            user=None,
+            anon_token=None,
+            user_agent=None,
+            client_ip=None,
+        )
+
+        # Restore the real flush so session_scope can commit cleanly.
+        monkeypatch.setattr(session, "flush", real_flush)
+
+        assert str(req.id) == str(request_id)
+
+    with session_scope() as session:
+        rows = session.query(RequestModel).filter(RequestModel.id == request_id).all()
+        assert len(rows) == 1
