@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import json
 import hashlib
 import logging
 from typing import Any, Dict, Optional
@@ -75,17 +76,54 @@ def _extract_usage(resp: Any) -> tuple[int, int]:
 
 
 def _extract_output_text(resp: Any) -> Optional[str]:
+    # Chat Completions JSON schema: message.parsed can hold the structured dict
+    try:
+        choices = getattr(resp, "choices", None) or []
+        if choices:
+            msg = getattr(choices[0], "message", None) or getattr(choices[0], "delta", None)
+            if msg is not None:
+                parsed = getattr(msg, "parsed", None) or (msg.get("parsed") if isinstance(msg, dict) else None)
+                if parsed:
+                    if isinstance(parsed, str):
+                        return parsed
+                    try:
+                        return json.dumps(parsed)
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+    # Responses API structured output: output[*].parsed
+    try:
+        for o in getattr(resp, "output", []) or []:
+            parsed = getattr(o, "parsed", None) or (o.get("parsed") if isinstance(o, dict) else None)
+            if parsed:
+                if isinstance(parsed, str):
+                    return parsed
+                try:
+                    return json.dumps(parsed)
+                except Exception:
+                    continue
+    except Exception:
+        pass
     # Responses API shape
     if hasattr(resp, "output_text") and resp.output_text:
         return str(resp.output_text)
     try:
         for o in getattr(resp, "output", []) or []:
-            if getattr(o, "type", None) != "message":
-                continue
             parts = getattr(o, "content", []) or []
             for part in parts:
-                if getattr(part, "type", None) == "output_text" and getattr(part, "text", None):
-                    return str(part.text)
+                p_type = getattr(part, "type", None)
+                p_text = getattr(part, "text", None)
+                if isinstance(p_text, dict) and p_text.get("value"):
+                    return str(p_text.get("value"))
+                if p_type is None and isinstance(part, dict):
+                    p_type = part.get("type")
+                    p_text = part.get("text")
+                if p_type == "output_text" and p_text:
+                    return str(p_text)
+            # Some SDKs attach text directly on the output object for output_text types
+            if getattr(o, "type", None) == "output_text" and getattr(o, "text", None):
+                return str(getattr(o, "text"))
     except Exception:
         pass
     # Chat Completions shape
@@ -104,6 +142,17 @@ def _extract_output_text(resp: Any) -> Optional[str]:
                             return str(getattr(part, "text"))
                 if text:
                     return str(text)
+    except Exception:
+        pass
+    # Last resort: dump structured response if available
+    try:
+        if hasattr(resp, "model_dump"):
+            return json.dumps(resp.model_dump(exclude_none=True))
+    except Exception:
+        pass
+    try:
+        if hasattr(resp, "model_dump_json"):
+            return str(resp.model_dump_json(exclude_none=True))
     except Exception:
         pass
     return None
@@ -168,7 +217,7 @@ def score_claim(
                 {"role": "system", "content": full_instructions},
                 {"role": "user", "content": user_text},
             ],
-            "max_tokens": call_max_tokens,
+            "max_completion_tokens": call_max_tokens,
         }
         if with_format:
             kwargs["response_format"] = {"type": "json_schema", "json_schema": _RPL_JSON_SCHEMA}
@@ -182,42 +231,65 @@ def score_claim(
                 {"role": "system", "content": full_instructions},
                 {"role": "user", "content": user_text + "\nReturn ONLY JSON."},
             ],
-            max_tokens=call_max_tokens,
+            max_completion_tokens=call_max_tokens,
         )
 
+    attempts = [
+        ("responses_json", lambda: _responses_call(with_format=True)),
+        ("chat_json", lambda: _chat_call(with_format=True)),
+        ("chat_plain", _fallback_text_chat),
+    ]
+
     resp = None
-    try:
-        resp = _chat_call(with_format=True)
-    except Exception as exc:
-        logger.warning("openai_gpt5: chat(JSON schema) call failed: %s", exc)
+    raw_text: Optional[str] = None
+    raw_obj: Dict[str, Any] = {}
+    sample_payload: Optional[Dict[str, Any]] = None
+    warnings: list[str] = []
+
+    for label, fn in attempts:
         try:
-            resp = _responses_call(with_format=True)
+            resp = fn()
         except TypeError:
-            resp = _responses_call(with_format=False)
-        except Exception as exc2:
-            logger.warning("openai_gpt5: responses call failed: %s", exc2)
-            resp = _fallback_text_chat()
+            if label == "responses_json":
+                try:
+                    resp = _responses_call(with_format=False)
+                except Exception as exc:
+                    logger.warning("openai_gpt5: %s call failed (no format): %s", label, exc)
+                    continue
+            else:
+                logger.warning("openai_gpt5: %s call failed: TypeError", label)
+                continue
+        except Exception as exc:
+            logger.warning("openai_gpt5: %s call failed: %s", label, exc)
+            continue
+
+        raw_text = _extract_output_text(resp)
+        raw_obj, sample_payload, warnings = parse_schema_from_text(raw_text, RPLSampleV1)
+        if sample_payload:
+            break
 
     latency_ms = int((time.time() - t0) * 1000)
 
-    # Parse JSON from response object
-    raw_text = _extract_output_text(resp)
-    raw_obj, sample_payload, warnings = parse_schema_from_text(raw_text, RPLSampleV1)
     if not sample_payload:
-        resp_id = getattr(resp, "id", None) or getattr(resp, "response_id", None)
-        _raw_debug = (raw_text or "")[:4000]
-        logger.warning("openai_gpt5: responses/chat parse failed (resp_id=%s) raw=%s", resp_id, _raw_debug)
+        resp_id = getattr(resp, "id", None) or getattr(resp, "response_id", None) if resp else None
+        _raw_debug = (raw_text or "")[:2000]
+        dump_debug = ""
         try:
-            resp = _fallback_text_chat()
-            raw_text = _extract_output_text(resp)
-            raw_obj, sample_payload, warnings = parse_schema_from_text(raw_text, RPLSampleV1)
-        except Exception as exc:
-            logger.warning("openai_gpt5: fallback text chat failed: %s", exc)
+            if resp and hasattr(resp, "model_dump"):
+                dump_debug = json.dumps(resp.model_dump(exclude_none=True))[:2000]
+        except Exception:
+            pass
+        logger.warning(
+            "openai_gpt5: responses/chat parse failed (resp_id=%s) raw=%s dump=%s",
+            resp_id,
+            _raw_debug,
+            dump_debug,
+        )
 
-    provider_model_id = getattr(resp, "model", api_model)
-    response_id = getattr(resp, "id", None) or getattr(resp, "response_id", None)
-    created_ts = int(getattr(resp, "created", int(time.time())))
-    tokens_in, tokens_out = _extract_usage(resp)
+    provider_model_id = getattr(resp, "model", api_model) if resp else api_model
+    response_id = getattr(resp, "id", None) or getattr(resp, "response_id", None) if resp else None
+    created_ts = int(getattr(resp, "created", int(time.time()))) if resp else int(time.time())
+    tokens_in, tokens_out = _extract_usage(resp) if resp else (0, 0)
     telemetry = LLMTelemetry(
         provider="openai",
         logical_model=str(model),
