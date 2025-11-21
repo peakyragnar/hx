@@ -100,6 +100,10 @@ def cmd_run(
     prompt_version: List[str] = typer.Option(None, help="Override prompt versions to run (one or many)"),
     model_name: List[str] = typer.Option(None, "--model", "-m", help="Override models to run (repeatable)"),
     out: Path = typer.Option(Path("runs/rpl_run.json"), help="Output JSON file (A/B summary)"),
+    k: Optional[int] = typer.Option(None, "--K", help="Override K (templates per paraphrase)"),
+    r: Optional[int] = typer.Option(None, "--R", help="Override R (replicates per template)"),
+    t: Optional[int] = typer.Option(None, "--T", help="Override T (templates to include)"),
+    b: Optional[int] = typer.Option(None, "--B", help="Override B (bootstrap resamples)"),
     mock: bool = typer.Option(False, help="Use deterministic mock provider (no network) for smoke tests"),
     dry_run: bool = typer.Option(False, help="Preview effective plan without running or writing to DB"),
     mode: str = typer.Option("baseline", help="Evaluation mode: baseline or web_informed"),
@@ -113,6 +117,14 @@ def cmd_run(
         raise typer.Exit(1)
 
     cfg = load_run_config(str(config))
+    if k is not None:
+        cfg.K = int(k)
+    if r is not None:
+        cfg.R = int(r)
+    if t is not None:
+        cfg.T = int(t)
+    if b is not None:
+        cfg.B = int(b)
     override_models = _normalize_model_list(model_name)
     models_to_run = override_models or (cfg.models or [cfg.model])
     models_to_run = _normalize_model_list(models_to_run)

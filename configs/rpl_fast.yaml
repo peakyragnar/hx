@@ -1,0 +1,9 @@
+claim: "Quick sanity check for faster defaults"
+model: gpt-5
+prompt_version: rpl_g5_v2
+K: 4
+R: 1
+T: 4
+B: 200
+max_prompt_chars: 1200
+max_output_tokens: 512
