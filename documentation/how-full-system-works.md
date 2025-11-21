@@ -54,6 +54,7 @@ This document captures the current architecture after adding the Postgres schema
 - The HTML embeds `<meta name="heretix-api-base" content="https://api.heretix.ai">` and JS fallbacks for local development and preview hosts.
 - Client-side JS handles claim submission, magic-link sign-in, usage meter updates, and redirects to Stripe Checkout.
  - The landing page exposes a multi-select model block (checkboxes named `ui_model`) so users can compare GPT‑5, Grok, and Gemini simultaneously. `renderMultiResults` renders a card per model using the same neon-styled layout as the single-card results page, keeping the design consistent across desktop/tablet/mobile breakpoints.
+ - Multi-model submissions send one request per model; the UI generates a shared `request_id` so the API can link the runs together.
 
 ### Networking & DNS
 - `api.heretix.ai` → CNAME to Render (`heretix-api.onrender.com`).
@@ -87,7 +88,7 @@ This document captures the current architecture after adding the Postgres schema
 1. Client sends JSON `{ "claim": "...", ...optional overrides... }`.
 2. FastAPI constructs a `RunConfig` using defaults plus overrides (e.g., mock mode).
 3. Calls `heretix.rpl.run_single_version`, which performs the K×R GPT-5 sampling and aggregation.
-4. Upserts a row in Postgres `checks` with the returned metrics (prob_true_rpl, CI, stability, gate flags, etc.) and environment tag (`env`).
+4. Upserts a row in Postgres `checks` with the returned metrics (prob_true_rpl, CI, stability, gate flags, etc.) and environment tag (`env`), associating it with a `request_id` (per multi-model submission).
 5. Responds with structured JSON (sampling info, aggregation diagnostics, main aggregates).
 
 ### Magic-Link Flow
