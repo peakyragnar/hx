@@ -125,19 +125,19 @@ Use this block as the “what & how” summary for Task 1 when resuming work in 
 
 ### 5. Postgres migration and verification
 
-- [ ] Confirm current Postgres schema and migrations:
-  - [ ] Re-read `heretix/db/models.Check` and `migrations/versions/*.py` focusing on fields related to prior/web/combined and JSON.
-  - [ ] Decide where to store `RunResult.raw_rpl_output` (e.g. new `result_json` JSONB column on `checks`).
-- [ ] Add minimal Alembic migration:
-  - [ ] Add `profile` (TEXT) and `models` (JSON/JSONB) columns to `checks` if not present.
-  - [ ] Add `result_json` JSON/JSONB to `checks` if we choose to store full harness output there.
-- [ ] Apply and verify:
-  - [ ] Run `uv run alembic upgrade head` locally against Postgres.
-  - [ ] Verify existing CLI/API flows still work for single-model legacy runs.
-  - [ ] Run end-to-end fast-bias API calls (1–3 models) and confirm:
-    - [ ] Sample counts obey the profile budget.
-    - [ ] Latency is within the 20s target.
-    - [ ] Stored rows include `profile`, `models`, and `result_json` as expected.
+- [x] Confirm current Postgres schema and migrations:
+  - [x] Re-read `heretix/db/models.Check` and `migrations/versions/*.py` focusing on fields related to prior/web/combined and JSON.
+  - [x] Decide where to store `RunResult.raw_rpl_output` (e.g. new `result_json` JSONB column on `checks`).
+- [x] Add minimal Alembic migration:
+  - [x] Add `profile` (TEXT) and `models` (JSON/JSONB) columns to `checks` if not present.
+  - [x] Add `result_json` JSON/JSONB to `checks` if we choose to store full harness output there.
+- [x] Apply and verify:
+  - [x] Run `uv run alembic upgrade head` locally against Postgres.
+  - [x] Verify existing CLI/API flows still work for single-model legacy runs.
+  - [x] Run end-to-end fast-bias API calls (1–3 models) and confirm:
+    - [x] Sample counts obey the profile budget.
+    - [x] Latency is within the 20s target.
+    - [x] Stored rows include `profile`, `models`, and `result_json` as expected.
 
 ---
 
@@ -146,3 +146,4 @@ Use this block as the “what & how” summary for Task 1 when resuming work in 
 - [2025-11-21] Mapped fast-simplify spec onto current harness/CLI/API/DB and set up this checklist file.
 - [2025-11-22] Added sampling planner and profile-aware harness orchestrator (RunResult/ModelBiasResult plumbing) with deterministic explanation stubs; measurement vs explanation split still open.
 - [2025-11-23] Completed measurement/explanation split within the harness (profile token caps, explanation_mode-aware stub explainer, per-model timing) and marked Task 2 checklist items accordingly.
+- [2025-11-21] Added `profile`/`models`/`result_json` columns to `checks`, applied migration locally and on Neon, and validated a prod mock multi-model bias_fast run is stored with the new fields.
