@@ -7,6 +7,7 @@ Status: Phase‑1 (RPL harness) implemented; now testing/validation. The RPL est
 Scope: Only the new harness in heretix/* is active. Auto‑RPL controller and monitor/inspect/summarize tooling are roadmap items and not exposed by the current CLI.
 
 —
+Never change branches without asking user
 
 Quickstart (Phase‑1)
 - Install (uv):
